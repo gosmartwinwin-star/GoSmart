@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "367158650760",
+    "project_id": "gosmart-fd8f6",
+    "storage_bucket": "gosmart-fd8f6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:367158650760:android:98d90f44e01c1896cbfc3d",
+        "android_client_info": {
+          "package_name": "com.example.gosmart_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiwvUnlg_flBUVxWoRXZmd2o1yQsmLm8Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
