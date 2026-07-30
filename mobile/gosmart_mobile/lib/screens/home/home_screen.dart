@@ -3,8 +3,11 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../controllers/taxi_controller.dart';
+import '../../models/address_model.dart';
 import '../../models/taxi_model.dart';
+import '../../screens/search/search_address_screen.dart';
 import '../../services/marker_service.dart';
+import '../../services/route_marker_service.dart';
 import '../../widgets/cards/taxi_info_card.dart';
 import '../../widgets/map/gosmart_map.dart';
 import '../../widgets/panels/home_bottom_panel.dart';
@@ -24,9 +27,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final MarkerService markerService = MarkerService();
 
+  final RouteMarkerService routeMarkerService =
+      RouteMarkerService();
+
   final Set<Marker> _markers = {};
 
   TaxiModel? selectedTaxi;
+
+  AddressModel? pickupAddress;
+
+  AddressModel? destinationAddress;
 
   final CameraPosition _initialPosition = const CameraPosition(
     target: LatLng(41.0082, 28.9784),
@@ -41,13 +51,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     taxiController.loadTaxis();
 
-    _refreshTaxiMarkers();
+    _refreshMarkers();
 
     taxiController.startSimulation(() {
       if (!mounted) return;
 
       setState(() {
-        _refreshTaxiMarkers();
+        _refreshMarkers();
       });
     });
   }
@@ -58,11 +68,26 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _refreshTaxiMarkers() {
-    _markers.removeWhere(
-      (marker) => marker.markerId.value != "me",
-    );
+  void _refreshMarkers() {
+    Marker? userMarker;
 
+    // Kullanıcı markerını koru
+    for (final marker in _markers) {
+      if (marker.markerId.value == "me") {
+        userMarker = marker;
+        break;
+      }
+    }
+
+    // Tüm markerları temizle
+    _markers.clear();
+
+    // Kullanıcı markerını tekrar ekle
+    if (userMarker != null) {
+      _markers.add(userMarker);
+    }
+
+    // Taksi markerlarını ekle
     _markers.addAll(
       markerService.createTaxiMarkers(
         taxis: taxiController.taxis,
@@ -75,31 +100,48 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
     );
+
+    // Pickup & Destination markerlarını ekle
+    _markers.addAll(
+      routeMarkerService.createRouteMarkers(
+        pickup: pickupAddress,
+        destination: destinationAddress,
+      ),
+    );
   }
 
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    serviceEnabled =
+        await Geolocator.isLocationServiceEnabled();
 
     if (!serviceEnabled) return;
 
-    permission = await Geolocator.checkPermission();
+    permission =
+        await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+      permission =
+          await Geolocator.requestPermission();
 
-      if (permission == LocationPermission.denied) return;
+      if (permission == LocationPermission.denied) {
+        return;
+      }
     }
 
-    if (permission == LocationPermission.deniedForever) return;
+    if (permission ==
+        LocationPermission.deniedForever) {
+      return;
+    }
 
-    Position position = await Geolocator.getCurrentPosition(
+    Position position =
+        await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.best,
     );
 
-    final LatLng userLocation = LatLng(
+    final userLocation = LatLng(
       position.latitude,
       position.longitude,
     );
@@ -135,10 +177,50 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          "Adres arama ekranı bir sonraki adımda eklenecek.",
+          "Rota ve taksi arama sistemi bir sonraki adımda eklenecek.",
         ),
       ),
     );
+  }
+
+  Future<void> _selectPickupAddress() async {
+    final AddressModel? result =
+        await Navigator.push<AddressModel>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            const SearchAddressScreen(),
+      ),
+    );
+
+    if (result == null) return;
+
+    setState(() {
+      pickupAddress = result;
+      _refreshMarkers();
+    });
+
+    debugPrint("Pickup : ${result.title}");
+  }
+
+  Future<void> _selectDestinationAddress() async {
+    final AddressModel? result =
+        await Navigator.push<AddressModel>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            const SearchAddressScreen(),
+      ),
+    );
+
+    if (result == null) return;
+
+    setState(() {
+      destinationAddress = result;
+      _refreshMarkers();
+    });
+
+    debugPrint("Destination : ${result.title}");
   }
 
   @override
@@ -158,25 +240,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 selectedTaxi = null;
               });
             },
-            onMapCreated: (GoogleMapController controller) async {
+            onMapCreated:
+                (GoogleMapController controller) async {
               mapController = controller;
               await _getCurrentLocation();
             },
           ),
 
-          /// Taksi seçili değilse yolculuk paneli göster
           if (selectedTaxi == null)
             RideRequestPanel(
-              onPickupTap: () {
-                debugPrint("Alınış noktası seçilecek");
-              },
-              onDestinationTap: () {
-                debugPrint("Varış noktası seçilecek");
-              },
+              pickupText: pickupAddress?.title,
+              destinationText: destinationAddress?.title,
+              onPickupTap: _selectPickupAddress,
+              onDestinationTap:
+                  _selectDestinationAddress,
               onSearchPressed: _searchTaxi,
             ),
 
-          /// Taksi seçildiyse bilgi kartını göster
           if (selectedTaxi != null)
             Positioned(
               left: 16,
@@ -189,7 +269,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     "Taksi çağrıldı: ${selectedTaxi!.driverName}",
                   );
 
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(
                     SnackBar(
                       content: Text(
                         "${selectedTaxi!.driverName} için çağrı oluşturuldu.",
