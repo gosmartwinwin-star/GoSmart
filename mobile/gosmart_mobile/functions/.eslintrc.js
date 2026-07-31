@@ -18,6 +18,7 @@ module.exports = {
     sourceType: "module",
   },
   ignorePatterns: [
+    ".eslintrc.js",
     "/lib/**/*",
     "/generated/**/*",
   ],
@@ -29,5 +30,9 @@ module.exports = {
     "quotes": ["error", "double"],
     "import/no-unresolved": 0,
     "indent": ["error", 2],
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {"argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_"},
+    ],
   },
 };
