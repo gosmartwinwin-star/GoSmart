@@ -14,17 +14,17 @@ class MarkerService {
     for (final taxi in taxis) {
       markers.add(
         Marker(
-          markerId: MarkerId(taxi.id),
+          markerId: MarkerId("taxi_${taxi.id}"),
 
-          position: LatLng(
-            taxi.latitude,
-            taxi.longitude,
+          position: LatLng(taxi.latitude, taxi.longitude),
+
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow,
           ),
 
           infoWindow: InfoWindow(
             title: taxi.driverName,
-            snippet:
-                "${taxi.vehicleType} • ⭐ ${taxi.rating}",
+            snippet: "${taxi.vehicleType} • ⭐ ${taxi.rating}",
           ),
 
           onTap: () {

@@ -7,6 +7,7 @@ class RideRequestPanel extends StatelessWidget {
 
   final String? pickupText;
   final String? destinationText;
+  final bool isLoading;
 
   const RideRequestPanel({
     super.key,
@@ -15,6 +16,7 @@ class RideRequestPanel extends StatelessWidget {
     required this.onSearchPressed,
     this.pickupText,
     this.destinationText,
+    this.isLoading = false,
   });
 
   @override
@@ -33,15 +35,12 @@ class RideRequestPanel extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-
                 GestureDetector(
                   onTap: onPickupTap,
                   child: _AddressBox(
                     icon: Icons.my_location_rounded,
                     iconColor: Colors.green,
-                    title:
-                        pickupText ??
-                        "Nereden alınacaksınız?",
+                    title: pickupText ?? "Nereden alınacaksınız?",
                   ),
                 ),
 
@@ -52,9 +51,7 @@ class RideRequestPanel extends StatelessWidget {
                   child: _AddressBox(
                     icon: Icons.location_on_rounded,
                     iconColor: Colors.red,
-                    title:
-                        destinationText ??
-                        "Nereye gidiyorsunuz?",
+                    title: destinationText ?? "Nereye gidiyorsunuz?",
                   ),
                 ),
 
@@ -64,16 +61,32 @@ class RideRequestPanel extends StatelessWidget {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
-                    onPressed: onSearchPressed,
+                    onPressed: isLoading ? null : onSearchPressed,
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text(
-                      "Taksi Ara",
-                    ),
+                    child: isLoading
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Text("Rota oluşturuluyor..."),
+                            ],
+                          )
+                        : const Text("Taksi Ara"),
                   ),
                 ),
               ],
@@ -99,38 +112,25 @@ class _AddressBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
-        borderRadius:
-            BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-
-          Icon(
-            icon,
-            color: iconColor,
-          ),
+          Icon(icon, color: iconColor),
 
           const SizedBox(width: 14),
 
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
             ),
           ),
 
-          const Icon(
-            Icons.chevron_right_rounded,
-          ),
+          const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );

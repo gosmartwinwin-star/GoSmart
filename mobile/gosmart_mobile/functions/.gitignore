@@ -1,0 +1,10 @@
+# Compiled JavaScript files
+lib/
+
+# Node.js dependency directory
+node_modules/
+
+# Local environment and override files
+.env
+.env.*
+*.local

@@ -1,16 +1,18 @@
 import '../models/taxi_model.dart';
 
 class TaxiService {
-  static List<TaxiModel> getNearbyTaxis() {
+  static List<TaxiModel> getNearbyTaxis({
+    required double centerLatitude,
+    required double centerLongitude,
+  }) {
     return [
-
       TaxiModel(
         id: "taxi_001",
         driverName: "Ahmet Yılmaz",
         plateNumber: "34 T 1001",
         vehicleType: "Sedan",
-        latitude: 37.4223,
-        longitude: -122.0841,
+        latitude: centerLatitude + 0.0012,
+        longitude: centerLongitude - 0.0015,
         online: true,
         rating: 4.9,
       ),
@@ -20,8 +22,8 @@ class TaxiService {
         driverName: "Mehmet Demir",
         plateNumber: "34 T 2022",
         vehicleType: "Sedan",
-        latitude: 37.4215,
-        longitude: -122.0828,
+        latitude: centerLatitude - 0.0018,
+        longitude: centerLongitude + 0.0014,
         online: true,
         rating: 4.8,
       ),
@@ -31,8 +33,8 @@ class TaxiService {
         driverName: "Ali Kaya",
         plateNumber: "34 T 3033",
         vehicleType: "VIP",
-        latitude: 37.4209,
-        longitude: -122.0836,
+        latitude: centerLatitude + 0.0024,
+        longitude: centerLongitude + 0.0020,
         online: true,
         rating: 5.0,
       ),
@@ -42,8 +44,8 @@ class TaxiService {
         driverName: "Hasan Çelik",
         plateNumber: "34 T 4044",
         vehicleType: "Van",
-        latitude: 37.4230,
-        longitude: -122.0850,
+        latitude: centerLatitude - 0.0030,
+        longitude: centerLongitude - 0.0025,
         online: false,
         rating: 4.7,
       ),
@@ -53,8 +55,8 @@ class TaxiService {
         driverName: "Mustafa Arslan",
         plateNumber: "34 T 5055",
         vehicleType: "Sedan",
-        latitude: 37.4220,
-        longitude: -122.0860,
+        latitude: centerLatitude + 0.0036,
+        longitude: centerLongitude - 0.0032,
         online: true,
         rating: 4.9,
       ),
