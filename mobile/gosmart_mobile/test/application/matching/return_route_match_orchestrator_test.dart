@@ -3,6 +3,8 @@ import 'package:gosmart_mobile/application/matching/match_orchestration_rejectio
 import 'package:gosmart_mobile/application/matching/return_route_match_orchestrator.dart';
 import 'package:gosmart_mobile/application/matching/return_route_match_result.dart';
 import 'package:gosmart_mobile/application/matching/route_deviation_gateway.dart';
+import 'package:gosmart_mobile/domain/driver/driver_profile.dart';
+import 'package:gosmart_mobile/domain/driver/driver_profile_status.dart';
 import 'package:gosmart_mobile/domain/matching/matching_policy.dart';
 import 'package:gosmart_mobile/domain/return_route/driver_return_route.dart';
 import 'package:gosmart_mobile/domain/return_route/driver_return_route_status.dart';
@@ -22,6 +24,25 @@ void main() {
   ];
   final pickup = routePoints.first;
   final dropoff = routePoints.last;
+
+  DriverProfile approvedProfile({
+    String id = 'driver-1',
+    String authUserId = 'user-1',
+    DriverProfileStatus status = DriverProfileStatus.approved,
+  }) {
+    return DriverProfile(
+      id: id,
+      authUserId: authUserId,
+      status: status,
+      createdAt: now.subtract(const Duration(days: 2)),
+      approvedAt: status == DriverProfileStatus.pendingReview
+          ? null
+          : now.subtract(const Duration(days: 1)),
+      suspendedAt: status == DriverProfileStatus.suspended
+          ? now.subtract(const Duration(hours: 12))
+          : null,
+    );
+  }
 
   DriverAccessPass activePass({
     String driverId = 'driver-1',
@@ -62,6 +83,8 @@ void main() {
   }
 
   Future<ReturnRouteMatchResult> evaluate({
+    String? authenticatedUserId = 'user-1',
+    DriverProfile? driverProfile,
     DriverAccessPass? pass,
     DriverReturnRoute? route,
     GeoCoordinate? customerPickup,
@@ -75,6 +98,8 @@ void main() {
       deviationGateway: selectedGateway,
       anchorLocator: locator ?? const RouteAnchorLocator(),
     ).evaluate(
+      authenticatedUserId: authenticatedUserId,
+      driverProfile: driverProfile ?? approvedProfile(),
       pass: pass ?? activePass(),
       returnRoute: route ?? returnRoute(),
       pickup: customerPickup ?? pickup,
@@ -142,6 +167,101 @@ void main() {
   });
 
   group('Ön kontrol retleri', () {
+    test('authenticated user yoksa gateway ve locator çağrılmaz', () async {
+      final gateway = _FakeDeviationGateway();
+      final locator = _SpyAnchorLocator();
+      final result = await evaluate(
+        authenticatedUserId: null,
+        gateway: gateway,
+        locator: locator,
+      );
+
+      expect(result.rejectionReasons, ['authentication_required']);
+      expect(gateway.callCount, 0);
+      expect(locator.callCount, 0);
+      expect(result.measurementPerformed, isFalse);
+    });
+
+    test('driver profile yoksa gateway çağrılmaz', () async {
+      final gateway = _FakeDeviationGateway();
+      final result =
+          await ReturnRouteMatchOrchestrator(
+            deviationGateway: gateway,
+          ).evaluate(
+            authenticatedUserId: 'user-1',
+            driverProfile: null,
+            pass: activePass(),
+            returnRoute: returnRoute(),
+            pickup: pickup,
+            dropoff: dropoff,
+            now: now,
+          );
+
+      expect(result.rejectionReasons, ['driver_profile_required']);
+      expect(gateway.callCount, 0);
+    });
+
+    for (final entry in {
+      DriverProfileStatus.pendingReview: 'driver_approval_required',
+      DriverProfileStatus.suspended: 'driver_suspended',
+    }.entries) {
+      test('${entry.key} driver gateway çağrısını engeller', () async {
+        final gateway = _FakeDeviationGateway();
+        final result = await evaluate(
+          driverProfile: approvedProfile(status: entry.key),
+          gateway: gateway,
+        );
+
+        expect(result.rejectionReasons, [entry.value]);
+        expect(gateway.callCount, 0);
+        expect(result.anchors, isNull);
+        expect(result.deviation, isNull);
+        expect(result.matchingEvaluation, isNull);
+      });
+    }
+
+    test(
+      'profil auth kimliği farklıysa yalnızca kimlik ret kodu döner',
+      () async {
+        final gateway = _FakeDeviationGateway();
+        final result = await evaluate(
+          driverProfile: approvedProfile(authUserId: 'other-user'),
+          gateway: gateway,
+        );
+
+        expect(result.rejectionReasons, ['driver_identity_mismatch']);
+        expect(gateway.callCount, 0);
+      },
+    );
+
+    test(
+      'profil id rota driverId ile farklıysa yalnızca kimlik kodu döner',
+      () async {
+        final gateway = _FakeDeviationGateway();
+        final result = await evaluate(
+          driverProfile: approvedProfile(id: 'driver-2'),
+          gateway: gateway,
+        );
+
+        expect(result.rejectionReasons, ['driver_identity_mismatch']);
+        expect(gateway.callCount, 0);
+      },
+    );
+
+    test('eligibility reddinde sonucu ve ret sırasını korur', () async {
+      final result = await evaluate(authenticatedUserId: null);
+
+      expect(result.driverEligibility, isNotNull);
+      expect(
+        result.rejectionReasons,
+        result.driverEligibility?.rejectionReasons,
+      );
+      expect(result.anchors, isNull);
+      expect(result.deviation, isNull);
+      expect(result.matchingEvaluation, isNull);
+      expect(result.measurementPerformed, isFalse);
+    });
+
     test('null pass subscription_required üretir ve ölçüm yapmaz', () async {
       final gateway = _FakeDeviationGateway();
       final locator = _SpyAnchorLocator();
@@ -151,6 +271,8 @@ void main() {
             deviationGateway: gateway,
             anchorLocator: locator,
           ).evaluate(
+            authenticatedUserId: 'user-1',
+            driverProfile: approvedProfile(),
             pass: null,
             returnRoute: returnRoute(),
             pickup: pickup,
@@ -330,6 +452,8 @@ void main() {
           await ReturnRouteMatchOrchestrator(
             deviationGateway: _FakeDeviationGateway(),
           ).evaluate(
+            authenticatedUserId: 'user-1',
+            driverProfile: approvedProfile(),
             pass: null,
             returnRoute: returnRoute(),
             pickup: pickup,

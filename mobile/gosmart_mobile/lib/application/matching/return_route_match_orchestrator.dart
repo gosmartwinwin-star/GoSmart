@@ -1,16 +1,17 @@
+import '../../domain/driver/driver_eligibility_policy.dart';
+import '../../domain/driver/driver_profile.dart';
 import '../../domain/matching/matching_policy.dart';
 import '../../domain/return_route/driver_return_route.dart';
 import '../../domain/return_route/driver_return_route_policy.dart';
 import '../../domain/return_route/geo_coordinate.dart';
 import '../../domain/return_route/route_anchor_locator.dart';
 import '../../domain/subscription/driver_access_pass.dart';
-import '../../domain/subscription/driver_access_policy.dart';
 import 'match_orchestration_rejection_codes.dart';
 import 'return_route_match_result.dart';
 import 'route_deviation_gateway.dart';
 
 class ReturnRouteMatchOrchestrator {
-  final DriverAccessPolicy _accessPolicy;
+  final DriverEligibilityPolicy _driverEligibilityPolicy;
   final DriverReturnRoutePolicy _returnRoutePolicy;
   final RouteAnchorLocator _anchorLocator;
   final RouteDeviationGateway _deviationGateway;
@@ -18,47 +19,40 @@ class ReturnRouteMatchOrchestrator {
 
   ReturnRouteMatchOrchestrator({
     required RouteDeviationGateway deviationGateway,
-    DriverAccessPolicy accessPolicy = const DriverAccessPolicy(),
+    DriverEligibilityPolicy driverEligibilityPolicy =
+        const DriverEligibilityPolicy(),
     DriverReturnRoutePolicy returnRoutePolicy = const DriverReturnRoutePolicy(),
     RouteAnchorLocator anchorLocator = const RouteAnchorLocator(),
     MatchingPolicy matchingPolicy = const MatchingPolicy(),
-  }) : _accessPolicy = accessPolicy,
+  }) : _driverEligibilityPolicy = driverEligibilityPolicy,
        _returnRoutePolicy = returnRoutePolicy,
        _anchorLocator = anchorLocator,
        _deviationGateway = deviationGateway,
        _matchingPolicy = matchingPolicy;
 
   Future<ReturnRouteMatchResult> evaluate({
+    required String? authenticatedUserId,
+    required DriverProfile? driverProfile,
     required DriverAccessPass? pass,
     required DriverReturnRoute returnRoute,
     required GeoCoordinate pickup,
     required GeoCoordinate dropoff,
     required DateTime now,
   }) async {
-    final subscriptionActive = _accessPolicy.canStartNewMatch(
+    final driverEligibility = _driverEligibilityPolicy.evaluate(
+      authenticatedUserId: authenticatedUserId,
+      profile: driverProfile,
       pass: pass,
+      requiredDriverId: returnRoute.driverId,
       now: now,
     );
-    if (!subscriptionActive) {
+    if (!driverEligibility.canUseDriverPlatform) {
       return ReturnRouteMatchResult.rejectedBeforeMeasurement(
-        subscriptionActive: false,
-        driverIdentityCompatible: false,
+        subscriptionActive: driverEligibility.subscriptionActive,
+        driverIdentityCompatible: driverEligibility.identityCompatible,
         returnRouteReady: false,
-        rejectionReasons: const [
-          MatchOrchestrationRejectionCodes.subscriptionRequired,
-        ],
-      );
-    }
-
-    final driverIdentityCompatible = pass!.driverId == returnRoute.driverId;
-    if (!driverIdentityCompatible) {
-      return ReturnRouteMatchResult.rejectedBeforeMeasurement(
-        subscriptionActive: true,
-        driverIdentityCompatible: false,
-        returnRouteReady: false,
-        rejectionReasons: const [
-          MatchOrchestrationRejectionCodes.driverIdentityMismatch,
-        ],
+        driverEligibility: driverEligibility,
+        rejectionReasons: driverEligibility.rejectionReasons,
       );
     }
 
@@ -67,6 +61,7 @@ class ReturnRouteMatchOrchestrator {
         subscriptionActive: true,
         driverIdentityCompatible: true,
         returnRouteReady: false,
+        driverEligibility: driverEligibility,
         rejectionReasons: const [
           MatchOrchestrationRejectionCodes.returnRouteNotCalculated,
         ],
@@ -79,6 +74,7 @@ class ReturnRouteMatchOrchestrator {
         subscriptionActive: true,
         driverIdentityCompatible: true,
         returnRouteReady: false,
+        driverEligibility: driverEligibility,
         rejectionReasons: const [
           MatchOrchestrationRejectionCodes.returnRouteExpired,
         ],
@@ -95,6 +91,7 @@ class ReturnRouteMatchOrchestrator {
         subscriptionActive: true,
         driverIdentityCompatible: true,
         returnRouteReady: false,
+        driverEligibility: driverEligibility,
         rejectionReasons: const [
           MatchOrchestrationRejectionCodes.returnRouteInactive,
         ],
@@ -112,6 +109,7 @@ class ReturnRouteMatchOrchestrator {
         driverIdentityCompatible: true,
         returnRouteReady: true,
         anchors: anchors,
+        driverEligibility: driverEligibility,
         rejectionReasons: const [MatchingPolicy.incompatibleDirectionReason],
       );
     }
@@ -132,6 +130,7 @@ class ReturnRouteMatchOrchestrator {
     );
 
     return ReturnRouteMatchResult.evaluated(
+      driverEligibility: driverEligibility,
       anchors: anchors,
       deviation: deviation,
       matchingEvaluation: matchingEvaluation,

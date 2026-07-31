@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import '../../domain/driver/driver_eligibility_result.dart';
 import '../../domain/matching/matching_policy.dart';
 import '../../domain/return_route/route_anchor_result.dart';
 
@@ -7,6 +8,7 @@ class ReturnRouteMatchResult {
   final bool subscriptionActive;
   final bool driverIdentityCompatible;
   final bool returnRouteReady;
+  final DriverEligibilityResult? driverEligibility;
   final RouteAnchorResult? anchors;
   final RouteDeviationResult? deviation;
   final MatchingEvaluationResult? matchingEvaluation;
@@ -16,6 +18,7 @@ class ReturnRouteMatchResult {
     required this.subscriptionActive,
     required this.driverIdentityCompatible,
     required this.returnRouteReady,
+    required this.driverEligibility,
     required this.anchors,
     required this.deviation,
     required this.matchingEvaluation,
@@ -27,6 +30,7 @@ class ReturnRouteMatchResult {
     required bool driverIdentityCompatible,
     required bool returnRouteReady,
     RouteAnchorResult? anchors,
+    DriverEligibilityResult? driverEligibility,
     required Iterable<String> rejectionReasons,
   }) {
     final normalizedReasons = _normalizeReasons(rejectionReasons);
@@ -41,6 +45,7 @@ class ReturnRouteMatchResult {
       subscriptionActive: subscriptionActive,
       driverIdentityCompatible: driverIdentityCompatible,
       returnRouteReady: returnRouteReady,
+      driverEligibility: driverEligibility,
       anchors: anchors,
       deviation: null,
       matchingEvaluation: null,
@@ -49,6 +54,7 @@ class ReturnRouteMatchResult {
   }
 
   factory ReturnRouteMatchResult.evaluated({
+    required DriverEligibilityResult driverEligibility,
     required RouteAnchorResult anchors,
     required RouteDeviationResult deviation,
     required MatchingEvaluationResult matchingEvaluation,
@@ -57,6 +63,7 @@ class ReturnRouteMatchResult {
       subscriptionActive: true,
       driverIdentityCompatible: true,
       returnRouteReady: true,
+      driverEligibility: driverEligibility,
       anchors: anchors,
       deviation: deviation,
       matchingEvaluation: matchingEvaluation,
