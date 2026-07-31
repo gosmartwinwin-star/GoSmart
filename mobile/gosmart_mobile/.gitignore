@@ -29,6 +29,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 build/
+firestore_rules_tests/node_modules/
 
 # Symbolication related
 app.*.symbols
