@@ -7,6 +7,14 @@
         { "fieldPath": "driverId", "order": "ASCENDING" },
         { "fieldPath": "purchasedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "driverReturnRoutes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "driverId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -105,6 +105,18 @@ beforeEach(async () => {
       driverId: 'driver-auth-mismatch', plan: 'daily', status: 'active',
       purchasedAt: currentPurchase, activatedAt: approvedAt, expiresAt,
     });
+    batch.set(doc(db, 'driverReturnRoutes/route-a'), {
+      driverId: 'driver-a', status: 'active', createdAt: currentPurchase,
+    });
+    batch.set(doc(db, 'driverReturnRoutes/route-a-old'), {
+      driverId: 'driver-a', status: 'completed', createdAt: oldPurchase,
+    });
+    batch.set(doc(db, 'driverReturnRoutes/route-b'), {
+      driverId: 'driver-b', status: 'active', createdAt: currentPurchase,
+    });
+    batch.set(doc(db, 'driverActiveReturnRoutes/driver-a'), {
+      routeId: 'route-a', activatedAt: approvedAt, expiresAt,
+    });
     await batch.commit();
   });
 });
@@ -242,4 +254,53 @@ test('42 pass cannot be read after its profile is removed', async () => {
     await deleteDoc(doc(context.firestore(), 'driverProfiles/driver-a'));
   });
   await assertFails(getDoc(doc(dbFor('user-a'), 'driverAccessPasses/pass-a-current')));
+});
+
+test('43 unauthenticated user cannot read return route', async () => {
+  await assertFails(getDoc(doc(dbFor(), 'driverReturnRoutes/route-a')));
+});
+test('44 user-a can read own return route', async () => {
+  await assertSucceeds(getDoc(doc(dbFor('user-a'), 'driverReturnRoutes/route-a')));
+});
+test('45 user-a cannot read driver-b return route', async () => {
+  await assertFails(getDoc(doc(dbFor('user-a'), 'driverReturnRoutes/route-b')));
+});
+test('46 owned return route history query succeeds', async () => {
+  const db = dbFor('user-a');
+  const snapshot = await assertSucceeds(getDocs(query(
+    collection(db, 'driverReturnRoutes'), where('driverId', '==', 'driver-a'),
+    orderBy('createdAt', 'desc'),
+  )));
+  assert.deepEqual(snapshot.docs.map((item) => item.id), ['route-a', 'route-a-old']);
+});
+test('47 unfiltered return route query fails', async () => {
+  await assertFails(getDocs(collection(dbFor('user-a'), 'driverReturnRoutes')));
+});
+test('48 another driver return route query fails', async () => {
+  const db = dbFor('user-a');
+  await assertFails(getDocs(query(
+    collection(db, 'driverReturnRoutes'), where('driverId', '==', 'driver-b'),
+  )));
+});
+test('49 client cannot create return route', async () => {
+  await assertFails(setDoc(doc(dbFor('user-a'), 'driverReturnRoutes/new-route'), {
+    driverId: 'driver-a', status: 'active', createdAt: Timestamp.now(),
+  }));
+});
+test('50 client cannot update return route', async () => {
+  await assertFails(updateDoc(doc(dbFor('user-a'), 'driverReturnRoutes/route-a'), {
+    status: 'completed',
+  }));
+});
+test('51 client cannot delete return route', async () => {
+  await assertFails(deleteDoc(doc(dbFor('user-a'), 'driverReturnRoutes/route-a')));
+});
+test('52 no client can read active return route lock', async () => {
+  await assertFails(getDoc(doc(dbFor('user-a'), 'driverActiveReturnRoutes/driver-a')));
+  await assertFails(getDoc(doc(dbFor(), 'driverActiveReturnRoutes/driver-a')));
+});
+test('53 no client can write active return route lock', async () => {
+  await assertFails(setDoc(doc(dbFor('user-a'), 'driverActiveReturnRoutes/driver-a'), {
+    routeId: 'other-route',
+  }));
 });

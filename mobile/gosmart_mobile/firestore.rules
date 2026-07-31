@@ -19,6 +19,18 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /driverReturnRoutes/{routeId} {
+      allow get, list: if isSignedIn()
+        && resource.data.driverId is string
+        && exists(/databases/$(database)/documents/driverProfiles/$(resource.data.driverId))
+        && get(/databases/$(database)/documents/driverProfiles/$(resource.data.driverId)).data.authUserId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /driverActiveReturnRoutes/{driverId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
