@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "driverAccessPasses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "driverId", "order": "ASCENDING" },
+        { "fieldPath": "purchasedAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
