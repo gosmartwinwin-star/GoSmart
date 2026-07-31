@@ -5,76 +5,82 @@ import {
   onRequest,
 } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-
-type CoordinateInput = {
-  latitude: number;
-  longitude: number;
-};
+import {
+  CoordinateInput,
+  coordinatesEqual,
+  durationToSeconds,
+  validateCoordinate,
+  validateDirection,
+  validateNonNegativeInteger,
+  validateRouteIndex,
+} from "./route-helpers.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
   destination: CoordinateInput;
 };
 
+type ComputeRouteDeviationInput = {
+  pickupAnchor: CoordinateInput;
+  pickup: CoordinateInput;
+  dropoff: CoordinateInput;
+  dropoffAnchor: CoordinateInput;
+  pickupRouteIndex: number;
+  dropoffRouteIndex: number;
+};
+
 const routesClient = new v2.RoutesClient();
 const routing = protos.google.maps.routing.v2;
 
-const invalidCoordinatesError = () => new HttpsError(
-  "invalid-argument",
-  "Geçerli başlangıç ve varış koordinatları gereklidir.",
-);
+const toWaypoint = (coordinate: CoordinateInput) => ({
+  location: {
+    latLng: {
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+    },
+  },
+});
 
-const validateCoordinate = (value: unknown): CoordinateInput => {
-  if (typeof value !== "object" || value === null) {
-    throw invalidCoordinatesError();
+const computeDrivingMeasurement = async (
+  origin: CoordinateInput,
+  destination: CoordinateInput,
+): Promise<{distanceMeters: number; durationSeconds: number}> => {
+  if (coordinatesEqual(origin, destination)) {
+    return {distanceMeters: 0, durationSeconds: 0};
   }
 
-  const coordinate = value as Record<string, unknown>;
-  const {latitude, longitude} = coordinate;
+  const [response] = await routesClient.computeRoutes(
+    {
+      origin: toWaypoint(origin),
+      destination: toWaypoint(destination),
+      travelMode: routing.RouteTravelMode.DRIVE,
+      routingPreference: routing.RoutingPreference.TRAFFIC_AWARE,
+      computeAlternativeRoutes: false,
+      languageCode: "tr-TR",
+      regionCode: "TR",
+      units: routing.Units.METRIC,
+    },
+    {
+      otherArgs: {
+        headers: {
+          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+        },
+      },
+    },
+  );
 
-  if (
-    typeof latitude !== "number" ||
-    typeof longitude !== "number" ||
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    longitude < -180 ||
-    longitude > 180
-  ) {
-    throw invalidCoordinatesError();
+  const route = response.routes?.[0];
+  const distanceMeters = validateNonNegativeInteger(route?.distanceMeters);
+  const durationSeconds = durationToSeconds(route?.duration);
+
+  if (distanceMeters === null || durationSeconds === null) {
+    throw new HttpsError(
+      "internal",
+      "Sürüş sapması ölçümü tamamlanamadı.",
+    );
   }
 
-  return {latitude, longitude};
-};
-
-const durationToSeconds = (
-  duration: protos.google.protobuf.IDuration | null | undefined,
-): number | null => {
-  if (duration?.seconds === null || duration?.seconds === undefined) {
-    return null;
-  }
-
-  const seconds = typeof duration.seconds === "number" ?
-    duration.seconds :
-    Number(duration.seconds.toString());
-  const nanos = duration.nanos ?? 0;
-
-  if (
-    !Number.isFinite(seconds) ||
-    !Number.isFinite(nanos) ||
-    nanos < 0 ||
-    nanos >= 1_000_000_000
-  ) {
-    return null;
-  }
-
-  const totalSeconds = seconds + nanos / 1_000_000_000;
-  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
-    return null;
-  }
-
-  return Math.round(totalSeconds);
+  return {distanceMeters, durationSeconds};
 };
 
 export const healthCheck = onRequest(
@@ -114,10 +120,7 @@ export const computeRoute = onCall<ComputeRouteInput>(
       const origin = validateCoordinate(request.data?.origin);
       const destination = validateCoordinate(request.data?.destination);
 
-      if (
-        origin.latitude === destination.latitude &&
-        origin.longitude === destination.longitude
-      ) {
+      if (coordinatesEqual(origin, destination)) {
         throw new HttpsError(
           "invalid-argument",
           "Başlangıç ve varış noktaları aynı olamaz.",
@@ -126,22 +129,8 @@ export const computeRoute = onCall<ComputeRouteInput>(
 
       const [response] = await routesClient.computeRoutes(
         {
-          origin: {
-            location: {
-              latLng: {
-                latitude: origin.latitude,
-                longitude: origin.longitude,
-              },
-            },
-          },
-          destination: {
-            location: {
-              latLng: {
-                latitude: destination.latitude,
-                longitude: destination.longitude,
-              },
-            },
-          },
+          origin: toWaypoint(origin),
+          destination: toWaypoint(destination),
           travelMode: routing.RouteTravelMode.DRIVE,
           routingPreference: routing.RoutingPreference.TRAFFIC_AWARE,
           computeAlternativeRoutes: false,
@@ -201,6 +190,69 @@ export const computeRoute = onCall<ComputeRouteInput>(
       throw new HttpsError(
         "unavailable",
         "Rota servisine şu anda ulaşılamıyor. Lütfen tekrar deneyin.",
+      );
+    }
+  },
+);
+
+export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Sürüş sapması hesaplamak için giriş yapmalısınız.",
+      );
+    }
+
+    const uid = request.auth.uid;
+
+    try {
+      const pickupAnchor = validateCoordinate(request.data?.pickupAnchor);
+      const pickup = validateCoordinate(request.data?.pickup);
+      const dropoff = validateCoordinate(request.data?.dropoff);
+      const dropoffAnchor = validateCoordinate(request.data?.dropoffAnchor);
+      const pickupRouteIndex = validateRouteIndex(
+        request.data?.pickupRouteIndex,
+      );
+      const dropoffRouteIndex = validateRouteIndex(
+        request.data?.dropoffRouteIndex,
+      );
+
+      validateDirection(pickupRouteIndex, dropoffRouteIndex);
+
+      const [pickupMeasurement, dropoffMeasurement] = await Promise.all([
+        computeDrivingMeasurement(pickupAnchor, pickup),
+        computeDrivingMeasurement(dropoff, dropoffAnchor),
+      ]);
+
+      logger.info("GoSmart route deviation computed", {uid});
+
+      return {
+        pickupDetourMeters: pickupMeasurement.distanceMeters,
+        pickupDetourSeconds: pickupMeasurement.durationSeconds,
+        dropoffDetourMeters: dropoffMeasurement.distanceMeters,
+        dropoffDetourSeconds: dropoffMeasurement.durationSeconds,
+      };
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      logger.error("Google Routes deviation request failed", {
+        uid,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+
+      throw new HttpsError(
+        "unavailable",
+        "Sürüş sapması servisine şu anda ulaşılamıyor.",
       );
     }
   },
