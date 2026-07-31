@@ -2,6 +2,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import '../application/matching/route_deviation_gateway.dart';
 import '../domain/matching/matching_policy.dart';
 import '../domain/return_route/geo_coordinate.dart';
 import '../domain/return_route/route_anchor_result.dart';
@@ -80,12 +81,13 @@ class FirebaseRouteDeviationCallableInvoker
   }
 }
 
-class RouteDeviationService {
+class RouteDeviationService implements RouteDeviationGateway {
   final RouteDeviationCallableInvoker _invoker;
 
   RouteDeviationService({RouteDeviationCallableInvoker? invoker})
     : _invoker = invoker ?? FirebaseRouteDeviationCallableInvoker();
 
+  @override
   Future<RouteDeviationResult> compute({
     required RouteAnchorResult anchors,
     required GeoCoordinate pickup,
