@@ -3,6 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/branding/gosmart_slogans.dart';
+
 import '../auth/login_screen.dart';
 import '../home/home_screen.dart';
 
@@ -115,7 +117,7 @@ class _SplashLoadingView extends StatelessWidget {
             ),
             SizedBox(height: 10),
             Text(
-              'Akıllı Taksi Platformu',
+              GoSmartSlogans.brand,
               style: TextStyle(fontSize: 18, color: Colors.grey),
             ),
             SizedBox(height: 40),

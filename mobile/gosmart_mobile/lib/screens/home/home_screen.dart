@@ -10,6 +10,7 @@ import '../../controllers/taxi_controller.dart';
 import '../../models/address_model.dart';
 import '../../models/taxi_model.dart';
 import '../../screens/search/search_address_screen.dart';
+import '../../screens/driver/driver_center_screen.dart';
 import '../../services/marker_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
@@ -530,7 +531,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-          const HomeBottomPanel(),
+          HomeBottomPanel(
+            onDriverTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute(builder: (_) => const DriverCenterScreen()),
+              );
+            },
+          ),
         ],
       ),
     );

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class HomeBottomPanel extends StatelessWidget {
-  const HomeBottomPanel({
-    super.key,
-  });
+  final VoidCallback? onDriverTap;
+
+  const HomeBottomPanel({super.key, this.onDriverTap});
 
   @override
   Widget build(BuildContext context) {
@@ -18,30 +18,27 @@ class HomeBottomPanel extends StatelessWidget {
           color: Colors.white,
           child: Container(
             height: 68,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(22)),
             child: Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceEvenly,
-              children: const [
-
-                _BottomButton(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                const _BottomButton(
                   icon: Icons.home_rounded,
                   label: "Ana Sayfa",
                 ),
 
-                _BottomButton(
+                const _BottomButton(
                   icon: Icons.history_rounded,
                   label: "Geçmiş",
                 ),
 
                 _BottomButton(
-                  icon: Icons.favorite_rounded,
-                  label: "Favoriler",
+                  icon: Icons.local_taxi_rounded,
+                  label: "Sürücü",
+                  onTap: onDriverTap,
                 ),
 
-                _BottomButton(
+                const _BottomButton(
                   icon: Icons.person_rounded,
                   label: "Profil",
                 ),
@@ -57,41 +54,27 @@ class HomeBottomPanel extends StatelessWidget {
 class _BottomButton extends StatelessWidget {
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
-  const _BottomButton({
-    required this.icon,
-    required this.label,
-  });
+  const _BottomButton({required this.icon, required this.label, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(18),
-      onTap: () {
-        debugPrint(label);
-      },
+      onTap: onTap ?? () => debugPrint(label),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-
-            Icon(
-              icon,
-              size: 24,
-            ),
+            Icon(icon, size: 24),
 
             const SizedBox(height: 4),
 
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ],
         ),
