@@ -4,7 +4,7 @@ import test from "node:test";
 import {Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {buildUpdatedCustomClaims, maskUidForConsole, parseAdminClaimCommand} from "./admin-claim-management-helpers.js";
-import {buildNextCursor, calculateReviewUrlExpiry, mapApplicationReviewDetails,
+import {buildNextCursor, buildReviewContext, calculateReviewUrlExpiry, mapApplicationReviewDetails,
   mapApplicationSummary, validateApplicationDetailsPayload,
   validateApplicationListPayload, validateDocumentReviewUrlPayload} from
   "./driver-application-admin-read-helpers.js";
@@ -58,10 +58,16 @@ test("cursor tam ve negatif olmayan integer olmalıdır", () => {
 
 test("ayrıntı ve URL payloadları exact ve stale anahtarları taşır", () => {
   const base = {applicationId: "user-a", submissionVersion: 1, documentSetId: "set-a"};
-  assert.deepEqual(validateApplicationDetailsPayload(base), base);
+  assert.deepEqual(validateApplicationDetailsPayload({applicationId: "user-a"}),
+    {applicationId: "user-a"});
   assert.equal(validateDocumentReviewUrlPayload({...base,
     documentType: "criminalRecord"}).documentType, "criminalRecord");
-  reason(() => validateApplicationDetailsPayload({...base, extra: true}),
+  for (const extra of [{submissionVersion: 1}, {documentSetId: "set-a"},
+    {admin: true}, {role: "admin"}, {extra: true}]) {
+    reason(() => validateApplicationDetailsPayload({applicationId: "user-a", ...extra}),
+      "invalid_review_details_payload");
+  }
+  reason(() => validateApplicationDetailsPayload("user-a"),
     "invalid_review_details_payload");
   reason(() => validateDocumentReviewUrlPayload({...base, documentType: "other"}),
     "invalid_document_type");
@@ -85,7 +91,6 @@ test("summary hassas ve storage alanlarını taşımaz", () => {
 
 test("details yedi canonical belgeyi map eder ve sunucu alanlarını çıkarır", () => {
   const now = Timestamp.fromMillis(1000);
-  const base = {applicationId: "user-a", submissionVersion: 1, documentSetId: "set-a"};
   const application = {status: "pendingReview", submittedAt: now, updatedAt: now,
     reviewedAt: null, submissionVersion: 1, documentSetId: "set-a",
     fullName: "Ali", verifiedPhoneNumber: "+90", email: null,
@@ -102,11 +107,29 @@ test("details yedi canonical belgeyi map eder ve sunucu alanlarını çıkarır"
     submissionVersion: 1, documentSetId: "set-a",
     storagePath: `driverApplicationSubmissions/user-a/set-a/${type}`,
     reviewedByAdminUid: "secret"}}));
-  const details = mapApplicationReviewDetails("user-a", application, documents, base);
+  const reviewContext = buildReviewContext(application);
+  const details = mapApplicationReviewDetails("user-a", application, documents,
+    reviewContext);
+  assert.deepEqual(details.reviewContext,
+    {submissionVersion: 1, documentSetId: "set-a"});
+  assert.deepEqual(Object.keys(details.reviewContext).sort(),
+    ["documentSetId", "submissionVersion"]);
   assert.equal(details.documents.length, 7);
   assert.equal("storagePath" in details.documents[0], false);
   assert.equal("documentSetId" in details.application, false);
   assert.equal("reviewedByAdminUid" in details.documents[0], false);
+});
+
+test("reviewContext yalnız geçerli güncel application alanlarından üretilir", () => {
+  assert.deepEqual(buildReviewContext({submissionVersion: 2,
+    documentSetId: "set-current"}),
+  {submissionVersion: 2, documentSetId: "set-current"});
+  for (const data of [{submissionVersion: 0, documentSetId: "set"},
+    {submissionVersion: 1.2, documentSetId: "set"},
+    {submissionVersion: true, documentSetId: "set"},
+    {submissionVersion: 1}, {submissionVersion: 1, documentSetId: " "}]) {
+    reason(() => buildReviewContext(data), "driver_application_review_data_invalid");
+  }
 });
 
 test("signed URL expiry üç dakika ve en fazla beş dakikadır", () => {

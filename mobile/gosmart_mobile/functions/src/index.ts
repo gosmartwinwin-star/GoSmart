@@ -46,6 +46,7 @@ import {
 } from "./driver-application-review-helpers.js";
 import {
   buildNextCursor,
+  buildReviewContext,
   calculateReviewUrlExpiry,
   mapApplicationReviewDetails,
   mapApplicationSummary,
@@ -844,16 +845,17 @@ export const getDriverApplicationReviewDetails = onCall(
         throw new HttpsError("internal", "Başvuru belgeleri doğrulanamadı.",
           {reason: "driver_application_review_data_invalid"});
       }
+      const reviewContext = buildReviewContext(application.data() ?? {});
       const result = mapApplicationReviewDetails(application.id,
         application.data() ?? {}, documents.map((document, index) => ({
           type: getRequiredDocumentTypes()[index], data: document.data() ?? {},
-        })), input);
+        })), reviewContext);
       const now = Timestamp.now();
       await firestore.collection("driverApplicationReviewEvents").add(
         buildReviewAuditEvent({applicationId: input.applicationId,
           reviewerAuthUserId: reviewerUid, eventType: "applicationViewed",
-          submissionVersion: input.submissionVersion,
-          documentSetId: input.documentSetId, now}));
+          submissionVersion: reviewContext.submissionVersion,
+          documentSetId: reviewContext.documentSetId, now}));
       return result;
     } catch (error: unknown) {
       if (error instanceof HttpsError) throw error;

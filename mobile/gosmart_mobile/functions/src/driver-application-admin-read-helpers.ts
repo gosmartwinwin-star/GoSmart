@@ -1,4 +1,4 @@
-/* eslint-disable max-len */
+/* eslint-disable max-len, indent */
 import {Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {DocumentType, REQUIRED_DOCUMENT_TYPES} from "./driver-application-helpers.js";
@@ -8,8 +8,9 @@ const STATUSES = ["pendingReview", "approved", "rejected", "withdrawn"] as const
 type ReviewStatus = typeof STATUSES[number];
 export type PageCursor = {submittedAtMillis: number; applicationId: string};
 export type ListInput = {status: ReviewStatus; pageSize: number; cursor: PageCursor | null};
-export type DetailsInput = {applicationId: string; submissionVersion: number; documentSetId: string};
-export type UrlInput = DetailsInput & {documentType: DocumentType};
+export type DetailsInput = {applicationId: string};
+export type ReviewContext = {submissionVersion: number; documentSetId: string};
+export type UrlInput = DetailsInput & ReviewContext & {documentType: DocumentType};
 
 const invalid = (reason: string) => new HttpsError("invalid-argument",
   "Yönetici okuma isteği uygun değildir.", {reason});
@@ -54,23 +55,35 @@ export const validateApplicationListPayload = (value: unknown): ListInput => {
 };
 
 export const validateApplicationDetailsPayload = (value: unknown): DetailsInput => {
-  const input = exact(value, ["applicationId", "submissionVersion", "documentSetId"],
+  const input = exact(value, ["applicationId"],
     "invalid_review_details_payload");
-  if (Object.keys(input).length !== 3) throw invalid("invalid_review_details_payload");
-  return {applicationId: identifier(input.applicationId, "invalid_application_id"),
-    submissionVersion: positiveVersion(input.submissionVersion),
-    documentSetId: identifier(input.documentSetId, "invalid_document_set_id")};
+  if (Object.keys(input).length !== 1) throw invalid("invalid_review_details_payload");
+  return {applicationId: identifier(input.applicationId, "invalid_application_id")};
 };
 
 export const validateDocumentReviewUrlPayload = (value: unknown): UrlInput => {
   const input = exact(value, ["applicationId", "submissionVersion", "documentSetId", "documentType"],
     "invalid_document_review_url_payload");
-  const common = validateApplicationDetailsPayload({applicationId: input.applicationId,
-    submissionVersion: input.submissionVersion, documentSetId: input.documentSetId});
+  const common = validateApplicationDetailsPayload({applicationId: input.applicationId});
   if (!REQUIRED_DOCUMENT_TYPES.includes(input.documentType as DocumentType)) {
     throw invalid("invalid_document_type");
   }
-  return {...common, documentType: input.documentType as DocumentType};
+  return {...common, submissionVersion: positiveVersion(input.submissionVersion),
+    documentSetId: identifier(input.documentSetId, "invalid_document_set_id"),
+    documentType: input.documentType as DocumentType};
+};
+
+export const buildReviewContext = (data: Record<string, unknown>): ReviewContext => {
+  const submissionVersion = data.submissionVersion;
+  const documentSetId = data.documentSetId;
+  if (typeof submissionVersion !== "number" || !Number.isInteger(submissionVersion) ||
+      submissionVersion < 1 || typeof documentSetId !== "string" ||
+      documentSetId.trim().length === 0 || documentSetId.trim().length > 128 ||
+      !/^[A-Za-z0-9_-]+$/u.test(documentSetId.trim())) {
+    throw new HttpsError("internal", "Başvuru verisi doğrulanamadı.",
+      {reason: "driver_application_review_data_invalid"});
+  }
+  return {submissionVersion, documentSetId: documentSetId.trim()};
 };
 
 const timestampMillis = (value: unknown, nullable = false): number | null => {
@@ -116,14 +129,18 @@ export const buildNextCursor = (items: readonly {applicationId: string;
   } : null;
 
 export const mapApplicationReviewDetails = (id: string, data: Record<string, unknown>,
-  documents: readonly {type: DocumentType; data: Record<string, unknown>}[], input: DetailsInput) => {
-  validateCurrentApplicationVersion(data, input.submissionVersion, input.documentSetId);
+  documents: readonly {type: DocumentType; data: Record<string, unknown>}[],
+  reviewContext: ReviewContext) => {
+  validateCurrentApplicationVersion(data, reviewContext.submissionVersion,
+    reviewContext.documentSetId);
   if (documents.length !== REQUIRED_DOCUMENT_TYPES.length) {
     throw new HttpsError("internal", "Başvuru belgeleri doğrulanamadı.",
       {reason: "driver_application_review_data_invalid"});
   }
   const mappedDocuments = documents.map(({type, data: metadata}) => {
-    validateCurrentDocumentMetadata(metadata, {...input, documentType: type});
+    validateCurrentDocumentMetadata(metadata, {applicationId: id,
+      submissionVersion: reviewContext.submissionVersion,
+      documentSetId: reviewContext.documentSetId, documentType: type});
     if (!["pendingReview", "approved", "reuploadRequired"].includes(metadata.reviewStatus as string) ||
         typeof metadata.contentType !== "string" || typeof metadata.sizeBytes !== "number" ||
         !Number.isInteger(metadata.sizeBytes) || metadata.sizeBytes <= 0) {
@@ -135,7 +152,8 @@ export const mapApplicationReviewDetails = (id: string, data: Record<string, unk
       rejectionReasonCode: stringValue(metadata.rejectionReasonCode, true),
       contentType: metadata.contentType, sizeBytes: metadata.sizeBytes};
   });
-  return {application: {applicationId: id, status: stringValue(data.status),
+  return {reviewContext: {...reviewContext},
+    application: {applicationId: id, status: stringValue(data.status),
     submittedAtMillis: timestampMillis(data.submittedAt), updatedAtMillis: timestampMillis(data.updatedAt),
     reviewedAtMillis: timestampMillis(data.reviewedAt, true), submissionVersion: positiveStoredInteger(data.submissionVersion),
     fullName: stringValue(data.fullName), verifiedPhoneNumber: stringValue(data.verifiedPhoneNumber),
