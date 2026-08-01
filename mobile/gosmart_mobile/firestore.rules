@@ -17,6 +17,14 @@ service cloud.firestore {
         && resource.data.authUserId == request.auth.uid;
       allow list: if false;
       allow create, update, delete: if false;
+
+      match /documents/{documentType} {
+        allow get: if isSignedIn()
+          && applicationId == request.auth.uid
+          && get(/databases/$(database)/documents/driverApplications/$(applicationId)).data.authUserId == request.auth.uid;
+        allow list: if false;
+        allow create, update, delete: if false;
+      }
     }
 
     match /driverAccessPasses/{passId} {

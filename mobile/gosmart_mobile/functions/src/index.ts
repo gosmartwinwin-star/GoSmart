@@ -1,6 +1,9 @@
 import {protos, v2} from "@googlemaps/routing";
 import {getApps, initializeApp} from "firebase-admin/app";
+import {getAuth} from "firebase-admin/auth";
 import {getFirestore, Timestamp} from "firebase-admin/firestore";
+import {getStorage} from "firebase-admin/storage";
+import {randomUUID} from "node:crypto";
 import {
   HttpsError,
   onCall,
@@ -23,8 +26,13 @@ import {
   validateRouteValidity,
 } from "./driver-access-helpers.js";
 import {
+  buildStagingDocumentPath,
+  buildSubmissionDocumentPath,
   determineSubmissionTransition,
+  getRequiredDocumentTypes,
   validateApplicationPayload,
+  validateDocumentMetadata,
+  validateVerifiedPhone,
 } from "./driver-application-helpers.js";
 
 type ComputeRouteInput = {
@@ -49,13 +57,30 @@ type PublishReturnRouteInput = {
 
 type SubmitDriverApplicationInput = {
   fullName: string;
+  email?: string;
+  driverTaxiStandName?: string;
+  driverTaxiStandAddress?: string;
+  workType: "vehicleOwner" | "employedDriver" | "shiftDriver";
   vehiclePlate: string;
-  taxiStandName?: string;
+  vehicleBrand: string;
+  vehicleModel: string;
+  vehicleModelYear: number;
+  registrationOwnerType: "applicant" | "otherIndividual" | "company";
+  hasVehicleUseAuthorization: boolean;
+  vehicleTaxiStandName?: string;
+  informationAccuracyAccepted: boolean;
+  documentValidityNotificationAccepted: boolean;
+  documentProcessingNoticeAccepted: boolean;
+  kvkkNoticeAccepted: boolean;
+  termsAccepted: boolean;
+  marketingConsent?: boolean;
 };
 
 const routesClient = new v2.RoutesClient();
 const routing = protos.google.maps.routing.v2;
 const firestore = getFirestore(getApps()[0] ?? initializeApp());
+const auth = getAuth();
+const storageBucket = getStorage().bucket();
 
 const toWaypoint = (coordinate: CoordinateInput) => ({
   location: {
@@ -246,8 +271,6 @@ export const computeRoute = onCall<ComputeRouteInput>(
       );
     }
 
-    const uid = request.auth.uid;
-
     try {
       const origin = validateCoordinate(request.data?.origin);
       const destination = validateCoordinate(request.data?.destination);
@@ -302,7 +325,7 @@ export const computeRoute = onCall<ComputeRouteInput>(
         );
       }
 
-      logger.info("GoSmart route computed", {uid});
+      logger.info("GoSmart route computed");
 
       return {
         encodedPolyline,
@@ -315,7 +338,6 @@ export const computeRoute = onCall<ComputeRouteInput>(
       }
 
       logger.error("Google Routes request failed", {
-        uid,
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
 
@@ -343,8 +365,6 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
       );
     }
 
-    const uid = request.auth.uid;
-
     try {
       const pickupAnchor = validateCoordinate(request.data?.pickupAnchor);
       const pickup = validateCoordinate(request.data?.pickup);
@@ -364,7 +384,7 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
         computeDrivingMeasurement(dropoff, dropoffAnchor),
       ]);
 
-      logger.info("GoSmart route deviation computed", {uid});
+      logger.info("GoSmart route deviation computed");
 
       return {
         pickupDetourMeters: pickupMeasurement.distanceMeters,
@@ -378,7 +398,6 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
       }
 
       logger.error("Google Routes deviation request failed", {
-        uid,
         errorType: error instanceof Error ? error.name : "UnknownError",
       });
 
@@ -394,8 +413,8 @@ export const submitDriverApplication =
   onCall<SubmitDriverApplicationInput>(
     {
       region: "europe-west1",
-      timeoutSeconds: 30,
-      memory: "256MiB",
+      timeoutSeconds: 120,
+      memory: "512MiB",
       minInstances: 0,
       maxInstances: 3,
     },
@@ -416,6 +435,94 @@ export const submitDriverApplication =
       const profileQuery = firestore.collection("driverProfiles")
         .where("authUserId", "==", uid)
         .limit(2);
+      let tokenPhone = request.auth.token.phone_number;
+      if (typeof tokenPhone !== "string" || tokenPhone.trim().length === 0) {
+        try {
+          tokenPhone = (await auth.getUser(uid)).phoneNumber;
+        } catch (_error: unknown) {
+          tokenPhone = undefined;
+        }
+      }
+      const verifiedPhoneNumber = validateVerifiedPhone(tokenPhone);
+
+      try {
+        const [profiles, application] = await Promise.all([
+          profileQuery.get(), applicationReference.get(),
+        ]);
+        if (profiles.size > 1) {
+          throw new HttpsError(
+            "internal", "Sürücü profili verileri doğrulanamadı.",
+            {reason: "driver_application_data_invalid"});
+        }
+        if (!profiles.empty) {
+          throw new HttpsError(
+            "failed-precondition", "Mevcut sürücü profili bulunmaktadır.",
+            {reason: "driver_profile_exists"});
+        }
+        determineSubmissionTransition(
+          application.exists ? application.data() ?? {} : null,
+        );
+      } catch (error: unknown) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("unavailable",
+          "Sürücü başvurusu şu anda doğrulanamadı.",
+          {reason: "driver_application_persistence_failed"});
+      }
+
+      const documentTypes = getRequiredDocumentTypes();
+      const stagingDocuments = await Promise.all(documentTypes.map(
+        async (documentType) => {
+          const path = buildStagingDocumentPath(uid, documentType);
+          const file = storageBucket.file(path);
+          try {
+            const [metadata] = await file.getMetadata();
+            return {
+              documentType, file,
+              metadata: validateDocumentMetadata(documentType, metadata, uid),
+            };
+          } catch (error: unknown) {
+            if (error instanceof HttpsError) throw error;
+            throw new HttpsError("failed-precondition",
+              "Zorunlu sürücü başvurusu belgeleri eksiktir.",
+              {reason: "required_documents_missing"});
+          }
+        },
+      ));
+
+      const documentSetId = randomUUID();
+      const copiedDocuments: Array<{
+        documentType: typeof documentTypes[number];
+        path: string;
+        metadata: ReturnType<typeof validateDocumentMetadata>;
+      }> = [];
+      const cleanupCopiedDocuments = async () => {
+        await Promise.allSettled(copiedDocuments.map((item) =>
+          storageBucket.file(item.path).delete({ignoreNotFound: true})));
+      };
+
+      try {
+        for (const source of stagingDocuments) {
+          const path = buildSubmissionDocumentPath(
+            uid, documentSetId, source.documentType,
+          );
+          const destination = storageBucket.file(path);
+          await source.file.copy(destination);
+          const [metadata] = await destination.getMetadata();
+          copiedDocuments.push({
+            documentType: source.documentType,
+            path,
+            metadata: validateDocumentMetadata(
+              source.documentType, metadata, uid,
+            ),
+          });
+        }
+      } catch (_error: unknown) {
+        await cleanupCopiedDocuments();
+        throw new HttpsError("unavailable",
+          "Sürücü başvurusu belgeleri kopyalanamadı.",
+          {reason: "driver_application_document_copy_failed"});
+      }
+
       let submissionVersion: number;
 
       try {
@@ -445,21 +552,59 @@ export const submitDriverApplication =
             );
             transaction.set(applicationReference, {
               authUserId: uid,
+              verifiedPhoneNumber,
               fullName: input.fullName,
+              email: input.email,
+              driverTaxiStandName: input.driverTaxiStandName,
+              driverTaxiStandAddress: input.driverTaxiStandAddress,
+              workType: input.workType,
               vehiclePlate: input.vehiclePlate,
-              taxiStandName: input.taxiStandName,
-              serviceCity: "ankara",
+              vehicleBrand: input.vehicleBrand,
+              vehicleModel: input.vehicleModel,
+              vehicleModelYear: input.vehicleModelYear,
+              registrationOwnerType: input.registrationOwnerType,
+              hasVehicleUseAuthorization: input.hasVehicleUseAuthorization,
+              vehicleTaxiStandName: input.vehicleTaxiStandName,
               status: "pendingReview",
               submittedAt: now,
               updatedAt: now,
               reviewedAt: null,
               rejectionReasonCode: null,
               submissionVersion: transition.submissionVersion,
+              documentSetId,
+              informationAccuracyAccepted: true,
+              documentValidityNotificationAccepted: true,
+              documentProcessingNoticeAccepted: true,
+              kvkkNoticeAccepted: true,
+              termsAccepted: true,
+              marketingConsent: input.marketingConsent,
             });
+            for (const document of copiedDocuments) {
+              transaction.set(
+                applicationReference.collection("documents")
+                  .doc(document.documentType),
+                {
+                  documentType: document.documentType,
+                  storagePath: document.path,
+                  contentType: document.metadata.contentType,
+                  sizeBytes: document.metadata.sizeBytes,
+                  uploadedAt: Timestamp.fromMillis(
+                    document.metadata.uploadedAtMillis,
+                  ),
+                  reviewStatus: "pendingReview",
+                  reviewedAt: null,
+                  rejectionReasonCode: null,
+                  documentSetId,
+                  submissionVersion: transition.submissionVersion,
+                  storageGeneration: document.metadata.generation ?? null,
+                },
+              );
+            }
             return transition.submissionVersion;
           },
         );
       } catch (error: unknown) {
+        await cleanupCopiedDocuments();
         if (error instanceof HttpsError) throw error;
         logger.error("Driver application persistence failed", {
           errorType: error instanceof Error ? error.name : "UnknownError",
@@ -470,6 +615,9 @@ export const submitDriverApplication =
           {reason: "driver_application_persistence_failed"},
         );
       }
+
+      await Promise.allSettled(stagingDocuments.map((item) =>
+        item.file.delete({ignoreNotFound: true})));
 
       return {
         status: "pendingReview",

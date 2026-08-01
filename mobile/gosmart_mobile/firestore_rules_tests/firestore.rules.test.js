@@ -135,6 +135,18 @@ beforeEach(async () => {
       submittedAt: currentPurchase, updatedAt: currentPurchase,
       reviewedAt: null, rejectionReasonCode: null, submissionVersion: 1,
     });
+    batch.set(doc(db, 'driverApplications/user-a/documents/driverLicenseFront'), {
+      documentType: 'driverLicenseFront', reviewStatus: 'pendingReview',
+      storagePath: 'driverApplicationSubmissions/user-a/set-a/driverLicenseFront',
+    });
+    batch.set(doc(db, 'driverApplications/user-b/documents/driverLicenseFront'), {
+      documentType: 'driverLicenseFront', reviewStatus: 'pendingReview',
+      storagePath: 'driverApplicationSubmissions/user-b/set-b/driverLicenseFront',
+    });
+    batch.set(doc(db, 'driverApplications/user-mismatch/documents/driverLicenseFront'), {
+      documentType: 'driverLicenseFront', reviewStatus: 'pendingReview',
+      storagePath: 'driverApplicationSubmissions/user-mismatch/set-c/driverLicenseFront',
+    });
     await batch.commit();
   });
 });
@@ -362,3 +374,34 @@ const applicationWrites = [
 for (const [name, operation] of applicationWrites) {
   test(`${name} is denied`, async () => assertFails(operation(dbFor('user-a'))));
 }
+
+test('70 unauthenticated user cannot read document metadata', async () => {
+  await assertFails(getDoc(doc(dbFor(), 'driverApplications/user-a/documents/driverLicenseFront')));
+});
+test('71 user-a can get own document metadata', async () => {
+  await assertSucceeds(getDoc(doc(dbFor('user-a'), 'driverApplications/user-a/documents/driverLicenseFront')));
+});
+test('72 user-a cannot get user-b document metadata', async () => {
+  await assertFails(getDoc(doc(dbFor('user-a'), 'driverApplications/user-b/documents/driverLicenseFront')));
+});
+test('73 user-a cannot list document metadata', async () => {
+  await assertFails(getDocs(collection(dbFor('user-a'), 'driverApplications/user-a/documents')));
+});
+test('74 user-a cannot create document metadata', async () => {
+  await assertFails(setDoc(doc(dbFor('user-a'), 'driverApplications/user-a/documents/newDocument'), { documentType: 'newDocument' }));
+});
+test('75 user-a cannot update document reviewStatus', async () => {
+  await assertFails(updateDoc(doc(dbFor('user-a'), 'driverApplications/user-a/documents/driverLicenseFront'), { reviewStatus: 'approved' }));
+});
+test('76 user-a cannot update document storagePath', async () => {
+  await assertFails(updateDoc(doc(dbFor('user-a'), 'driverApplications/user-a/documents/driverLicenseFront'), { storagePath: 'other' }));
+});
+test('77 user-a cannot delete document metadata', async () => {
+  await assertFails(deleteDoc(doc(dbFor('user-a'), 'driverApplications/user-a/documents/driverLicenseFront')));
+});
+test('78 mismatched parent prevents document metadata read', async () => {
+  await assertFails(getDoc(doc(dbFor('user-mismatch'), 'driverApplications/user-mismatch/documents/driverLicenseFront')));
+});
+test('79 application writes remain denied with serviceCity', async () => {
+  await assertFails(setDoc(doc(dbFor('user-a'), 'driverApplications/user-a-new'), { authUserId: 'user-a', serviceCity: 'ankara' }));
+});

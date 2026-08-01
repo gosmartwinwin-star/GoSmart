@@ -1,0 +1,57 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedInAs(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isKnownDocumentType(documentType) {
+      return documentType == 'driverLicenseFront'
+        || documentType == 'driverLicenseBack'
+        || documentType == 'identityCardFront'
+        || documentType == 'identityCardBack'
+        || documentType == 'vehicleRegistration'
+        || documentType == 'driverProfilePhoto'
+        || documentType == 'criminalRecord';
+    }
+
+    function allowsPdf(documentType) {
+      return documentType == 'vehicleRegistration'
+        || documentType == 'criminalRecord';
+    }
+
+    function contentTypeAllowed(documentType) {
+      return request.resource.contentType == 'image/jpeg'
+        || request.resource.contentType == 'image/png'
+        || (allowsPdf(documentType)
+          && request.resource.contentType == 'application/pdf');
+    }
+
+    function sizeAllowed(documentType) {
+      return request.resource.size > 0
+        && request.resource.size <= (documentType == 'driverProfilePhoto'
+          ? 5 * 1024 * 1024
+          : 10 * 1024 * 1024);
+    }
+
+    match /driverApplicationUploads/{userId}/{documentType}/current {
+      allow read: if isSignedInAs(userId);
+      allow create, update: if isSignedInAs(userId)
+        && request.resource != null
+        && isKnownDocumentType(documentType)
+        && contentTypeAllowed(documentType)
+        && sizeAllowed(documentType)
+        && request.resource.metadata.documentType == documentType
+        && request.resource.metadata.ownerUid == userId;
+      allow delete: if false;
+    }
+
+    match /driverApplicationSubmissions/{userId}/{documentSetId}/{documentType} {
+      allow read, write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
