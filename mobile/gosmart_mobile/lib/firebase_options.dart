@@ -57,7 +57,6 @@ class DefaultFirebaseOptions {
     projectId: 'gosmart-fd8f6',
     storageBucket: 'gosmart-fd8f6.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBm53BUi08mjQdQDLVPm_CybOPguysauvM',
     appId: '1:367158650760:ios:89050f1838df9acfcbfc3d',
@@ -66,7 +65,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'gosmart-fd8f6.firebasestorage.app',
     iosBundleId: 'com.example.gosmartMobile',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBm53BUi08mjQdQDLVPm_CybOPguysauvM',
     appId: '1:367158650760:ios:89050f1838df9acfcbfc3d',
