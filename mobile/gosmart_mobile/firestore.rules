@@ -14,7 +14,10 @@ service cloud.firestore {
     match /driverApplications/{applicationId} {
       allow get: if isSignedIn()
         && applicationId == request.auth.uid
-        && resource.data.authUserId == request.auth.uid;
+        && (
+          !exists(/databases/$(database)/documents/driverApplications/$(applicationId))
+          || resource.data.authUserId == request.auth.uid
+        );
       allow list: if false;
       allow create, update, delete: if false;
 

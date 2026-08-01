@@ -338,6 +338,20 @@ test('53 no client can write active return route lock', async () => {
 test('54 unauthenticated user cannot read an application', async () => {
   await assertFails(getDoc(doc(dbFor(), 'driverApplications/user-a')));
 });
+test('54a unauthenticated user cannot read a missing application', async () => {
+  await assertFails(getDoc(doc(dbFor(), 'driverApplications/user-none')));
+});
+test('54b user can get their own missing application as a non-existing snapshot', async () => {
+  const snapshot = await assertSucceeds(
+    getDoc(doc(dbFor('user-none'), 'driverApplications/user-none')),
+  );
+  assert.equal(snapshot.exists(), false);
+});
+test('54c user cannot get another user missing application', async () => {
+  await assertFails(
+    getDoc(doc(dbFor('user-a'), 'driverApplications/user-none')),
+  );
+});
 test('55 user-a can read own application', async () => {
   await assertSucceeds(getDoc(doc(dbFor('user-a'), 'driverApplications/user-a')));
 });
