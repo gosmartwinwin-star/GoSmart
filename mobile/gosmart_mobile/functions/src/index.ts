@@ -34,6 +34,16 @@ import {
   validateDocumentMetadata,
   validateVerifiedPhone,
 } from "./driver-application-helpers.js";
+import {requireGoSmartAdmin} from "./admin-authorization-helpers.js";
+import {
+  buildReviewAuditEvent,
+  determineDocumentReviewTransition,
+  hasAllRequiredApprovedDocuments,
+  validateApplicationReviewPayload,
+  validateCurrentApplicationVersion,
+  validateCurrentDocumentMetadata,
+  validateDocumentReviewPayload,
+} from "./driver-application-review-helpers.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -628,6 +638,154 @@ export const submitDriverApplication =
     },
   );
 
+/* eslint-disable max-len */
+export const reviewDriverApplicationDocument = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const input = validateDocumentReviewPayload(request.data);
+    const now = Timestamp.now();
+    const applicationRef = firestore.collection("driverApplications")
+      .doc(input.applicationId);
+    const documentRef = applicationRef.collection("documents")
+      .doc(input.documentType);
+    const auditRef = firestore.collection("driverApplicationReviewEvents").doc();
+    try {
+      return await firestore.runTransaction(async (transaction) => {
+        const [application, document] = await Promise.all([
+          transaction.get(applicationRef), transaction.get(documentRef),
+        ]);
+        if (!application.exists) {
+          throw new HttpsError("not-found", "Başvuru bulunamadı.",
+            {reason: "driver_application_not_found"});
+        }
+        if (!document.exists) {
+          throw new HttpsError("not-found", "Belge bulunamadı.",
+            {reason: "driver_application_document_not_found"});
+        }
+        const applicationData = application.data() ?? {};
+        const documentData = document.data() ?? {};
+        validateCurrentApplicationVersion(applicationData,
+          input.submissionVersion, input.documentSetId);
+        validateCurrentDocumentMetadata(documentData, input);
+        const transition = determineDocumentReviewTransition(
+          documentData.reviewStatus, input.decision);
+        const idempotentReupload = transition.idempotent &&
+          transition.status === "reuploadRequired" &&
+          applicationData.status === "rejected";
+        if (applicationData.status !== "pendingReview" && !idempotentReupload) {
+          throw new HttpsError("failed-precondition", "Başvuru incelemeye açık değildir.",
+            {reason: "driver_application_not_pending"});
+        }
+        if (transition.idempotent) {
+          const reviewedAt = documentData.reviewedAt;
+          if (!(reviewedAt instanceof Timestamp)) {
+            throw new HttpsError("internal", "İnceleme verisi doğrulanamadı.",
+              {reason: "driver_application_review_data_invalid"});
+          }
+          return {applicationStatus: applicationData.status,
+            documentStatus: transition.status,
+            reviewedAtMillis: reviewedAt.toMillis()};
+        }
+        transaction.update(documentRef, {reviewStatus: transition.status,
+          reviewedAt: now, rejectionReasonCode: input.reasonCode,
+          reviewedByAdminUid: reviewerUid});
+        const applicationStatus = transition.status === "reuploadRequired" ?
+          "rejected" : "pendingReview";
+        if (applicationStatus === "rejected") {
+          transaction.update(applicationRef, {status: "rejected", updatedAt: now,
+            reviewedAt: now, rejectionReasonCode: "document_reupload_required",
+            reviewedByAdminUid: reviewerUid});
+        }
+        transaction.create(auditRef, buildReviewAuditEvent({
+          applicationId: input.applicationId, reviewerAuthUserId: reviewerUid,
+          eventType: transition.status === "approved" ? "documentApproved" :
+            "documentReuploadRequired", documentType: input.documentType,
+          reasonCode: input.reasonCode, submissionVersion: input.submissionVersion,
+          documentSetId: input.documentSetId, now,
+        }));
+        return {applicationStatus, documentStatus: transition.status,
+          reviewedAtMillis: now.toMillis()};
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "İnceleme kaydedilemedi.",
+        {reason: "driver_application_review_persistence_failed"});
+    }
+  },
+);
+
+export const reviewDriverApplication = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const input = validateApplicationReviewPayload(request.data);
+    const now = Timestamp.now();
+    const applicationRef = firestore.collection("driverApplications")
+      .doc(input.applicationId);
+    const documentRefs = getRequiredDocumentTypes().map((type) =>
+      applicationRef.collection("documents").doc(type));
+    const profileQuery = firestore.collection("driverProfiles")
+      .where("authUserId", "==", input.applicationId).limit(2);
+    const profileRef = firestore.collection("driverProfiles").doc(input.applicationId);
+    const auditRef = firestore.collection("driverApplicationReviewEvents").doc();
+    try {
+      return await firestore.runTransaction(async (transaction) => {
+        const [application, profiles, ...documents] = await Promise.all([
+          transaction.get(applicationRef), transaction.get(profileQuery),
+          ...documentRefs.map((ref) => transaction.get(ref)),
+        ]);
+        if (!application.exists) {
+          throw new HttpsError("not-found", "Başvuru bulunamadı.",
+            {reason: "driver_application_not_found"});
+        }
+        const data = application.data() ?? {};
+        validateCurrentApplicationVersion(data, input.submissionVersion,
+          input.documentSetId);
+        if (data.status !== "pendingReview") {
+          throw new HttpsError("failed-precondition", "Başvuru incelemeye açık değildir.",
+            {reason: "driver_application_not_pending"});
+        }
+        if (profiles.size > 1 || (!profiles.empty && input.decision === "approve")) {
+          throw new HttpsError("failed-precondition", "Sürücü profili zaten bulunmaktadır.",
+            {reason: "driver_profile_exists"});
+        }
+        if (input.decision === "approve") {
+          const documentData = documents.filter((item) => item.exists)
+            .map((item) => item.data() ?? {});
+          if (!hasAllRequiredApprovedDocuments(documentData,
+            input.applicationId, input.submissionVersion, input.documentSetId)) {
+            throw new HttpsError("failed-precondition", "Belgeler onaylanmamıştır.",
+              {reason: "driver_application_documents_not_approved"});
+          }
+          transaction.create(profileRef, {authUserId: input.applicationId,
+            status: "approved", createdAt: now, approvedAt: now, suspendedAt: null});
+        }
+        const status = input.decision === "approve" ? "approved" : "rejected";
+        transaction.update(applicationRef, {status, updatedAt: now, reviewedAt: now,
+          rejectionReasonCode: input.rejectionReasonCode,
+          reviewedByAdminUid: reviewerUid});
+        transaction.create(auditRef, buildReviewAuditEvent({
+          applicationId: input.applicationId, reviewerAuthUserId: reviewerUid,
+          eventType: status === "approved" ? "applicationApproved" :
+            "applicationRejected", reasonCode: input.rejectionReasonCode,
+          submissionVersion: input.submissionVersion,
+          documentSetId: input.documentSetId, now,
+        }));
+        return {status, reviewedAtMillis: now.toMillis(),
+          driverProfileCreated: status === "approved"};
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "İnceleme kaydedilemedi.",
+        {reason: "driver_application_review_persistence_failed"});
+    }
+  },
+);
+
+/* eslint-enable max-len */
 export const publishReturnRoute = onCall<PublishReturnRouteInput>(
   {
     region: "europe-west1",

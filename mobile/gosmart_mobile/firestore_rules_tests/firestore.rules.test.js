@@ -419,3 +419,24 @@ test('78 mismatched parent prevents document metadata read', async () => {
 test('79 application writes remain denied with serviceCity', async () => {
   await assertFails(setDoc(doc(dbFor('user-a'), 'driverApplications/user-a-new'), { authUserId: 'user-a', serviceCity: 'ankara' }));
 });
+
+test('80 unauthenticated user cannot get review audit event', async () => {
+  await assertFails(getDoc(doc(dbFor(), 'driverApplicationReviewEvents/event-a')));
+});
+test('81 authenticated user cannot get or list review audit events', async () => {
+  const db = dbFor('user-a');
+  await assertFails(getDoc(doc(db, 'driverApplicationReviewEvents/event-a')));
+  await assertFails(getDocs(collection(db, 'driverApplicationReviewEvents')));
+});
+test('82 authenticated user cannot write review audit events', async () => {
+  const reference = doc(dbFor('user-a'), 'driverApplicationReviewEvents/event-a');
+  await assertFails(setDoc(reference, {eventType: 'applicationApproved'}));
+  await assertFails(updateDoc(reference, {eventType: 'applicationRejected'}));
+  await assertFails(deleteDoc(reference));
+});
+test('83 custom-claim admin client still cannot write review audit events', async () => {
+  const db = testEnv.authenticatedContext('admin-a', {gosmartAdmin: true}).firestore();
+  await assertFails(setDoc(doc(db, 'driverApplicationReviewEvents/event-a'), {
+    eventType: 'applicationApproved',
+  }));
+});
