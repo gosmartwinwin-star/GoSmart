@@ -8,8 +8,11 @@ import '../../domain/driver_application/driver_application_document_type.dart';
 import '../../domain/driver_application/driver_work_type.dart';
 import '../../domain/driver_application/registration_owner_type.dart';
 import '../../infrastructure/file_picker/flutter_driver_application_file_picker.dart';
+import '../../infrastructure/vehicle_catalog/asset_vehicle_catalog_repository.dart';
 import '../../services/driver_application_document_upload_service.dart';
 import '../../services/submit_driver_application_service.dart';
+import '../../domain/driver_application/vehicle_catalog.dart';
+import '../../widgets/forms/searchable_selection_field.dart';
 
 class DriverApplicationScreen extends StatefulWidget {
   final DriverApplicationFormController? controller;
@@ -41,8 +44,10 @@ class _DriverApplicationScreenState extends State<DriverApplicationScreen> {
           uploader: DriverApplicationDocumentUploadService(),
           submitter: SubmitDriverApplicationService(),
           userInfo: FirebaseDriverApplicationUserInfoProvider(),
+          vehicleCatalogRepository: AssetVehicleCatalogRepository(),
         );
     controller.addListener(_refresh);
+    controller.loadVehicleCatalog();
   }
 
   void _refresh() {
@@ -66,9 +71,6 @@ class _DriverApplicationScreenState extends State<DriverApplicationScreen> {
       ..driverTaxiStandName = fields[2].text
       ..driverTaxiStandAddress = fields[3].text
       ..vehiclePlate = fields[4].text
-      ..vehicleBrand = fields[5].text
-      ..vehicleModel = fields[6].text
-      ..vehicleModelYear = fields[7].text
       ..vehicleTaxiStandName = fields[8].text;
   }
 
@@ -216,9 +218,92 @@ class _DriverApplicationScreenState extends State<DriverApplicationScreen> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _field(4, 'Araç Plakası'),
-      _field(5, 'Araç Markası'),
-      _field(6, 'Araç Modeli'),
-      _field(7, 'Model Yılı', keyboard: TextInputType.number),
+      if (controller.isVehicleCatalogLoading)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: LinearProgressIndicator(),
+        ),
+      if (controller.vehicleCatalogErrorMessage != null) ...[
+        Text(controller.vehicleCatalogErrorMessage!),
+        TextButton(
+          onPressed: controller.selectManualVehicleBrand,
+          child: const Text('Marka ve modeli elle gir'),
+        ),
+      ],
+      SearchableSelectionField(
+        label: 'Araç Markası',
+        hint: 'Marka seçin',
+        selectedValue: controller.isManualVehicleBrand
+            ? 'Listede yok'
+            : controller.selectedVehicleBrand,
+        items:
+            controller.vehicleCatalog?.brands
+                .map((item) => item.name)
+                .toList() ??
+            const [],
+        enabled:
+            !controller.isVehicleCatalogLoading &&
+            controller.vehicleCatalog != null,
+        specialOption: 'Listede yok',
+        onSelected: (value) => value == 'Listede yok'
+            ? controller.selectManualVehicleBrand()
+            : controller.selectVehicleBrand(value),
+      ),
+      const SizedBox(height: 12),
+      if (controller.isManualVehicleBrand)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: TextField(
+            controller: fields[5],
+            maxLength: 50,
+            decoration: const InputDecoration(
+              labelText: 'Araç Markası (manuel)',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: controller.updateManualVehicleBrand,
+          ),
+        ),
+      if (!controller.isManualVehicleBrand)
+        SearchableSelectionField(
+          label: 'Araç Modeli',
+          hint: controller.selectedVehicleBrand == null
+              ? 'Önce araç markasını seçin.'
+              : 'Model seçin',
+          selectedValue: controller.isManualVehicleModel
+              ? 'Diğer model'
+              : controller.selectedVehicleModel,
+          items: controller.availableVehicleModels,
+          enabled: controller.selectedVehicleBrand != null,
+          specialOption: 'Diğer model',
+          onSelected: (value) => value == 'Diğer model'
+              ? controller.selectManualVehicleModel()
+              : controller.selectVehicleModel(value),
+        ),
+      if (controller.isManualVehicleBrand ||
+          controller.isManualVehicleModel) ...[
+        const SizedBox(height: 12),
+        TextField(
+          controller: fields[6],
+          maxLength: 80,
+          decoration: const InputDecoration(
+            labelText: 'Araç Modeli (manuel)',
+            border: OutlineInputBorder(),
+          ),
+          onChanged: controller.updateManualVehicleModel,
+        ),
+      ],
+      const SizedBox(height: 12),
+      SearchableSelectionField(
+        label: 'Model Yılı',
+        hint: 'Model yılı seçin',
+        selectedValue: controller.selectedVehicleModelYear?.toString(),
+        items: VehicleModelYearOptions.build(
+          currentUtcYear: DateTime.now().toUtc().year,
+        ).map((year) => year.toString()).toList(),
+        onSelected: (value) =>
+            controller.selectVehicleModelYear(int.parse(value)),
+      ),
+      const SizedBox(height: 12),
       DropdownButtonFormField<RegistrationOwnerType>(
         initialValue: controller.registrationOwnerType,
         decoration: const InputDecoration(
@@ -331,9 +416,11 @@ class _DriverApplicationScreenState extends State<DriverApplicationScreen> {
       Text('Ad Soyad: ${controller.fullName}'),
       Text('Çalışma tipi: ${controller.workType?.displayName ?? '-'}'),
       Text(
-        'Araç: ${controller.vehiclePlate} • ${controller.vehicleBrand} ${controller.vehicleModel}',
+        'Araç: ${controller.vehiclePlate} • ${controller.effectiveVehicleBrand ?? controller.vehicleBrand} ${controller.effectiveVehicleModel ?? controller.vehicleModel}',
       ),
-      Text('Model yılı: ${controller.vehicleModelYear}'),
+      Text(
+        'Model yılı: ${controller.selectedVehicleModelYear ?? controller.vehicleModelYear}',
+      ),
       Text(
         'Ruhsat sahibi: ${controller.registrationOwnerType?.displayName ?? '-'}',
       ),

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "brands": [
+    {"name":"Citroën","models":["Berlingo","C-Elysée","C3","C4"]},
+    {"name":"Dacia","models":["Dokker","Duster","Jogger","Logan","Sandero"]},
+    {"name":"Fiat","models":["Albea","Doblo","Egea","Fiorino","Linea"]},
+    {"name":"Ford","models":["Courier","Focus","Mondeo","Tourneo Connect","Transit Connect"]},
+    {"name":"Honda","models":["Accord","City","Civic","CR-V"]},
+    {"name":"Hyundai","models":["Accent","Bayon","Elantra","i20","i30"]},
+    {"name":"Kia","models":["Ceed","Cerato","Rio","Sportage","Stonic"]},
+    {"name":"Mercedes-Benz","models":["Citan","E-Serisi","Vito"]},
+    {"name":"Opel","models":["Astra","Combo","Corsa","Insignia"]},
+    {"name":"Peugeot","models":["301","308","Partner","Rifter"]},
+    {"name":"Renault","models":["Clio","Fluence","Megane","Symbol","Taliant"]},
+    {"name":"Škoda","models":["Fabia","Octavia","Rapid","Scala","Superb"]},
+    {"name":"Toyota","models":["Auris","Corolla","Proace City","Yaris"]},
+    {"name":"Volkswagen","models":["Caddy","Golf","Jetta","Passat","Polo"]}
+  ]
+}

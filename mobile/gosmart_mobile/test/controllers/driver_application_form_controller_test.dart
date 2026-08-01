@@ -6,10 +6,12 @@ import 'package:gosmart_mobile/application/driver_application/driver_application
 import 'package:gosmart_mobile/application/driver_application/driver_application_document_upload_result.dart';
 import 'package:gosmart_mobile/application/driver_application/driver_application_file_picker.dart';
 import 'package:gosmart_mobile/application/driver_application/submit_driver_application_gateway.dart';
+import 'package:gosmart_mobile/application/driver_application/vehicle_catalog_repository.dart';
 import 'package:gosmart_mobile/controllers/driver_application_form_controller.dart';
 import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
 import 'package:gosmart_mobile/domain/driver_application/driver_work_type.dart';
 import 'package:gosmart_mobile/domain/driver_application/registration_owner_type.dart';
+import 'package:gosmart_mobile/domain/driver_application/vehicle_catalog.dart';
 
 class UserInfo implements DriverApplicationUserInfoProvider {
   @override
@@ -91,15 +93,34 @@ class Submitter implements SubmitDriverApplicationGateway {
   }
 }
 
+class CatalogRepository implements VehicleCatalogRepository {
+  Object? error;
+  int calls = 0;
+  @override
+  Future<VehicleCatalog> load() async {
+    calls++;
+    if (error != null) throw error!;
+    return VehicleCatalog(
+      version: 1,
+      brands: [
+        VehicleBrand(name: 'Fiat', models: ['Egea', 'Linea']),
+        VehicleBrand(name: 'Ford', models: ['Focus']),
+      ],
+    );
+  }
+}
+
 DriverApplicationFormController create(
   Picker picker,
   Uploader uploader,
-  Submitter submitter,
-) => DriverApplicationFormController(
+  Submitter submitter, {
+  VehicleCatalogRepository? catalogRepository,
+}) => DriverApplicationFormController(
   picker: picker,
   uploader: uploader,
   submitter: submitter,
   userInfo: UserInfo(),
+  vehicleCatalogRepository: catalogRepository,
 );
 void validFirst(DriverApplicationFormController value) {
   value.fullName = 'Ali Veli';
@@ -115,6 +136,55 @@ void validVehicle(DriverApplicationFormController value) {
 }
 
 void main() {
+  test('katalog yüklenir ve marka değişince model temizlenir', () async {
+    final repository = CatalogRepository();
+    final value = create(
+      Picker(),
+      Uploader(),
+      Submitter(),
+      catalogRepository: repository,
+    );
+    await value.loadVehicleCatalog();
+    await value.loadVehicleCatalog();
+    expect(repository.calls, 1);
+    value.selectVehicleBrand('Fiat');
+    expect(value.availableVehicleModels, ['Egea', 'Linea']);
+    value.selectVehicleModel('Egea');
+    value.selectVehicleBrand('Ford');
+    expect(value.effectiveVehicleModel, isNull);
+  });
+
+  test('manuel marka ve model gerçek backend değerlerini üretir', () async {
+    final value = create(
+      Picker(),
+      Uploader(),
+      Submitter(),
+      catalogRepository: CatalogRepository(),
+    );
+    await value.loadVehicleCatalog();
+    value.selectManualVehicleBrand();
+    value.updateManualVehicleBrand('  Yerli Marka  ');
+    value.updateManualVehicleModel('  Özel Model  ');
+    value.selectVehicleModelYear(2024);
+    expect(value.effectiveVehicleBrand, 'Yerli Marka');
+    expect(value.effectiveVehicleModel, 'Özel Model');
+    expect(value.selectedVehicleModelYear, 2024);
+  });
+
+  test('katalog hatası güvenli state üretir ve manuel giriş açıktır', () async {
+    final repository = CatalogRepository()..error = StateError('raw');
+    final value = create(
+      Picker(),
+      Uploader(),
+      Submitter(),
+      catalogRepository: repository,
+    );
+    await value.loadVehicleCatalog();
+    expect(value.vehicleCatalogErrorMessage, 'Araç listesi yüklenemedi.');
+    value.selectManualVehicleBrand();
+    expect(value.isManualVehicleBrand, isTrue);
+    expect(value.isManualVehicleModel, isTrue);
+  });
   test('ilk adım seçili ve eksik ad/çalışma tipiyle ilerlenemez', () {
     final value = create(Picker(), Uploader(), Submitter());
     expect(value.currentStep, 0);

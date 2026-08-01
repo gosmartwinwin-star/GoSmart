@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import '../application/driver_application/driver_application_document_upload_gateway.dart';
 import '../application/driver_application/driver_application_file_picker.dart';
 import '../application/driver_application/submit_driver_application_gateway.dart';
+import '../application/driver_application/vehicle_catalog_repository.dart';
 import '../domain/driver_application/driver_application_document_type.dart';
 import '../domain/driver_application/driver_work_type.dart';
 import '../domain/driver_application/registration_owner_type.dart';
+import '../domain/driver_application/vehicle_catalog.dart';
 import '../services/submit_driver_application_service.dart';
 
 enum DriverApplicationUploadState {
@@ -37,6 +39,7 @@ class DriverApplicationFormController extends ChangeNotifier {
   final DriverApplicationDocumentUploadGateway _uploader;
   final SubmitDriverApplicationGateway _submitter;
   final DriverApplicationUserInfoProvider _userInfo;
+  final VehicleCatalogRepository? _catalogRepository;
 
   int currentStep = 0;
   String fullName = '';
@@ -48,6 +51,17 @@ class DriverApplicationFormController extends ChangeNotifier {
   String vehicleBrand = '';
   String vehicleModel = '';
   String vehicleModelYear = '';
+  bool isVehicleCatalogLoading = false;
+  String? vehicleCatalogErrorMessage;
+  VehicleCatalog? vehicleCatalog;
+  String? selectedVehicleBrand;
+  bool isManualVehicleBrand = false;
+  String manualVehicleBrand = '';
+  String? selectedVehicleModel;
+  bool isManualVehicleModel = false;
+  String manualVehicleModel = '';
+  int? selectedVehicleModelYear;
+  bool _catalogLoadAttempted = false;
   RegistrationOwnerType? registrationOwnerType;
   bool hasVehicleUseAuthorization = false;
   String vehicleTaxiStandName = '';
@@ -74,10 +88,120 @@ class DriverApplicationFormController extends ChangeNotifier {
     required DriverApplicationDocumentUploadGateway uploader,
     required SubmitDriverApplicationGateway submitter,
     required DriverApplicationUserInfoProvider userInfo,
+    VehicleCatalogRepository? vehicleCatalogRepository,
   }) : _picker = picker,
        _uploader = uploader,
        _submitter = submitter,
-       _userInfo = userInfo;
+       _userInfo = userInfo,
+       _catalogRepository = vehicleCatalogRepository;
+
+  String? get effectiveVehicleBrand {
+    final value = isManualVehicleBrand
+        ? manualVehicleBrand
+        : selectedVehicleBrand;
+    return value?.trim().isEmpty == false ? value!.trim() : null;
+  }
+
+  String? get effectiveVehicleModel {
+    final value = isManualVehicleModel
+        ? manualVehicleModel
+        : selectedVehicleModel;
+    return value?.trim().isEmpty == false ? value!.trim() : null;
+  }
+
+  List<String> get availableVehicleModels {
+    final brand = vehicleCatalog?.brands
+        .where((item) => item.name == selectedVehicleBrand)
+        .firstOrNull;
+    return brand?.models ?? const [];
+  }
+
+  Future<void> loadVehicleCatalog() async {
+    if (_catalogLoadAttempted || _catalogRepository == null) return;
+    _catalogLoadAttempted = true;
+    isVehicleCatalogLoading = true;
+    _notify();
+    try {
+      vehicleCatalog = await _catalogRepository.load();
+      vehicleCatalogErrorMessage = null;
+    } catch (_) {
+      vehicleCatalogErrorMessage = 'Araç listesi yüklenemedi.';
+    } finally {
+      isVehicleCatalogLoading = false;
+      _notify();
+    }
+  }
+
+  void selectVehicleBrand(String brand) {
+    if (!vehicleCatalog!.brands.any((item) => item.name == brand)) {
+      throw ArgumentError.value(brand);
+    }
+    final changedBrand = selectedVehicleBrand != brand || isManualVehicleBrand;
+    selectedVehicleBrand = brand;
+    isManualVehicleBrand = false;
+    manualVehicleBrand = '';
+    vehicleBrand = brand;
+    if (changedBrand) _clearVehicleModel();
+    _notify();
+  }
+
+  void selectManualVehicleBrand() {
+    selectedVehicleBrand = null;
+    isManualVehicleBrand = true;
+    manualVehicleBrand = '';
+    vehicleBrand = '';
+    _clearVehicleModel(manual: true);
+    _notify();
+  }
+
+  void updateManualVehicleBrand(String value) {
+    manualVehicleBrand = value;
+    vehicleBrand = value.trim();
+    _notify();
+  }
+
+  void selectVehicleModel(String model) {
+    if (selectedVehicleBrand == null ||
+        !availableVehicleModels.contains(model)) {
+      throw ArgumentError.value(model);
+    }
+    selectedVehicleModel = model;
+    isManualVehicleModel = false;
+    manualVehicleModel = '';
+    vehicleModel = model;
+    _notify();
+  }
+
+  void selectManualVehicleModel() {
+    if (selectedVehicleBrand == null && !isManualVehicleBrand) {
+      throw StateError('Önce marka seçilmelidir.');
+    }
+    selectedVehicleModel = null;
+    isManualVehicleModel = true;
+    manualVehicleModel = '';
+    vehicleModel = '';
+    _notify();
+  }
+
+  void updateManualVehicleModel(String value) {
+    manualVehicleModel = value;
+    vehicleModel = value.trim();
+    _notify();
+  }
+
+  void selectVehicleModelYear(int year) {
+    selectedVehicleModelYear = year;
+    vehicleModelYear = year.toString();
+    _notify();
+  }
+
+  void _clearVehicleModel({bool manual = false}) {
+    selectedVehicleModel = null;
+    isManualVehicleModel = manual;
+    manualVehicleModel = '';
+    vehicleModel = '';
+    errorMessage = null;
+  }
 
   String? get verifiedPhoneNumber => _userInfo.verifiedPhoneNumber;
   bool get allDocumentsUploaded => uploadStates.values.every(
@@ -113,11 +237,12 @@ class DriverApplicationFormController extends ChangeNotifier {
     1 =>
       vehiclePlate.trim().isNotEmpty &&
           vehiclePlate.length <= 15 &&
-          vehicleBrand.trim().isNotEmpty &&
-          vehicleBrand.length <= 50 &&
-          vehicleModel.trim().isNotEmpty &&
-          vehicleModel.length <= 80 &&
-          RegExp(r'^\d{4}$').hasMatch(vehicleModelYear) &&
+          (effectiveVehicleBrand ?? vehicleBrand.trim()).isNotEmpty &&
+          (effectiveVehicleBrand ?? vehicleBrand.trim()).length <= 50 &&
+          (effectiveVehicleModel ?? vehicleModel.trim()).isNotEmpty &&
+          (effectiveVehicleModel ?? vehicleModel.trim()).length <= 80 &&
+          (selectedVehicleModelYear != null ||
+              RegExp(r'^\d{4}$').hasMatch(vehicleModelYear)) &&
           registrationOwnerType != null &&
           authorizationValid,
     2 => allDocumentsUploaded,
@@ -201,9 +326,10 @@ class DriverApplicationFormController extends ChangeNotifier {
         driverTaxiStandAddress: driverTaxiStandAddress,
         workType: workType!,
         vehiclePlate: vehiclePlate,
-        vehicleBrand: vehicleBrand,
-        vehicleModel: vehicleModel,
-        vehicleModelYear: int.parse(vehicleModelYear),
+        vehicleBrand: effectiveVehicleBrand ?? vehicleBrand.trim(),
+        vehicleModel: effectiveVehicleModel ?? vehicleModel.trim(),
+        vehicleModelYear:
+            selectedVehicleModelYear ?? int.parse(vehicleModelYear),
         registrationOwnerType: registrationOwnerType!,
         hasVehicleUseAuthorization: hasVehicleUseAuthorization,
         vehicleTaxiStandName: vehicleTaxiStandName,
@@ -232,6 +358,10 @@ class DriverApplicationFormController extends ChangeNotifier {
   void _clearSensitiveState() {
     fullName = email = driverTaxiStandName = driverTaxiStandAddress = '';
     vehiclePlate = vehicleBrand = vehicleModel = vehicleModelYear = '';
+    selectedVehicleBrand = selectedVehicleModel = null;
+    manualVehicleBrand = manualVehicleModel = '';
+    isManualVehicleBrand = isManualVehicleModel = false;
+    selectedVehicleModelYear = null;
     vehicleTaxiStandName = '';
     for (final type in uploadStates.keys) {
       uploadStates[type] = DriverApplicationUploadState.notSelected;
@@ -248,8 +378,7 @@ class DriverApplicationFormController extends ChangeNotifier {
     'invalid_vehicle_brand' => 'Araç markası geçerli değil.',
     'invalid_vehicle_model' => 'Araç modeli geçerli değil.',
     'invalid_vehicle_model_year' => 'Araç model yılı geçerli değil.',
-    'invalid_registration_owner_type' =>
-      'Ruhsat sahibi bilgisi geçerli değil.',
+    'invalid_registration_owner_type' => 'Ruhsat sahibi bilgisi geçerli değil.',
     'vehicle_use_authorization_required' =>
       'Bu aracı kullanmaya yetkili olduğunuzu onaylamalısınız.',
     'required_declarations_not_accepted' =>

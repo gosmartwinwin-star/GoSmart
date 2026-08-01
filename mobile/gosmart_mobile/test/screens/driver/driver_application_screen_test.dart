@@ -6,9 +6,11 @@ import 'package:gosmart_mobile/application/driver_application/driver_application
 import 'package:gosmart_mobile/application/driver_application/driver_application_document_upload_result.dart';
 import 'package:gosmart_mobile/application/driver_application/driver_application_file_picker.dart';
 import 'package:gosmart_mobile/application/driver_application/submit_driver_application_gateway.dart';
+import 'package:gosmart_mobile/application/driver_application/vehicle_catalog_repository.dart';
 import 'package:gosmart_mobile/controllers/driver_application_form_controller.dart';
 import 'package:gosmart_mobile/core/branding/gosmart_slogans.dart';
 import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:gosmart_mobile/domain/driver_application/vehicle_catalog.dart';
 import 'package:gosmart_mobile/screens/driver/driver_application_screen.dart';
 
 class Info implements DriverApplicationUserInfoProvider {
@@ -63,18 +65,42 @@ class Submitter implements SubmitDriverApplicationGateway {
   }) => throw UnimplementedError();
 }
 
-DriverApplicationFormController controller() => DriverApplicationFormController(
-  picker: Picker(),
-  uploader: Uploader(),
-  submitter: Submitter(),
-  userInfo: Info(),
-);
+class CatalogRepository implements VehicleCatalogRepository {
+  @override
+  Future<VehicleCatalog> load() async => VehicleCatalog(
+    version: 1,
+    brands: [
+      VehicleBrand(name: 'Fiat', models: ['Egea', 'Linea']),
+    ],
+  );
+}
+
+DriverApplicationFormController controller({bool withCatalog = false}) =>
+    DriverApplicationFormController(
+      picker: Picker(),
+      uploader: Uploader(),
+      submitter: Submitter(),
+      userInfo: Info(),
+      vehicleCatalogRepository: withCatalog ? CatalogRepository() : null,
+    );
 Future<void> show(WidgetTester tester, DriverApplicationFormController value) =>
     tester.pumpWidget(
       MaterialApp(home: DriverApplicationScreen(controller: value)),
     );
 
 void main() {
+  testWidgets('araç alanları seçim tabanlıdır ve model marka öncesi pasiftir', (
+    tester,
+  ) async {
+    final value = controller(withCatalog: true)..currentStep = 1;
+    await show(tester, value);
+    await tester.pumpAndSettle();
+    expect(find.text('Araç Markası'), findsOneWidget);
+    expect(find.text('Araç Modeli'), findsOneWidget);
+    expect(find.text('Model Yılı'), findsOneWidget);
+    expect(find.text('Önce araç markasını seçin.'), findsWidgets);
+    expect(find.widgetWithText(TextField, 'Model Yılı'), findsNothing);
+  });
   testWidgets('başlık slogan ve dört aşama görünür', (tester) async {
     await show(tester, controller());
     expect(find.text('Sürücü Başvurusu'), findsOneWidget);
