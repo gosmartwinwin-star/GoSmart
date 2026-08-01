@@ -4,6 +4,7 @@ import '../application/driver_access/driver_access_pass_repository.dart';
 import '../application/driver_access/driver_profile_repository.dart';
 import '../application/return_route/publish_return_route_gateway.dart';
 import '../application/return_route/published_return_route.dart';
+import '../application/driver_application/driver_application_repository.dart';
 import '../domain/driver/driver_eligibility_policy.dart';
 import '../domain/driver/driver_eligibility_result.dart';
 import '../domain/return_route/geo_coordinate.dart';
@@ -27,6 +28,7 @@ class DriverCenterController extends ChangeNotifier {
   final DriverLocationGateway _location;
   final DriverEligibilityPolicy _eligibilityPolicy;
   final DateTime Function() _now;
+  final DriverApplicationRepository? _applications;
 
   DriverCenterStatus status = DriverCenterStatus.loading;
   DriverEligibilityResult? eligibility;
@@ -39,6 +41,8 @@ class DriverCenterController extends ChangeNotifier {
   bool locationLoading = false;
   bool publishing = false;
   bool _disposed = false;
+  DriverApplicationSummary? application;
+  bool applicationLoadFailed = false;
 
   DriverCenterController({
     required DriverCenterAuthGateway auth,
@@ -48,12 +52,14 @@ class DriverCenterController extends ChangeNotifier {
     required DriverLocationGateway location,
     DriverEligibilityPolicy eligibilityPolicy = const DriverEligibilityPolicy(),
     DateTime Function()? now,
+    DriverApplicationRepository? applications,
   }) : _auth = auth,
        _profiles = profiles,
        _passes = passes,
        _publisher = publisher,
        _location = location,
        _eligibilityPolicy = eligibilityPolicy,
+       _applications = applications,
        _now = now ?? DateTime.now;
 
   bool get canPublish =>
@@ -86,6 +92,18 @@ class DriverCenterController extends ChangeNotifier {
     }
     try {
       final profile = await _profiles.findByAuthenticatedUserId(userId!);
+      if (profile == null && _applications != null) {
+        try {
+          application = await _applications.findForAuthenticatedUser(userId);
+          applicationLoadFailed = false;
+        } catch (_) {
+          application = null;
+          applicationLoadFailed = true;
+        }
+      } else {
+        application = null;
+        applicationLoadFailed = false;
+      }
       final pass = profile == null
           ? null
           : await _passes.findLatestForDriver(profile.id);

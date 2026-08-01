@@ -25,7 +25,8 @@ dependencies:
   location: ^8.0.1
   cloud_firestore: ^6.7.1
   firebase_storage: ^13.4.5
-
+  image_picker: ^1.2.3
+  file_selector: ^1.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

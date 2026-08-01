@@ -9,14 +9,22 @@ import '../../infrastructure/firestore/repositories/firestore_driver_access_pass
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 import '../../models/address_model.dart';
 import '../../services/publish_return_route_service.dart';
+import '../../infrastructure/firestore/repositories/firestore_driver_application_repository.dart';
+import '../../domain/driver_application/driver_application_status.dart';
+import 'driver_application_screen.dart';
 import '../../widgets/driver/active_return_route_card.dart';
 import '../../widgets/driver/return_route_map_preview.dart';
 import '../search/search_address_screen.dart';
 
 class DriverCenterScreen extends StatefulWidget {
   final DriverCenterController? controller;
+  final Widget Function()? applicationScreenBuilder;
 
-  const DriverCenterScreen({super.key, this.controller});
+  const DriverCenterScreen({
+    super.key,
+    this.controller,
+    this.applicationScreenBuilder,
+  });
 
   @override
   State<DriverCenterScreen> createState() => _DriverCenterScreenState();
@@ -38,6 +46,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           passes: FirestoreDriverAccessPassRepository(),
           publisher: PublishReturnRouteService(),
           location: _GeolocatorDriverLocation(),
+          applications: FirestoreDriverApplicationRepository(),
         );
     controller.addListener(_refresh);
     controller.load();
@@ -115,6 +124,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   }
 
   Widget _restricted() {
+    if (controller.rejectionReason == 'driver_profile_required') {
+      return _applicationStatus();
+    }
     final values = switch (controller.rejectionReason) {
       'authentication_required' => (
         'Oturum gerekli',
@@ -146,6 +158,81 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
       description: values.$2,
       footer: values.$3,
     );
+  }
+
+  Widget _applicationStatus() {
+    if (controller.applicationLoadFailed) {
+      return _StatusCard(
+        title: 'Başvuru bilgileri yüklenemedi',
+        description: 'Lütfen tekrar deneyin.',
+        action: TextButton(
+          onPressed: controller.load,
+          child: const Text('Tekrar Dene'),
+        ),
+      );
+    }
+    final application = controller.application;
+    if (application == null) {
+      return _StatusCard(
+        title: 'Sürücü profili gerekli',
+        description:
+            'Dönüş rotası yayımlamak için onaylı bir sürücü profiliniz olmalıdır.',
+        action: FilledButton(
+          onPressed: _openApplication,
+          child: const Text('Sürücü Başvurusu Yap'),
+        ),
+      );
+    }
+    return switch (application.status) {
+      DriverApplicationStatus.pendingReview => _StatusCard(
+        title: 'Başvurunuz inceleniyor',
+        description:
+            'Sürücü başvurunuz değerlendirme aşamasında.\n'
+            'Başvuru tarihi: ${_date(application.submittedAt)}\n'
+            'Başvuru sürümü: ${application.submissionVersion}',
+      ),
+      DriverApplicationStatus.approved => _StatusCard(
+        title: 'Başvurunuz onaylandı',
+        description:
+            'Sürücü profiliniz hazırlanıyor. Kısa süre sonra tekrar kontrol edin.',
+        action: TextButton(
+          onPressed: controller.load,
+          child: const Text('Tekrar Kontrol Et'),
+        ),
+      ),
+      DriverApplicationStatus.rejected => _StatusCard(
+        title: 'Sürücü başvurunuz onaylanmadı',
+        description:
+            'Bilgilerinizi ve belgelerinizi kontrol ederek yeniden başvuru yapabilirsiniz.',
+        action: FilledButton(
+          onPressed: _openApplication,
+          child: const Text('Yeniden Başvur'),
+        ),
+      ),
+      DriverApplicationStatus.withdrawn => _StatusCard(
+        title: 'Başvurunuz geri çekildi',
+        description: 'Yeniden başvuru yapabilirsiniz.',
+        action: FilledButton(
+          onPressed: _openApplication,
+          child: const Text('Yeniden Başvur'),
+        ),
+      ),
+    };
+  }
+
+  String _date(DateTime value) =>
+      '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
+
+  Future<void> _openApplication() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            widget.applicationScreenBuilder?.call() ??
+            const DriverApplicationScreen(),
+      ),
+    );
+    if (result == true) await controller.load();
   }
 
   Widget _ready() {
