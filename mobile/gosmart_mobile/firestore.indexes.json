@@ -1,6 +1,15 @@
 {
   "indexes": [
     {
+      "collectionGroup": "driverApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "driverAccessPasses",
       "queryScope": "COLLECTION",
       "fields": [

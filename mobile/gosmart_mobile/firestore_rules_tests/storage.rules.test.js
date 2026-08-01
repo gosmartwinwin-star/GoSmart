@@ -146,3 +146,10 @@ test('36 valid current object can be overwritten', async () => {
   await assertSucceeds(upload('user-a', 'driverLicenseFront', 'image/jpeg'));
   await assertSucceeds(upload('user-a', 'driverLicenseFront', 'image/png', 2));
 });
+test('37 custom-claim admin client cannot read immutable', async () => {
+  await seed(immutable);
+  const storage = testEnv.authenticatedContext('admin-a', {
+    gosmartAdmin: true,
+  }).storage(bucket);
+  await assertFails(getBytes(ref(storage, immutable)));
+});

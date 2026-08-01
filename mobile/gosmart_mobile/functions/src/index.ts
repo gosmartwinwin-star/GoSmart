@@ -1,7 +1,7 @@
 import {protos, v2} from "@googlemaps/routing";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore, Timestamp} from "firebase-admin/firestore";
+import {FieldPath, getFirestore, Timestamp} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 import {randomUUID} from "node:crypto";
 import {
@@ -44,6 +44,15 @@ import {
   validateCurrentDocumentMetadata,
   validateDocumentReviewPayload,
 } from "./driver-application-review-helpers.js";
+import {
+  buildNextCursor,
+  calculateReviewUrlExpiry,
+  mapApplicationReviewDetails,
+  mapApplicationSummary,
+  validateApplicationDetailsPayload,
+  validateApplicationListPayload,
+  validateDocumentReviewUrlPayload,
+} from "./driver-application-admin-read-helpers.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -781,6 +790,160 @@ export const reviewDriverApplication = onCall(
       if (error instanceof HttpsError) throw error;
       throw new HttpsError("unavailable", "İnceleme kaydedilemedi.",
         {reason: "driver_application_review_persistence_failed"});
+    }
+  },
+);
+
+export const listDriverApplicationsForReview = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    requireGoSmartAdmin(request.auth);
+    const input = validateApplicationListPayload(request.data);
+    try {
+      let query = firestore.collection("driverApplications")
+        .where("status", "==", input.status)
+        .orderBy("submittedAt", "desc")
+        .orderBy(FieldPath.documentId(), "desc");
+      if (input.cursor) {
+        query = query.startAfter(Timestamp.fromMillis(
+          input.cursor.submittedAtMillis), input.cursor.applicationId);
+      }
+      const snapshot = await query.limit(input.pageSize + 1).get();
+      const hasMore = snapshot.size > input.pageSize;
+      const items = snapshot.docs.slice(0, input.pageSize)
+        .map((document) => mapApplicationSummary(document.id,
+          document.data()));
+      return {items, nextCursor: buildNextCursor(items, hasMore)};
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "Başvurular yüklenemedi.",
+        {reason: "driver_application_list_failed"});
+    }
+  },
+);
+
+export const getDriverApplicationReviewDetails = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const input = validateApplicationDetailsPayload(request.data);
+    const applicationRef = firestore.collection("driverApplications")
+      .doc(input.applicationId);
+    try {
+      const [application, ...documents] = await Promise.all([
+        applicationRef.get(), ...getRequiredDocumentTypes().map((type) =>
+          applicationRef.collection("documents").doc(type).get()),
+      ]);
+      if (!application.exists) {
+        throw new HttpsError("not-found", "Başvuru bulunamadı.",
+          {reason: "driver_application_not_found"});
+      }
+      if (documents.some((document) => !document.exists)) {
+        throw new HttpsError("internal", "Başvuru belgeleri doğrulanamadı.",
+          {reason: "driver_application_review_data_invalid"});
+      }
+      const result = mapApplicationReviewDetails(application.id,
+        application.data() ?? {}, documents.map((document, index) => ({
+          type: getRequiredDocumentTypes()[index], data: document.data() ?? {},
+        })), input);
+      const now = Timestamp.now();
+      await firestore.collection("driverApplicationReviewEvents").add(
+        buildReviewAuditEvent({applicationId: input.applicationId,
+          reviewerAuthUserId: reviewerUid, eventType: "applicationViewed",
+          submissionVersion: input.submissionVersion,
+          documentSetId: input.documentSetId, now}));
+      return result;
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "Başvuru ayrıntıları yüklenemedi.",
+        {reason: "driver_application_details_failed"});
+    }
+  },
+);
+
+export const createDriverApplicationDocumentReviewUrl = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const input = validateDocumentReviewUrlPayload(request.data);
+    const applicationRef = firestore.collection("driverApplications")
+      .doc(input.applicationId);
+    const documentRef = applicationRef.collection("documents")
+      .doc(input.documentType);
+    try {
+      const [application, document] = await Promise.all([
+        applicationRef.get(), documentRef.get(),
+      ]);
+      if (!application.exists) {
+        throw new HttpsError("not-found", "Başvuru bulunamadı.",
+          {reason: "driver_application_not_found"});
+      }
+      if (!document.exists) {
+        throw new HttpsError("not-found", "Belge bulunamadı.",
+          {reason: "driver_application_document_not_found"});
+      }
+      validateCurrentApplicationVersion(application.data() ?? {},
+        input.submissionVersion, input.documentSetId);
+      const metadata = document.data() ?? {};
+      validateCurrentDocumentMetadata(metadata, input);
+      const contentType = metadata.contentType;
+      const sizeBytes = metadata.sizeBytes;
+      const allowedTypes = input.documentType === "vehicleRegistration" ||
+        input.documentType === "criminalRecord" ?
+        ["image/jpeg", "image/png", "application/pdf"] :
+        ["image/jpeg", "image/png"];
+      const maximum = (input.documentType === "driverProfilePhoto" ? 5 : 10) *
+        1024 * 1024;
+      if (typeof contentType !== "string" ||
+          !allowedTypes.includes(contentType) || typeof sizeBytes !== "number" ||
+          !Number.isInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > maximum) {
+        throw new HttpsError("internal", "Belge bilgileri doğrulanamadı.",
+          {reason: "driver_application_document_data_invalid"});
+      }
+      const path = buildSubmissionDocumentPath(input.applicationId,
+        input.documentSetId, input.documentType);
+      const file = storageBucket.file(path);
+      let objectMetadata;
+      try {
+        [objectMetadata] = await file.getMetadata();
+      } catch (_error: unknown) {
+        throw new HttpsError("not-found", "Belge bulunamadı.",
+          {reason: "driver_application_document_not_found"});
+      }
+      if (objectMetadata.contentType !== contentType ||
+          Number(objectMetadata.size) !== sizeBytes) {
+        throw new HttpsError("internal", "Belge bilgileri doğrulanamadı.",
+          {reason: "driver_application_document_data_invalid"});
+      }
+      const now = Timestamp.now();
+      const expiresAtMillis = calculateReviewUrlExpiry(now.toMillis());
+      let url: string;
+      try {
+        [url] = await file.getSignedUrl({version: "v4", action: "read",
+          expires: expiresAtMillis});
+      } catch (_error: unknown) {
+        throw new HttpsError("unavailable", "Belge erişimi oluşturulamadı.",
+          {reason: "document_review_url_unavailable"});
+      }
+      try {
+        await firestore.collection("driverApplicationReviewEvents").add(
+          buildReviewAuditEvent({applicationId: input.applicationId,
+            reviewerAuthUserId: reviewerUid, eventType: "documentViewed",
+            documentType: input.documentType,
+            submissionVersion: input.submissionVersion,
+            documentSetId: input.documentSetId, now}));
+      } catch (_error: unknown) {
+        throw new HttpsError("unavailable", "Belge erişimi kaydedilemedi.",
+          {reason: "driver_application_review_audit_failed"});
+      }
+      return {url, expiresAtMillis, contentType, sizeBytes};
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "Belge erişimi oluşturulamadı.",
+        {reason: "document_review_url_unavailable"});
     }
   },
 );

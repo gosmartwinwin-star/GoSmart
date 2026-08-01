@@ -440,3 +440,10 @@ test('83 custom-claim admin client still cannot write review audit events', asyn
     eventType: 'applicationApproved',
   }));
 });
+test('84 custom-claim admin client cannot list applications or metadata', async () => {
+  const db = testEnv.authenticatedContext('admin-a', {gosmartAdmin: true}).firestore();
+  await assertFails(getDocs(collection(db, 'driverApplications')));
+  await assertFails(getDoc(doc(db, 'driverApplications/user-a')));
+  await assertFails(getDocs(collection(db, 'driverApplications/user-a/documents')));
+  await assertFails(getDocs(collection(db, 'driverApplicationReviewEvents')));
+});
