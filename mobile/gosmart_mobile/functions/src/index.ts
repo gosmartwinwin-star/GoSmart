@@ -22,6 +22,10 @@ import {
   validateProfileStatus,
   validateRouteValidity,
 } from "./driver-access-helpers.js";
+import {
+  determineSubmissionTransition,
+  validateApplicationPayload,
+} from "./driver-application-helpers.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -41,6 +45,12 @@ type PublishReturnRouteInput = {
   origin: CoordinateInput;
   destination: CoordinateInput;
   validForSeconds: number;
+};
+
+type SubmitDriverApplicationInput = {
+  fullName: string;
+  vehiclePlate: string;
+  taxiStandName?: string;
 };
 
 const routesClient = new v2.RoutesClient();
@@ -379,6 +389,96 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
     }
   },
 );
+
+export const submitDriverApplication =
+  onCall<SubmitDriverApplicationInput>(
+    {
+      region: "europe-west1",
+      timeoutSeconds: 30,
+      memory: "256MiB",
+      minInstances: 0,
+      maxInstances: 3,
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError(
+          "unauthenticated",
+          "Sürücü başvurusu göndermek için giriş yapmalısınız.",
+          {reason: "authentication_required"},
+        );
+      }
+
+      const input = validateApplicationPayload(request.data);
+      const uid = request.auth.uid;
+      const now = Timestamp.now();
+      const applicationReference = firestore
+        .collection("driverApplications").doc(uid);
+      const profileQuery = firestore.collection("driverProfiles")
+        .where("authUserId", "==", uid)
+        .limit(2);
+      let submissionVersion: number;
+
+      try {
+        submissionVersion = await firestore.runTransaction(
+          async (transaction) => {
+            const [profiles, application] = await Promise.all([
+              transaction.get(profileQuery),
+              transaction.get(applicationReference),
+            ]);
+            if (profiles.size > 1) {
+              throw new HttpsError(
+                "internal",
+                "Sürücü profili verileri doğrulanamadı.",
+                {reason: "driver_application_data_invalid"},
+              );
+            }
+            if (!profiles.empty) {
+              throw new HttpsError(
+                "failed-precondition",
+                "Mevcut sürücü profili için yeni başvuru oluşturulamaz.",
+                {reason: "driver_profile_exists"},
+              );
+            }
+
+            const transition = determineSubmissionTransition(
+              application.exists ? application.data() ?? {} : null,
+            );
+            transaction.set(applicationReference, {
+              authUserId: uid,
+              fullName: input.fullName,
+              vehiclePlate: input.vehiclePlate,
+              taxiStandName: input.taxiStandName,
+              serviceCity: "ankara",
+              status: "pendingReview",
+              submittedAt: now,
+              updatedAt: now,
+              reviewedAt: null,
+              rejectionReasonCode: null,
+              submissionVersion: transition.submissionVersion,
+            });
+            return transition.submissionVersion;
+          },
+        );
+      } catch (error: unknown) {
+        if (error instanceof HttpsError) throw error;
+        logger.error("Driver application persistence failed", {
+          errorType: error instanceof Error ? error.name : "UnknownError",
+        });
+        throw new HttpsError(
+          "unavailable",
+          "Sürücü başvurusu şu anda kaydedilemedi.",
+          {reason: "driver_application_persistence_failed"},
+        );
+      }
+
+      return {
+        status: "pendingReview",
+        submittedAtMillis: now.toMillis(),
+        updatedAtMillis: now.toMillis(),
+        submissionVersion,
+      };
+    },
+  );
 
 export const publishReturnRoute = onCall<PublishReturnRouteInput>(
   {

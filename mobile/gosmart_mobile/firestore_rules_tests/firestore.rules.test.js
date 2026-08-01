@@ -117,6 +117,24 @@ beforeEach(async () => {
     batch.set(doc(db, 'driverActiveReturnRoutes/driver-a'), {
       routeId: 'route-a', activatedAt: approvedAt, expiresAt,
     });
+    batch.set(doc(db, 'driverApplications/user-a'), {
+      authUserId: 'user-a', fullName: 'Ali Veli', vehiclePlate: '06ABC123',
+      taxiStandName: null, serviceCity: 'ankara', status: 'pendingReview',
+      submittedAt: currentPurchase, updatedAt: currentPurchase,
+      reviewedAt: null, rejectionReasonCode: null, submissionVersion: 1,
+    });
+    batch.set(doc(db, 'driverApplications/user-b'), {
+      authUserId: 'user-b', fullName: 'Ayşe Kaya', vehiclePlate: '34AB123',
+      taxiStandName: null, serviceCity: 'ankara', status: 'pendingReview',
+      submittedAt: currentPurchase, updatedAt: currentPurchase,
+      reviewedAt: null, rejectionReasonCode: null, submissionVersion: 1,
+    });
+    batch.set(doc(db, 'driverApplications/user-mismatch'), {
+      authUserId: 'user-b', fullName: 'Test User', vehiclePlate: '06T1234',
+      taxiStandName: null, serviceCity: 'ankara', status: 'pendingReview',
+      submittedAt: currentPurchase, updatedAt: currentPurchase,
+      reviewedAt: null, rejectionReasonCode: null, submissionVersion: 1,
+    });
     await batch.commit();
   });
 });
@@ -304,3 +322,43 @@ test('53 no client can write active return route lock', async () => {
     routeId: 'other-route',
   }));
 });
+
+test('54 unauthenticated user cannot read an application', async () => {
+  await assertFails(getDoc(doc(dbFor(), 'driverApplications/user-a')));
+});
+test('55 user-a can read own application', async () => {
+  await assertSucceeds(getDoc(doc(dbFor('user-a'), 'driverApplications/user-a')));
+});
+test('56 user-a cannot read user-b application', async () => {
+  await assertFails(getDoc(doc(dbFor('user-a'), 'driverApplications/user-b')));
+});
+test('57 user-b can read own application', async () => {
+  await assertSucceeds(getDoc(doc(dbFor('user-b'), 'driverApplications/user-b')));
+});
+test('58 mismatched authUserId prevents reading', async () => {
+  await assertFails(getDoc(doc(dbFor('user-mismatch'), 'driverApplications/user-mismatch')));
+});
+test('59 user-a cannot list applications', async () => {
+  await assertFails(getDocs(collection(dbFor('user-a'), 'driverApplications')));
+});
+test('60 user-a cannot query applications even with authUserId filter', async () => {
+  const db = dbFor('user-a');
+  await assertFails(getDocs(query(
+    collection(db, 'driverApplications'), where('authUserId', '==', 'user-a'),
+  )));
+});
+
+const applicationWrites = [
+  ['61 create own application', (db) => setDoc(doc(db, 'driverApplications/user-a-new'), { authUserId: 'user-a' })],
+  ['62 update own application', (db) => updateDoc(doc(db, 'driverApplications/user-a'), { taxiStandName: 'Yeni Taksi' })],
+  ['63 update own status', (db) => updateDoc(doc(db, 'driverApplications/user-a'), { status: 'approved' })],
+  ['64 update own plate', (db) => updateDoc(doc(db, 'driverApplications/user-a'), { vehiclePlate: '06ZZ999' })],
+  ['65 update own authUserId', (db) => updateDoc(doc(db, 'driverApplications/user-a'), { authUserId: 'user-b' })],
+  ['66 delete own application', (db) => deleteDoc(doc(db, 'driverApplications/user-a'))],
+  ['67 create another application', (db) => setDoc(doc(db, 'driverApplications/user-c'), { authUserId: 'user-c' })],
+  ['68 update another application', (db) => updateDoc(doc(db, 'driverApplications/user-b'), { status: 'approved' })],
+  ['69 delete another application', (db) => deleteDoc(doc(db, 'driverApplications/user-b'))],
+];
+for (const [name, operation] of applicationWrites) {
+  test(`${name} is denied`, async () => assertFails(operation(dbFor('user-a'))));
+}
