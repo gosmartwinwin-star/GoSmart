@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "gosmart-fd8f6"
-  }
+  },
+  "targets": {
+    "gosmart-fd8f6": {
+      "hosting": {
+        "admin": [
+          "gosmart-admin-fd8f6"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

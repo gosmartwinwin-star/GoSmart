@@ -26,3 +26,21 @@ belge önizlemesinin panel içinde çalıştığı ve URL metninin görünmediğ
 edilir. Production kararları yalnız gerçek inceleme tamamlandıktan sonra
 yönetici tarafından verilir. Bu çalışma Firebase deploy yapmaz ve credential,
 yönetici hesabı ya da UID içermez.
+
+## Firebase Hosting
+
+Admin panel, mobil uygulamadan ayrı `gosmart-admin-fd8f6` Firebase Hosting
+sitesini ve `admin` deploy target'ını kullanır. Canlı deploy öncesinde
+`admin-review` adlı, 7 gün süreli preview channel kullanılır. Preview URL herkese
+açık kabul edilmeli ve paylaşılmamalıdır; asıl erişim kontrolü Firebase Auth ile
+gerçek boolean `gosmartAdmin: true` claim'idir. Preview gerçek production
+Firebase backend ile çalışır ve production kararları yalnız manuel inceleme
+sonrasında verilmelidir.
+
+Hosting yapılandırması SPA rewrite, temel güvenlik header'ları ve kritik app shell
+dosyalarında `no-cache, no-store, must-revalidate` davranışı içerir. Asset'ler
+kısa süreli cache edilir. `robots.txt` ile HTML robots meta etiketi
+`noindex, nofollow` uygular; bunlar erişim kontrolü değildir. Content Security
+Policy, gerçek Firebase Auth, callable, CanvasKit, görüntü ve PDF originleriyle
+ayrı allowlist testi yapılmak üzere sonraki aşamaya bırakılmıştır. Bu hazırlıkta
+canlı deploy yapılmamıştır.
