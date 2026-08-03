@@ -39,6 +39,23 @@ String adminPanelMessage(Object error) {
       'Başvuru ayrıntıları şu anda yüklenemedi.',
     'driver_application_review_audit_failed' =>
       'Görüntüleme kaydı oluşturulamadı.',
+    'invalid_document_review_url_payload' =>
+      'Belge görüntüleme isteği doğrulanamadı.',
+    'driver_application_document_not_found' => 'Belge bulunamadı.',
+    'driver_application_document_data_invalid' =>
+      'Belge bilgileri doğrulanamadı.',
+    'document_review_url_unavailable' => 'Belge şu anda görüntülenemedi.',
+    'invalid_review_payload' => 'İnceleme isteği doğrulanamadı.',
+    'invalid_document_rejection_reason' =>
+      'Belge yeniden yükleme nedeni seçilmelidir.',
+    'invalid_application_rejection_reason' =>
+      'Başvuru ret nedeni seçilmelidir.',
+    'driver_application_documents_not_approved' =>
+      'Başvurunun onaylanabilmesi için tüm belgeler onaylanmalıdır.',
+    'driver_application_not_pending' => 'Başvuru artık incelemeye açık değil.',
+    'driver_profile_exists' => 'Bu hesap için sürücü profili zaten mevcut.',
+    'driver_application_review_persistence_failed' =>
+      'İnceleme kararı şu anda kaydedilemedi.',
     _ => 'İşlem şu anda tamamlanamadı. Lütfen tekrar deneyin.',
   };
 }

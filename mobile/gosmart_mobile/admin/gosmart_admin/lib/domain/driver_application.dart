@@ -50,6 +50,83 @@ enum DocumentReviewStatus {
   final String label;
 }
 
+enum DriverDocumentReuploadReason {
+  unreadableDocument('unreadable_document', 'Belge okunamıyor.'),
+  incompleteDocument('incomplete_document', 'Belge eksik görünüyor.'),
+  expiredDocument('expired_document', 'Belgenin geçerlilik süresi dolmuş.'),
+  informationMismatch('information_mismatch', 'Belgedeki bilgiler eşleşmiyor.'),
+  wrongDocument('wrong_document', 'Farklı bir belge yüklenmiş.'),
+  unsupportedDocument('unsupported_document', 'Belge biçimi desteklenmiyor.');
+
+  const DriverDocumentReuploadReason(this.wireValue, this.label);
+  final String wireValue;
+  final String label;
+}
+
+enum DriverApplicationRejectionReason {
+  personalInformationInvalid(
+    'personal_information_invalid',
+    'Kişisel bilgiler doğrulanamadı.',
+  ),
+  vehicleInformationInvalid(
+    'vehicle_information_invalid',
+    'Araç bilgileri doğrulanamadı.',
+  ),
+  documentInformationMismatch(
+    'document_information_mismatch',
+    'Belge bilgileri birbiriyle eşleşmiyor.',
+  ),
+  eligibilityRequirementsNotMet(
+    'eligibility_requirements_not_met',
+    'Uygunluk koşulları sağlanmıyor.',
+  ),
+  duplicateApplication('duplicate_application', 'Tekrarlanan başvuru.'),
+  applicationInformationIncomplete(
+    'application_information_incomplete',
+    'Başvuru bilgileri eksik.',
+  );
+
+  const DriverApplicationRejectionReason(this.wireValue, this.label);
+  final String wireValue;
+  final String label;
+}
+
+final class DriverApplicationDocumentPreview {
+  DriverApplicationDocumentPreview({
+    required Uri rendererUri,
+    required this.contentType,
+    required this.expiresAt,
+    required this.documentType,
+    required this.sizeBytes,
+  }) : _rendererUri = rendererUri {
+    if (rendererUri.scheme != 'https' ||
+        rendererUri.host.isEmpty ||
+        rendererUri.hasFragment ||
+        !expiresAt.isUtc ||
+        sizeBytes < 1 ||
+        !const {
+          'image/jpeg',
+          'image/png',
+          'application/pdf',
+        }.contains(contentType)) {
+      throw const FormatException('Invalid document preview');
+    }
+  }
+  final Uri _rendererUri;
+  final String contentType;
+  final DateTime expiresAt;
+  final DriverDocumentType documentType;
+  final int sizeBytes;
+  Uri get rendererUri => _rendererUri;
+  bool isReusableAt(DateTime now) =>
+      expiresAt.isAfter(now.toUtc().add(const Duration(seconds: 15)));
+  @override
+  String toString() =>
+      'DriverApplicationDocumentPreview('
+      'documentType: ${documentType.name}, contentType: $contentType, '
+      'expiresAt: $expiresAt, url: [REDACTED])';
+}
+
 final class DriverApplicationReviewSummary {
   const DriverApplicationReviewSummary({
     required this.applicationId,

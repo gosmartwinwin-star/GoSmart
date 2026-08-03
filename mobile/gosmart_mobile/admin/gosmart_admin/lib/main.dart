@@ -7,13 +7,19 @@ import 'infrastructure/firebase_admin_auth_gateway.dart';
 import 'infrastructure/firebase_admin_callable_invoker.dart';
 import 'screens/admin_app.dart';
 import 'services/driver_application_admin_read_service.dart';
+import 'services/driver_application_admin_review_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   final auth = AdminAuthController(FirebaseAdminAuthGateway());
+  final invoker = FirebaseAdminCallableInvoker();
   final DriverApplicationAdminReadGateway applications =
-      DriverApplicationAdminReadService(FirebaseAdminCallableInvoker());
+      DriverApplicationAdminReadService(invoker);
+  final DriverApplicationAdminReviewGateway reviews =
+      DriverApplicationAdminReviewService(invoker);
   await auth.initialize();
-  runApp(GoSmartAdminApp(auth: auth, applications: applications));
+  runApp(
+    GoSmartAdminApp(auth: auth, applications: applications, reviews: reviews),
+  );
 }

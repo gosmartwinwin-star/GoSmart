@@ -29,3 +29,31 @@ abstract interface class DriverApplicationAdminReadGateway {
     required String applicationId,
   });
 }
+
+abstract interface class DriverApplicationAdminReviewGateway {
+  Future<DriverApplicationDocumentPreview> createDocumentPreview({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverDocumentType documentType,
+  });
+  Future<void> approveDocument({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverDocumentType documentType,
+  });
+  Future<void> requestDocumentReupload({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverDocumentType documentType,
+    required DriverDocumentReuploadReason reason,
+  });
+  Future<void> approveApplication({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+  });
+  Future<void> rejectApplication({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverApplicationRejectionReason reason,
+  });
+}

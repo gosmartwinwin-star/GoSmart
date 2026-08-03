@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../application/ports.dart';
+import '../controllers/admin_auth_controller.dart';
 import '../controllers/driver_applications_controller.dart';
 import '../core/formatting.dart';
 import '../domain/driver_application.dart';
@@ -9,15 +10,24 @@ final class DriverApplicationsScreen extends StatelessWidget {
   const DriverApplicationsScreen({
     required this.controller,
     required this.gateway,
+    required this.reviews,
+    required this.auth,
     super.key,
   });
   final DriverApplicationsController controller;
   final DriverApplicationAdminReadGateway gateway;
+  final DriverApplicationAdminReviewGateway reviews;
+  final AdminAuthController auth;
 
   void _open(BuildContext context, String id) => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) =>
-          DriverApplicationDetailsScreen(applicationId: id, gateway: gateway),
+      builder: (_) => DriverApplicationDetailsScreen(
+        applicationId: id,
+        gateway: gateway,
+        reviews: reviews,
+        refreshList: controller.refresh,
+        auth: auth,
+      ),
     ),
   );
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gosmart_admin/application/ports.dart';
 import 'package:gosmart_admin/controllers/admin_auth_controller.dart';
+import 'package:gosmart_admin/controllers/driver_application_review_actions_controller.dart';
 import 'package:gosmart_admin/controllers/driver_applications_controller.dart';
 import 'package:gosmart_admin/core/admin_exceptions.dart';
 import 'package:gosmart_admin/core/formatting.dart';
@@ -12,6 +13,7 @@ import 'package:gosmart_admin/screens/admin_login_screen.dart';
 import 'package:gosmart_admin/screens/driver_application_details_screen.dart';
 import 'package:gosmart_admin/screens/driver_applications_screen.dart';
 import 'package:gosmart_admin/services/driver_application_admin_read_service.dart';
+import 'package:gosmart_admin/services/driver_application_admin_review_service.dart';
 
 void main() {
   group('auth domain and controller', () {
@@ -272,6 +274,319 @@ void main() {
     });
   });
 
+  group('review service security', () {
+    final now = DateTime.fromMillisecondsSinceEpoch(1000000, isUtc: true);
+    DriverApplicationReviewContext context() => DriverApplicationReviewContext(
+      submissionVersion: 2,
+      documentSetId: 'set-fixture',
+    );
+    Map<String, Object?> previewResponse({
+      Object? url,
+      Object? expiresAt,
+      Object? contentType,
+      Object? size,
+    }) => {
+      'url': url ?? 'https://example.invalid/temporary-document',
+      'expiresAtMillis':
+          expiresAt ??
+          now.add(const Duration(minutes: 3)).millisecondsSinceEpoch,
+      'contentType': contentType ?? 'image/jpeg',
+      'sizeBytes': size ?? 100,
+      'storagePath': 'ignored',
+      'reviewerUid': 'ignored',
+    };
+
+    test('preview uses exact callable and minimal payload', () async {
+      final invoker = FakeInvoker(previewResponse());
+      final preview =
+          await DriverApplicationAdminReviewService(
+            invoker,
+            now: () => now,
+          ).createDocumentPreview(
+            applicationId: 'app-1',
+            reviewContext: context(),
+            documentType: DriverDocumentType.driverLicenseFront,
+          );
+      expect(invoker.functionName, 'createDriverApplicationDocumentReviewUrl');
+      expect(invoker.payload, {
+        'applicationId': 'app-1',
+        'submissionVersion': 2,
+        'documentSetId': 'set-fixture',
+        'documentType': 'driverLicenseFront',
+      });
+      for (final key in ['admin', 'uid', 'storagePath', 'url']) {
+        expect(invoker.payload, isNot(contains(key)));
+      }
+      expect(preview.expiresAt.isUtc, isTrue);
+      expect(preview.toString(), contains('[REDACTED]'));
+      expect(preview.toString(), isNot(contains('example.invalid')));
+    });
+    for (final badUrl in [
+      '',
+      'http://example.invalid/a',
+      'javascript:alert(1)',
+      'data:text/plain,a',
+      'file:///a',
+      'https:///missing-host',
+      'https://example.invalid/a#fragment',
+    ]) {
+      test('unsafe preview URL is rejected', () async {
+        expect(
+          DriverApplicationAdminReviewService(
+            FakeInvoker(previewResponse(url: badUrl)),
+            now: () => now,
+          ).createDocumentPreview(
+            applicationId: 'app-1',
+            reviewContext: context(),
+            documentType: DriverDocumentType.driverLicenseFront,
+          ),
+          throwsFormatException,
+        );
+      });
+    }
+    for (final badExpiry in <Object>[
+      true,
+      1.2,
+      -1,
+      now.add(const Duration(seconds: 10)).millisecondsSinceEpoch,
+    ]) {
+      test('invalid or near-expiry preview is rejected', () async {
+        expect(
+          DriverApplicationAdminReviewService(
+            FakeInvoker(previewResponse(expiresAt: badExpiry)),
+            now: () => now,
+          ).createDocumentPreview(
+            applicationId: 'app-1',
+            reviewContext: context(),
+            documentType: DriverDocumentType.driverLicenseFront,
+          ),
+          throwsFormatException,
+        );
+      });
+    }
+    for (final badType in [
+      'text/html',
+      'image/gif',
+      'application/octet-stream',
+    ]) {
+      test('unknown preview content type is rejected', () async {
+        expect(
+          DriverApplicationAdminReviewService(
+            FakeInvoker(previewResponse(contentType: badType)),
+            now: () => now,
+          ).createDocumentPreview(
+            applicationId: 'app-1',
+            reviewContext: context(),
+            documentType: DriverDocumentType.driverLicenseFront,
+          ),
+          throwsFormatException,
+        );
+      });
+    }
+    for (final badSize in <Object>[true, 1.2, 0, -1]) {
+      test('invalid preview size is rejected', () async {
+        expect(
+          DriverApplicationAdminReviewService(
+            FakeInvoker(previewResponse(size: badSize)),
+            now: () => now,
+          ).createDocumentPreview(
+            applicationId: 'app-1',
+            reviewContext: context(),
+            documentType: DriverDocumentType.driverLicenseFront,
+          ),
+          throwsFormatException,
+        );
+      });
+    }
+    test('document approve and reupload payloads are exact', () async {
+      final approve = FakeInvoker({
+        'applicationStatus': 'pendingReview',
+        'documentStatus': 'approved',
+        'reviewedAtMillis': 1,
+      });
+      await DriverApplicationAdminReviewService(approve).approveDocument(
+        applicationId: 'app-1',
+        reviewContext: context(),
+        documentType: DriverDocumentType.identityCardFront,
+      );
+      expect(approve.functionName, 'reviewDriverApplicationDocument');
+      expect(approve.payload['decision'], 'approve');
+      expect(approve.payload, isNot(contains('reasonCode')));
+      final reupload = FakeInvoker({
+        'applicationStatus': 'rejected',
+        'documentStatus': 'reuploadRequired',
+        'reviewedAtMillis': 1,
+      });
+      await DriverApplicationAdminReviewService(
+        reupload,
+      ).requestDocumentReupload(
+        applicationId: 'app-1',
+        reviewContext: context(),
+        documentType: DriverDocumentType.identityCardFront,
+        reason: DriverDocumentReuploadReason.unreadableDocument,
+      );
+      expect(reupload.payload['decision'], 'requireReupload');
+      expect(reupload.payload['reasonCode'], 'unreadable_document');
+      expect(reupload.payload.length, 6);
+    });
+    test('application approve and reject payloads are exact', () async {
+      final approve = FakeInvoker({
+        'status': 'approved',
+        'reviewedAtMillis': 1,
+        'driverProfileCreated': true,
+      });
+      await DriverApplicationAdminReviewService(
+        approve,
+      ).approveApplication(applicationId: 'app-1', reviewContext: context());
+      expect(approve.functionName, 'reviewDriverApplication');
+      expect(approve.payload['decision'], 'approve');
+      expect(approve.payload, isNot(contains('rejectionReasonCode')));
+      final reject = FakeInvoker({
+        'status': 'rejected',
+        'reviewedAtMillis': 1,
+        'driverProfileCreated': false,
+      });
+      await DriverApplicationAdminReviewService(reject).rejectApplication(
+        applicationId: 'app-1',
+        reviewContext: context(),
+        reason: DriverApplicationRejectionReason.vehicleInformationInvalid,
+      );
+      expect(reject.payload['decision'], 'reject');
+      expect(
+        reject.payload['rejectionReasonCode'],
+        'vehicle_information_invalid',
+      );
+      for (final key in ['fullName', 'vehicle', 'driverProfile', 'admin']) {
+        expect(reject.payload, isNot(contains(key)));
+      }
+    });
+    test('malformed mutation responses are rejected', () async {
+      expect(
+        DriverApplicationAdminReviewService(FakeInvoker({})).approveDocument(
+          applicationId: 'app-1',
+          reviewContext: context(),
+          documentType: DriverDocumentType.driverLicenseBack,
+        ),
+        throwsFormatException,
+      );
+      expect(
+        DriverApplicationAdminReviewService(
+          FakeInvoker({}),
+        ).approveApplication(applicationId: 'app-1', reviewContext: context()),
+        throwsFormatException,
+      );
+    });
+  });
+
+  group('review actions controller', () {
+    test('preview is stored briefly and cleared on close', () async {
+      final gateway = FakeReviewGateway();
+      final controller = actionController(gateway);
+      await controller.openDocumentPreview(
+        applicationId: 'app-1',
+        reviewContext: reviewContext(),
+        documentType: DriverDocumentType.criminalRecord,
+      );
+      expect(controller.activePreview, isNotNull);
+      controller.closeDocumentPreview();
+      expect(controller.activePreview, isNull);
+      expect(controller.toString(), isNot(contains('example.invalid')));
+    });
+    test('document success clears preview and refreshes both views', () async {
+      final gateway = FakeReviewGateway();
+      var detailsRefresh = 0;
+      var listRefresh = 0;
+      final controller = actionController(
+        gateway,
+        refreshDetails: () async => detailsRefresh++,
+        refreshList: () async => listRefresh++,
+      );
+      await controller.openDocumentPreview(
+        applicationId: 'app-1',
+        reviewContext: reviewContext(),
+        documentType: DriverDocumentType.criminalRecord,
+      );
+      expect(
+        await controller.approveDocument(
+          applicationId: 'app-1',
+          reviewContext: reviewContext(),
+          documentType: DriverDocumentType.criminalRecord,
+        ),
+        isTrue,
+      );
+      expect(controller.activePreview, isNull);
+      expect(detailsRefresh, 1);
+      expect(listRefresh, 1);
+      expect(gateway.approveCalls, 1);
+    });
+    test('reupload and reject reasons reach gateway', () async {
+      final gateway = FakeReviewGateway();
+      final controller = actionController(gateway);
+      await controller.requestDocumentReupload(
+        applicationId: 'app-1',
+        reviewContext: reviewContext(),
+        documentType: DriverDocumentType.vehicleRegistration,
+        reason: DriverDocumentReuploadReason.expiredDocument,
+      );
+      await controller.rejectApplication(
+        applicationId: 'app-1',
+        reviewContext: reviewContext(),
+        reason: DriverApplicationRejectionReason.personalInformationInvalid,
+      );
+      expect(
+        gateway.documentReason,
+        DriverDocumentReuploadReason.expiredDocument,
+      );
+      expect(
+        gateway.applicationReason,
+        DriverApplicationRejectionReason.personalInformationInvalid,
+      );
+    });
+    test('stale mutation is not retried and reloads current state', () async {
+      final gateway = FakeReviewGateway(
+        error: const AdminPanelException(
+          'failed-precondition',
+          reason: 'stale_driver_application_review',
+        ),
+      );
+      var refreshes = 0;
+      final controller = actionController(
+        gateway,
+        refreshDetails: () async => refreshes++,
+        refreshList: () async => refreshes++,
+      );
+      expect(
+        await controller.approveApplication(
+          applicationId: 'app-1',
+          reviewContext: reviewContext(),
+        ),
+        isFalse,
+      );
+      expect(gateway.applicationApproveCalls, 1);
+      expect(refreshes, 2);
+      expect(controller.actionErrorMessage, contains('yeniden yükleniyor'));
+    });
+    test('auth failure clears state and invokes sign out callback', () async {
+      final gateway = FakeReviewGateway(
+        error: const AdminPanelException(
+          'permission-denied',
+          reason: 'admin_access_required',
+        ),
+      );
+      var authFailures = 0;
+      final controller = actionController(
+        gateway,
+        authFailure: () async => authFailures++,
+      );
+      await controller.approveApplication(
+        applicationId: 'app-1',
+        reviewContext: reviewContext(),
+      );
+      expect(authFailures, 1);
+      expect(controller.activePreview, isNull);
+    });
+  });
+
   group('safe presentation helpers', () {
     test('file sizes use binary units', () {
       expect(formatFileSize(10), '10 B');
@@ -342,6 +657,8 @@ void main() {
           body: DriverApplicationsScreen(
             controller: controller,
             gateway: gateway,
+            reviews: FakeReviewGateway(),
+            auth: AdminAuthController(FakeAuthGateway()),
           ),
         ),
       ),
@@ -355,7 +672,7 @@ void main() {
     expect(find.text('00 XX 000'), findsNothing);
     expect(tester.takeException(), isNull);
   });
-  testWidgets('details shows sections but no protected context or actions', (
+  testWidgets('details shows safe sections and manual review actions', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1440, 4000);
@@ -370,6 +687,9 @@ void main() {
         home: DriverApplicationDetailsScreen(
           applicationId: 'app-1',
           gateway: gateway,
+          reviews: FakeReviewGateway(),
+          refreshList: () async {},
+          auth: AdminAuthController(FakeAuthGateway()),
         ),
       ),
     );
@@ -386,9 +706,100 @@ void main() {
     }
     expect(find.textContaining('set-secret'), findsNothing);
     expect(find.textContaining('storagePath'), findsNothing);
-    expect(find.textContaining('Görüntüle'), findsNothing);
-    expect(find.textContaining('Başvuruyu Onayla'), findsNothing);
-    expect(find.textContaining('Başvuruyu Reddet'), findsNothing);
+    expect(find.text('Görüntüle'), findsNWidgets(7));
+    expect(find.text('Başvuruyu Onayla'), findsOneWidget);
+    expect(find.text('Başvuruyu Reddet'), findsOneWidget);
+    final approve = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Başvuruyu Onayla'),
+    );
+    expect(approve.onPressed, isNull);
+  });
+  testWidgets('approve application requires exact ONAYLA confirmation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: ApproveDriverApplicationDialog())),
+    );
+    FilledButton submit() => tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Başvuruyu Onayla'),
+    );
+    expect(submit().onPressed, isNull);
+    await tester.enterText(find.byType(TextField), 'onayla');
+    await tester.pump();
+    expect(submit().onPressed, isNull);
+    await tester.enterText(find.byType(TextField), 'ONAYLA');
+    await tester.pump();
+    expect(submit().onPressed, isNotNull);
+  });
+  testWidgets('reupload dialog has no default or free-text reason', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: RequestDocumentReuploadDialog(
+            documentType: DriverDocumentType.driverLicenseFront,
+          ),
+        ),
+      ),
+    );
+    final submit = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Yeniden Yükleme İste'),
+    );
+    expect(submit.onPressed, isNull);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('unreadable_document'), findsNothing);
+  });
+  testWidgets('reject dialog requires reason and exact REDDET', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: RejectDriverApplicationDialog())),
+    );
+    FilledButton submit() => tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Başvuruyu Reddet'),
+    );
+    expect(submit().onPressed, isNull);
+    await tester.tap(
+      find.byType(DropdownButtonFormField<DriverApplicationRejectionReason>),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .text(
+            DriverApplicationRejectionReason.personalInformationInvalid.label,
+          )
+          .last,
+    );
+    await tester.pumpAndSettle();
+    expect(submit().onPressed, isNull);
+    await tester.enterText(find.byType(TextField), 'REDDET');
+    await tester.pump();
+    expect(submit().onPressed, isNotNull);
+    expect(find.text('personal_information_invalid'), findsNothing);
+  });
+  testWidgets('preview dialog never renders URL or review context as text', (
+    tester,
+  ) async {
+    final controller = actionController(FakeReviewGateway());
+    await controller.openDocumentPreview(
+      applicationId: 'app-1',
+      reviewContext: reviewContext(),
+      documentType: DriverDocumentType.driverLicenseFront,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverApplicationDocumentPreviewDialog(
+          controller: controller,
+          documentType: DriverDocumentType.driverLicenseFront,
+        ),
+      ),
+    );
+    expect(find.textContaining('example.invalid'), findsNothing);
+    expect(find.textContaining('set-fixture'), findsNothing);
+    expect(
+      find.text('Belge önizleme test ortamında gösterilmiyor.'),
+      findsOneWidget,
+    );
+    controller.dispose();
   });
 }
 
@@ -433,11 +844,13 @@ final class FakeInvoker implements AdminCallableInvoker {
   FakeInvoker(this.response);
   final Object? response;
   Map<String, Object?> payload = {};
+  String? functionName;
   @override
   Future<Object?> call({
     required String functionName,
     required Map<String, Object?> payload,
   }) async {
+    this.functionName = functionName;
     this.payload = payload;
     return response;
   }
@@ -474,6 +887,96 @@ final class FakeReadGateway implements DriverApplicationAdminReadGateway {
     throw UnimplementedError();
   }
 }
+
+final class FakeReviewGateway implements DriverApplicationAdminReviewGateway {
+  FakeReviewGateway({this.error});
+  final Object? error;
+  int previewCalls = 0;
+  int approveCalls = 0;
+  int applicationApproveCalls = 0;
+  DriverDocumentReuploadReason? documentReason;
+  DriverApplicationRejectionReason? applicationReason;
+  void _throwIfNeeded() {
+    final value = error;
+    if (value != null) throw value;
+  }
+
+  @override
+  Future<DriverApplicationDocumentPreview> createDocumentPreview({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverDocumentType documentType,
+  }) async {
+    previewCalls++;
+    _throwIfNeeded();
+    return DriverApplicationDocumentPreview(
+      rendererUri: Uri.parse('https://example.invalid/temporary-document'),
+      contentType: 'image/jpeg',
+      expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 2)),
+      documentType: documentType,
+      sizeBytes: 100,
+    );
+  }
+
+  @override
+  Future<void> approveDocument({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverDocumentType documentType,
+  }) async {
+    approveCalls++;
+    _throwIfNeeded();
+  }
+
+  @override
+  Future<void> requestDocumentReupload({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverDocumentType documentType,
+    required DriverDocumentReuploadReason reason,
+  }) async {
+    documentReason = reason;
+    _throwIfNeeded();
+  }
+
+  @override
+  Future<void> approveApplication({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+  }) async {
+    applicationApproveCalls++;
+    _throwIfNeeded();
+  }
+
+  @override
+  Future<void> rejectApplication({
+    required String applicationId,
+    required DriverApplicationReviewContext reviewContext,
+    required DriverApplicationRejectionReason reason,
+  }) async {
+    applicationReason = reason;
+    _throwIfNeeded();
+  }
+}
+
+DriverApplicationReviewContext reviewContext() =>
+    DriverApplicationReviewContext(
+      submissionVersion: 1,
+      documentSetId: 'set-fixture',
+    );
+
+DriverApplicationReviewActionsController actionController(
+  FakeReviewGateway gateway, {
+  Future<void> Function()? refreshDetails,
+  Future<void> Function()? refreshList,
+  Future<void> Function()? authFailure,
+}) => DriverApplicationReviewActionsController(
+  gateway: gateway,
+  refreshDetails: refreshDetails ?? () async {},
+  refreshList: refreshList ?? () async {},
+  clearDetails: () {},
+  handleAuthFailure: authFailure ?? () async {},
+);
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 DriverApplicationReviewSummary summary() => DriverApplicationReviewSummary(

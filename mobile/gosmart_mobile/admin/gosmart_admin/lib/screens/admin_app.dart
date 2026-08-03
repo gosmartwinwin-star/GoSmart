@@ -9,10 +9,12 @@ final class GoSmartAdminApp extends StatelessWidget {
   const GoSmartAdminApp({
     required this.auth,
     required this.applications,
+    required this.reviews,
     super.key,
   });
   final AdminAuthController auth;
   final DriverApplicationAdminReadGateway applications;
+  final DriverApplicationAdminReviewGateway reviews;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -46,7 +48,11 @@ final class GoSmartAdminApp extends StatelessWidget {
           );
         }
         if (auth.session == null) return AdminLoginScreen(controller: auth);
-        return AdminShellScreen(auth: auth, gateway: applications);
+        return AdminShellScreen(
+          auth: auth,
+          gateway: applications,
+          reviews: reviews,
+        );
       },
     ),
   );
@@ -56,10 +62,12 @@ final class AdminShellScreen extends StatefulWidget {
   const AdminShellScreen({
     required this.auth,
     required this.gateway,
+    required this.reviews,
     super.key,
   });
   final AdminAuthController auth;
   final DriverApplicationAdminReadGateway gateway;
+  final DriverApplicationAdminReviewGateway reviews;
   @override
   State<AdminShellScreen> createState() => _AdminShellScreenState();
 }
@@ -131,6 +139,8 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
           child: DriverApplicationsScreen(
             controller: controller,
             gateway: widget.gateway,
+            reviews: widget.reviews,
+            auth: widget.auth,
           ),
         ),
       ],
