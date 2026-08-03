@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import '../application/ports.dart';
 import '../controllers/admin_auth_controller.dart';
 import '../controllers/driver_application_review_actions_controller.dart';
+import '../controllers/driver_application_review_events_controller.dart';
 import '../controllers/driver_applications_controller.dart';
 import '../core/formatting.dart';
 import '../domain/driver_application.dart';
 import '../widgets/document_preview_renderer.dart';
+import '../widgets/review_events_timeline.dart';
 
 final class DriverApplicationDetailsScreen extends StatefulWidget {
   const DriverApplicationDetailsScreen({
     required this.applicationId,
     required this.gateway,
     required this.reviews,
+    required this.reviewEvents,
     required this.refreshList,
     required this.auth,
     super.key,
@@ -20,6 +23,7 @@ final class DriverApplicationDetailsScreen extends StatefulWidget {
   final String applicationId;
   final DriverApplicationAdminReadGateway gateway;
   final DriverApplicationAdminReviewGateway reviews;
+  final DriverApplicationReviewEventsGateway reviewEvents;
   final Future<void> Function() refreshList;
   final AdminAuthController auth;
   @override
@@ -31,25 +35,37 @@ class _DriverApplicationDetailsScreenState
     extends State<DriverApplicationDetailsScreen> {
   late final DriverApplicationDetailsController controller;
   late final DriverApplicationReviewActionsController actions;
+  late final DriverApplicationReviewEventsController timeline;
 
   @override
   void initState() {
     super.initState();
     controller = DriverApplicationDetailsController(widget.gateway);
+    timeline = DriverApplicationReviewEventsController(
+      widget.reviewEvents,
+      handleAuthFailure: () async {
+        timeline.clearSensitiveState();
+        await widget.auth.signOut();
+      },
+    );
     actions = DriverApplicationReviewActionsController(
       gateway: widget.reviews,
       refreshDetails: controller.refresh,
       refreshList: widget.refreshList,
+      refreshTimeline: timeline.refresh,
       clearDetails: controller.clearSensitiveState,
       handleAuthFailure: widget.auth.signOut,
     );
     controller.load(widget.applicationId);
+    timeline.loadInitial(widget.applicationId);
   }
 
   @override
   void dispose() {
     actions.clearSensitiveState();
     actions.dispose();
+    timeline.clearSensitiveState();
+    timeline.dispose();
     controller.clearSensitiveState();
     controller.dispose();
     super.dispose();
@@ -150,6 +166,12 @@ class _DriverApplicationDetailsScreenState
               details.documents
                   .map((document) => _documentRow(details, document))
                   .toList(),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: DriverApplicationReviewEventsTimeline(
+                controller: timeline,
+              ),
             ),
             _decisionCard(details),
           ],

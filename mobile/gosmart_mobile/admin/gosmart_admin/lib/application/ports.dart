@@ -1,5 +1,6 @@
 import '../domain/admin_session.dart';
 import '../domain/driver_application.dart';
+import '../domain/driver_application_review_event.dart';
 
 abstract interface class AdminAuthGateway {
   Stream<AdminSession?> authStateChanges();
@@ -55,5 +56,13 @@ abstract interface class DriverApplicationAdminReviewGateway {
     required String applicationId,
     required DriverApplicationReviewContext reviewContext,
     required DriverApplicationRejectionReason reason,
+  });
+}
+
+abstract interface class DriverApplicationReviewEventsGateway {
+  Future<DriverApplicationReviewEventsPage> listReviewEvents({
+    required String applicationId,
+    int pageSize = 20,
+    DriverApplicationReviewEventsCursor? cursor,
   });
 }

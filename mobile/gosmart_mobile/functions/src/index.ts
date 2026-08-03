@@ -54,6 +54,10 @@ import {
   validateApplicationListPayload,
   validateDocumentReviewUrlPayload,
 } from "./driver-application-admin-read-helpers.js";
+import {
+  buildReviewEventsPage,
+  validateReviewEventsPayload,
+} from "./driver-application-review-events-helpers.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -820,6 +824,40 @@ export const listDriverApplicationsForReview = onCall(
       if (error instanceof HttpsError) throw error;
       throw new HttpsError("unavailable", "Başvurular yüklenemedi.",
         {reason: "driver_application_list_failed"});
+    }
+  },
+);
+
+export const listDriverApplicationReviewEvents = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    requireGoSmartAdmin(request.auth);
+    const input = validateReviewEventsPayload(request.data);
+    const applicationRef = firestore.collection("driverApplications")
+      .doc(input.applicationId);
+    try {
+      const application = await applicationRef.get();
+      if (!application.exists) {
+        throw new HttpsError("not-found", "Başvuru bulunamadı.",
+          {reason: "driver_application_not_found"});
+      }
+      let query = firestore.collection("driverApplicationReviewEvents")
+        .where("applicationId", "==", input.applicationId)
+        .orderBy("createdAt", "desc")
+        .orderBy(FieldPath.documentId(), "desc");
+      if (input.cursor) {
+        query = query.startAfter(Timestamp.fromMillis(
+          input.cursor.createdAtMillis), input.cursor.eventId);
+      }
+      const snapshot = await query.limit(input.pageSize + 1).get();
+      return buildReviewEventsPage(snapshot.docs.map((document) => ({
+        id: document.id, data: document.data(),
+      })), input.pageSize);
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "İnceleme geçmişi yüklenemedi.",
+        {reason: "driver_application_review_events_failed"});
     }
   },
 );

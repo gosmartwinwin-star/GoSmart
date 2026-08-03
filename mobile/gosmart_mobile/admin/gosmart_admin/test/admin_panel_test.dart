@@ -14,6 +14,7 @@ import 'package:gosmart_admin/screens/driver_application_details_screen.dart';
 import 'package:gosmart_admin/screens/driver_applications_screen.dart';
 import 'package:gosmart_admin/services/driver_application_admin_read_service.dart';
 import 'package:gosmart_admin/services/driver_application_admin_review_service.dart';
+import 'package:gosmart_admin/services/driver_application_review_events_service.dart';
 
 void main() {
   group('auth domain and controller', () {
@@ -496,10 +497,12 @@ void main() {
       final gateway = FakeReviewGateway();
       var detailsRefresh = 0;
       var listRefresh = 0;
+      var timelineRefresh = 0;
       final controller = actionController(
         gateway,
         refreshDetails: () async => detailsRefresh++,
         refreshList: () async => listRefresh++,
+        refreshTimeline: () async => timelineRefresh++,
       );
       await controller.openDocumentPreview(
         applicationId: 'app-1',
@@ -517,6 +520,7 @@ void main() {
       expect(controller.activePreview, isNull);
       expect(detailsRefresh, 1);
       expect(listRefresh, 1);
+      expect(timelineRefresh, 1);
       expect(gateway.approveCalls, 1);
     });
     test('reupload and reject reasons reach gateway', () async {
@@ -554,6 +558,7 @@ void main() {
         gateway,
         refreshDetails: () async => refreshes++,
         refreshList: () async => refreshes++,
+        refreshTimeline: () async => refreshes++,
       );
       expect(
         await controller.approveApplication(
@@ -563,7 +568,7 @@ void main() {
         isFalse,
       );
       expect(gateway.applicationApproveCalls, 1);
-      expect(refreshes, 2);
+      expect(refreshes, 3);
       expect(controller.actionErrorMessage, contains('yeniden yükleniyor'));
     });
     test('auth failure clears state and invokes sign out callback', () async {
@@ -658,6 +663,9 @@ void main() {
             controller: controller,
             gateway: gateway,
             reviews: FakeReviewGateway(),
+            reviewEvents: DriverApplicationReviewEventsService(
+              FakeInvoker(timelineResponse()),
+            ),
             auth: AdminAuthController(FakeAuthGateway()),
           ),
         ),
@@ -688,6 +696,9 @@ void main() {
           applicationId: 'app-1',
           gateway: gateway,
           reviews: FakeReviewGateway(),
+          reviewEvents: DriverApplicationReviewEventsService(
+            FakeInvoker(timelineResponse()),
+          ),
           refreshList: () async {},
           auth: AdminAuthController(FakeAuthGateway()),
         ),
@@ -969,16 +980,22 @@ DriverApplicationReviewActionsController actionController(
   FakeReviewGateway gateway, {
   Future<void> Function()? refreshDetails,
   Future<void> Function()? refreshList,
+  Future<void> Function()? refreshTimeline,
   Future<void> Function()? authFailure,
 }) => DriverApplicationReviewActionsController(
   gateway: gateway,
   refreshDetails: refreshDetails ?? () async {},
   refreshList: refreshList ?? () async {},
+  refreshTimeline: refreshTimeline ?? () async {},
   clearDetails: () {},
   handleAuthFailure: authFailure ?? () async {},
 );
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+Map<String, Object?> timelineResponse() => {
+  'items': <Object?>[],
+  'nextCursor': null,
+};
 DriverApplicationReviewSummary summary() => DriverApplicationReviewSummary(
   applicationId: 'app-1',
   status: DriverApplicationReviewStatus.pendingReview,

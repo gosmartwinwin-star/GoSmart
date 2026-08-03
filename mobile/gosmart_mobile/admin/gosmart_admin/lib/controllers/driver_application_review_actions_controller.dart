@@ -10,12 +10,14 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
     required DriverApplicationAdminReviewGateway gateway,
     required Future<void> Function() refreshDetails,
     required Future<void> Function() refreshList,
+    required Future<void> Function() refreshTimeline,
     required VoidCallback clearDetails,
     required Future<void> Function() handleAuthFailure,
     DateTime Function()? now,
   }) : _gateway = gateway,
        _refreshDetails = refreshDetails,
        _refreshList = refreshList,
+       _refreshTimeline = refreshTimeline,
        _clearDetails = clearDetails,
        _handleAuthFailure = handleAuthFailure,
        _now = now ?? DateTime.now;
@@ -23,6 +25,7 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
   final DriverApplicationAdminReviewGateway _gateway;
   final Future<void> Function() _refreshDetails;
   final Future<void> Function() _refreshList;
+  final Future<void> Function() _refreshTimeline;
   final VoidCallback _clearDetails;
   final Future<void> Function() _handleAuthFailure;
   final DateTime Function() _now;
@@ -197,6 +200,7 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
     _clearDetails();
     await _refreshDetails();
     await _refreshList();
+    await _refreshTimeline();
   }
 
   Future<void> _handleSpecialError(Object error) async {
@@ -208,6 +212,7 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
       _clearDetails();
       await _refreshDetails();
       await _refreshList();
+      await _refreshTimeline();
     } else if (const {
           'authentication_required',
           'admin_access_required',

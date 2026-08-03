@@ -37,6 +37,12 @@ String adminPanelMessage(Object error) {
     'driver_application_list_failed' => 'Başvurular şu anda yüklenemedi.',
     'driver_application_details_failed' =>
       'Başvuru ayrıntıları şu anda yüklenemedi.',
+    'invalid_driver_application_review_events_payload' =>
+      'İnceleme geçmişi isteği doğrulanamadı.',
+    'driver_application_review_events_data_invalid' =>
+      'İnceleme geçmişi bilgileri doğrulanamadı.',
+    'driver_application_review_events_failed' =>
+      'İnceleme geçmişi şu anda yüklenemedi.',
     'driver_application_review_audit_failed' =>
       'Görüntüleme kaydı oluşturulamadı.',
     'invalid_document_review_url_payload' =>

@@ -8,6 +8,7 @@ import 'infrastructure/firebase_admin_callable_invoker.dart';
 import 'screens/admin_app.dart';
 import 'services/driver_application_admin_read_service.dart';
 import 'services/driver_application_admin_review_service.dart';
+import 'services/driver_application_review_events_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,8 +19,15 @@ Future<void> main() async {
       DriverApplicationAdminReadService(invoker);
   final DriverApplicationAdminReviewGateway reviews =
       DriverApplicationAdminReviewService(invoker);
+  final DriverApplicationReviewEventsGateway reviewEvents =
+      DriverApplicationReviewEventsService(invoker);
   await auth.initialize();
   runApp(
-    GoSmartAdminApp(auth: auth, applications: applications, reviews: reviews),
+    GoSmartAdminApp(
+      auth: auth,
+      applications: applications,
+      reviews: reviews,
+      reviewEvents: reviewEvents,
+    ),
   );
 }

@@ -44,3 +44,16 @@ kısa süreli cache edilir. `robots.txt` ile HTML robots meta etiketi
 Policy, gerçek Firebase Auth, callable, CanvasKit, görüntü ve PDF originleriyle
 ayrı allowlist testi yapılmak üzere sonraki aşamaya bırakılmıştır. Bu hazırlıkta
 canlı deploy yapılmamıştır.
+
+## İnceleme Geçmişi
+
+Başvuru ayrıntısındaki inceleme geçmişi yalnız admin yetkili, salt okunur
+callable üzerinden alınır. Admin panel Firestore client SDK kullanmaz ve audit
+koleksiyonuna client tarafından doğrudan erişim kapalıdır. Timeline görüntüleme
+yeni bir audit kaydı üretmez; veriler cursor tabanlı sayfalanır.
+
+Response ve arayüz reviewer UID'si, yönetici e-postası, başvuru kişisel verisi,
+signed belge URL'si veya internal belge bağlamı içermez. Timeline yalnız bellekte
+tutulur; çıkışta, yetki kaybında ve ayrıntı ekranından ayrılırken temizlenir.
+Başarılı kararlar ve stale durumları sonrasında geçmiş backend'den yeniden
+yüklenir. Bu geliştirme kapsamında Firebase deploy yapılmamıştır.

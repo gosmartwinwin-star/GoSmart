@@ -11,12 +11,14 @@ final class DriverApplicationsScreen extends StatelessWidget {
     required this.controller,
     required this.gateway,
     required this.reviews,
+    required this.reviewEvents,
     required this.auth,
     super.key,
   });
   final DriverApplicationsController controller;
   final DriverApplicationAdminReadGateway gateway;
   final DriverApplicationAdminReviewGateway reviews;
+  final DriverApplicationReviewEventsGateway reviewEvents;
   final AdminAuthController auth;
 
   void _open(BuildContext context, String id) => Navigator.of(context).push(
@@ -25,6 +27,7 @@ final class DriverApplicationsScreen extends StatelessWidget {
         applicationId: id,
         gateway: gateway,
         reviews: reviews,
+        reviewEvents: reviewEvents,
         refreshList: controller.refresh,
         auth: auth,
       ),
