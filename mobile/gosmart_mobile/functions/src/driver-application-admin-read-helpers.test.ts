@@ -15,10 +15,14 @@ const reason = (operation: () => unknown, expected: string) => assert.throws(ope
     (error.details as {reason?: string}).reason === expected);
 
 test("claim komutları ve dry-run parse edilir", () => {
-  assert.deepEqual(parseAdminClaimCommand(["--uid", "user-123", "--enable"]),
-    {uid: "user-123", enable: true, dryRun: false});
-  assert.deepEqual(parseAdminClaimCommand(["--disable", "--uid", "user-123", "--dry-run"]),
-    {uid: "user-123", enable: false, dryRun: true});
+  assert.deepEqual(parseAdminClaimCommand(["--project-id", "gosmart-fd8f6",
+    "--uid", "user-123", "--enable"]),
+  {projectId: "gosmart-fd8f6", uid: "user-123", action: "enable",
+    dryRun: false});
+  assert.deepEqual(parseAdminClaimCommand(["--disable", "--project-id",
+    "gosmart-fd8f6", "--uid", "user-123", "--dry-run"]),
+  {projectId: "gosmart-fd8f6", uid: "user-123", action: "disable",
+    dryRun: true});
   assert.throws(() => parseAdminClaimCommand(["--enable"]));
   assert.throws(() => parseAdminClaimCommand(["--uid", "x", "--enable", "--disable"]));
   assert.throws(() => parseAdminClaimCommand(["--uid", "x", "--unknown"]));
