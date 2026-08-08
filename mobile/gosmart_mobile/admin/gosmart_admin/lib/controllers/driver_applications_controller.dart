@@ -89,43 +89,123 @@ final class DriverApplicationsController extends ChangeNotifier {
 }
 
 final class DriverApplicationDetailsController extends ChangeNotifier {
-  DriverApplicationDetailsController(this._gateway);
+  DriverApplicationDetailsController(
+    this._gateway, {
+    Future<void> Function()? handleAuthFailure,
+  }) : _handleAuthFailure = handleAuthFailure ?? _noOp;
   final DriverApplicationAdminReadGateway _gateway;
+  final Future<void> Function() _handleAuthFailure;
+  String? currentApplicationId;
   DriverApplicationReviewDetails? details;
   bool isLoading = false;
+  bool isRefreshing = false;
   String? errorMessage;
-  String? _applicationId;
+  bool hasFreshMutationContext = false;
   bool _disposed = false;
+  int _generation = 0;
+
+  static Future<void> _noOp() async {}
 
   Future<void> load(String applicationId) async {
-    if (_disposed || isLoading) return;
-    if (_applicationId != applicationId) details = null;
-    _applicationId = applicationId;
+    if (_disposed || (isLoading && currentApplicationId == applicationId)) {
+      return;
+    }
+    if (currentApplicationId != applicationId) {
+      _generation++;
+      details = null;
+      hasFreshMutationContext = false;
+    }
+    currentApplicationId = applicationId;
+    final generation = _generation;
     isLoading = true;
     errorMessage = null;
     _notify();
     try {
-      details = await _gateway.getDetails(applicationId: applicationId);
+      final loaded = await _gateway.getDetails(applicationId: applicationId);
+      if (_disposed ||
+          generation != _generation ||
+          currentApplicationId != applicationId) {
+        return;
+      }
+      details = loaded;
+      hasFreshMutationContext = true;
     } catch (error) {
-      details = null;
-      errorMessage = adminPanelMessage(error);
+      if (generation == _generation && currentApplicationId == applicationId) {
+        if (_isAuthError(error)) {
+          clearSensitiveState();
+          await _handleAuthFailure();
+        } else {
+          details = null;
+          hasFreshMutationContext = false;
+          errorMessage = adminPanelMessage(error);
+        }
+      }
     } finally {
-      isLoading = false;
-      _notify();
+      if (generation == _generation) {
+        isLoading = false;
+        _notify();
+      }
     }
   }
 
   Future<void> refresh() async {
-    final id = _applicationId;
-    if (id != null) {
-      details = null;
-      await load(id);
+    final id = currentApplicationId;
+    if (_disposed || id == null || isLoading || isRefreshing) return;
+    final generation = _generation;
+    isRefreshing = true;
+    hasFreshMutationContext = false;
+    errorMessage = null;
+    _notify();
+    try {
+      final loaded = await _gateway.getDetails(applicationId: id);
+      if (_disposed ||
+          generation != _generation ||
+          currentApplicationId != id) {
+        return;
+      }
+      details = loaded;
+      hasFreshMutationContext = true;
+    } catch (error) {
+      if (generation == _generation && currentApplicationId == id) {
+        if (_isAuthError(error)) {
+          clearSensitiveState();
+          await _handleAuthFailure();
+        } else {
+          hasFreshMutationContext = false;
+          errorMessage = details == null
+              ? 'Başvuru ayrıntıları yüklenemedi.'
+              : 'İşlem kaydedildi ancak güncel başvuru bilgileri yüklenemedi.';
+        }
+      }
+    } finally {
+      if (generation == _generation) {
+        isRefreshing = false;
+        _notify();
+      }
     }
   }
 
+  void invalidateReviewContext() {
+    hasFreshMutationContext = false;
+    _notify();
+  }
+
+  bool _isAuthError(Object error) =>
+      error is AdminPanelException &&
+      (const {
+            'authentication_required',
+            'session_expired',
+            'admin_access_required',
+          }.contains(error.reason) ||
+          const {'unauthenticated', 'permission-denied'}.contains(error.code));
+
   void clearSensitiveState() {
+    _generation++;
     details = null;
-    _applicationId = null;
+    currentApplicationId = null;
+    hasFreshMutationContext = false;
+    isLoading = false;
+    isRefreshing = false;
     errorMessage = null;
     _notify();
   }
@@ -137,6 +217,10 @@ final class DriverApplicationDetailsController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _generation++;
+    details = null;
+    currentApplicationId = null;
+    hasFreshMutationContext = false;
     super.dispose();
   }
 }

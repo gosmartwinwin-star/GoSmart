@@ -11,6 +11,7 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
     required Future<void> Function() refreshDetails,
     required Future<void> Function() refreshList,
     required Future<void> Function() refreshTimeline,
+    required VoidCallback invalidateReviewContext,
     required VoidCallback clearDetails,
     required Future<void> Function() handleAuthFailure,
     DateTime Function()? now,
@@ -18,6 +19,7 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
        _refreshDetails = refreshDetails,
        _refreshList = refreshList,
        _refreshTimeline = refreshTimeline,
+       _invalidateReviewContext = invalidateReviewContext,
        _clearDetails = clearDetails,
        _handleAuthFailure = handleAuthFailure,
        _now = now ?? DateTime.now;
@@ -26,6 +28,7 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
   final Future<void> Function() _refreshDetails;
   final Future<void> Function() _refreshList;
   final Future<void> Function() _refreshTimeline;
+  final VoidCallback _invalidateReviewContext;
   final VoidCallback _clearDetails;
   final Future<void> Function() _handleAuthFailure;
   final DateTime Function() _now;
@@ -197,10 +200,8 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
 
   Future<void> _refreshAfterMutation() async {
     closeDocumentPreview();
-    _clearDetails();
-    await _refreshDetails();
-    await _refreshList();
-    await _refreshTimeline();
+    _invalidateReviewContext();
+    await Future.wait([_refreshDetails(), _refreshList(), _refreshTimeline()]);
   }
 
   Future<void> _handleSpecialError(Object error) async {
@@ -209,12 +210,15 @@ final class DriverApplicationReviewActionsController extends ChangeNotifier {
       actionErrorMessage =
           'Başvuru siz incelerken güncellendi. Güncel bilgiler yeniden yükleniyor.';
       closeDocumentPreview();
-      _clearDetails();
-      await _refreshDetails();
-      await _refreshList();
-      await _refreshTimeline();
+      _invalidateReviewContext();
+      await Future.wait([
+        _refreshDetails(),
+        _refreshList(),
+        _refreshTimeline(),
+      ]);
     } else if (const {
           'authentication_required',
+          'session_expired',
           'admin_access_required',
         }.contains(error.reason) ||
         const {'unauthenticated', 'permission-denied'}.contains(error.code)) {

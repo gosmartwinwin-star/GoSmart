@@ -273,6 +273,147 @@ void main() {
       await controller.loadMore();
       expect(gateway.listCalls, 1);
     });
+    test('details keeps route identity and fresh mutation context', () async {
+      final gateway = SequencedReadGateway([detailsResponse()]);
+      final controller = DriverApplicationDetailsController(gateway);
+
+      await controller.load('test-application');
+
+      expect(controller.currentApplicationId, 'test-application');
+      expect(controller.details, isNotNull);
+      expect(controller.hasFreshMutationContext, isTrue);
+    });
+    test(
+      'context invalidation keeps route identity and visible details',
+      () async {
+        final controller = DriverApplicationDetailsController(
+          SequencedReadGateway([detailsResponse()]),
+        );
+        await controller.load('test-application');
+
+        controller.invalidateReviewContext();
+
+        expect(controller.currentApplicationId, 'test-application');
+        expect(controller.details, isNotNull);
+        expect(controller.hasFreshMutationContext, isFalse);
+      },
+    );
+    test('refresh uses current id and replaces details', () async {
+      final gateway = SequencedReadGateway([
+        detailsResponse(),
+        detailsResponse(status: 'approved'),
+      ]);
+      final controller = DriverApplicationDetailsController(gateway);
+      await controller.load('test-application');
+
+      await controller.refresh();
+
+      expect(gateway.detailIds, ['test-application', 'test-application']);
+      expect(
+        controller.details!.application.status,
+        DriverApplicationReviewStatus.approved,
+      );
+      expect(controller.hasFreshMutationContext, isTrue);
+    });
+    test(
+      'refresh retains content, marks refreshing and locks context',
+      () async {
+        final gateway = SequencedReadGateway([detailsResponse()]);
+        final controller = DriverApplicationDetailsController(gateway);
+        await controller.load('test-application');
+        gateway.waitForNextDetails = true;
+
+        final refresh = controller.refresh();
+
+        expect(controller.isRefreshing, isTrue);
+        expect(controller.details, isNotNull);
+        expect(controller.hasFreshMutationContext, isFalse);
+        gateway.completeNextDetails(detailsResponse(status: 'approved'));
+        await refresh;
+        expect(controller.isRefreshing, isFalse);
+        expect(controller.hasFreshMutationContext, isTrue);
+      },
+    );
+    test(
+      'refresh failure retains route and disables future mutation',
+      () async {
+        final gateway = SequencedReadGateway([detailsResponse()]);
+        final controller = DriverApplicationDetailsController(gateway);
+        await controller.load('test-application');
+        gateway.nextDetailsError = const AdminPanelException('unavailable');
+
+        await controller.refresh();
+
+        expect(controller.currentApplicationId, 'test-application');
+        expect(controller.details, isNotNull);
+        expect(controller.hasFreshMutationContext, isFalse);
+        expect(controller.errorMessage, contains('İşlem kaydedildi'));
+      },
+    );
+    test('retry reads same route id and restores fresh context', () async {
+      final gateway = SequencedReadGateway([detailsResponse()]);
+      final controller = DriverApplicationDetailsController(gateway);
+      await controller.load('test-application');
+      gateway.nextDetailsError = const AdminPanelException('unavailable');
+      await controller.refresh();
+
+      await controller.refresh();
+
+      expect(gateway.detailIds, everyElement('test-application'));
+      expect(controller.errorMessage, isNull);
+      expect(controller.hasFreshMutationContext, isTrue);
+    });
+    test('full clear removes route identity and sensitive details', () async {
+      final controller = DriverApplicationDetailsController(
+        SequencedReadGateway([detailsResponse()]),
+      );
+      await controller.load('test-application');
+
+      controller.clearSensitiveState();
+
+      expect(controller.currentApplicationId, isNull);
+      expect(controller.details, isNull);
+      expect(controller.hasFreshMutationContext, isFalse);
+    });
+    test(
+      'session expiry fully clears details and invokes auth callback',
+      () async {
+        final gateway = SequencedReadGateway([detailsResponse()]);
+        var authFailures = 0;
+        final controller = DriverApplicationDetailsController(
+          gateway,
+          handleAuthFailure: () async => authFailures++,
+        );
+        await controller.load('test-application');
+        gateway.nextDetailsError = const AdminPanelException(
+          'unauthenticated',
+          reason: 'session_expired',
+        );
+
+        await controller.refresh();
+
+        expect(authFailures, 1);
+        expect(controller.currentApplicationId, isNull);
+        expect(controller.details, isNull);
+        expect(controller.hasFreshMutationContext, isFalse);
+      },
+    );
+    test(
+      'loading a new id clears the previous application immediately',
+      () async {
+        final gateway = SequencedReadGateway([detailsResponse()]);
+        final controller = DriverApplicationDetailsController(gateway);
+        await controller.load('first-application');
+        gateway.waitForNextDetails = true;
+
+        final load = controller.load('second-application');
+
+        expect(controller.currentApplicationId, 'second-application');
+        expect(controller.details, isNull);
+        gateway.completeNextDetails(detailsResponse());
+        await load;
+      },
+    );
   });
 
   group('review service security', () {
@@ -498,11 +639,15 @@ void main() {
       var detailsRefresh = 0;
       var listRefresh = 0;
       var timelineRefresh = 0;
+      var invalidations = 0;
+      var fullClears = 0;
       final controller = actionController(
         gateway,
         refreshDetails: () async => detailsRefresh++,
         refreshList: () async => listRefresh++,
         refreshTimeline: () async => timelineRefresh++,
+        invalidateReviewContext: () => invalidations++,
+        clearDetails: () => fullClears++,
       );
       await controller.openDocumentPreview(
         applicationId: 'app-1',
@@ -521,6 +666,8 @@ void main() {
       expect(detailsRefresh, 1);
       expect(listRefresh, 1);
       expect(timelineRefresh, 1);
+      expect(invalidations, 1);
+      expect(fullClears, 0);
       expect(gateway.approveCalls, 1);
     });
     test('reupload and reject reasons reach gateway', () async {
@@ -554,11 +701,13 @@ void main() {
         ),
       );
       var refreshes = 0;
+      var invalidations = 0;
       final controller = actionController(
         gateway,
         refreshDetails: () async => refreshes++,
         refreshList: () async => refreshes++,
         refreshTimeline: () async => refreshes++,
+        invalidateReviewContext: () => invalidations++,
       );
       expect(
         await controller.approveApplication(
@@ -569,6 +718,7 @@ void main() {
       );
       expect(gateway.applicationApproveCalls, 1);
       expect(refreshes, 3);
+      expect(invalidations, 1);
       expect(controller.actionErrorMessage, contains('yeniden yükleniyor'));
     });
     test('auth failure clears state and invokes sign out callback', () async {
@@ -579,17 +729,84 @@ void main() {
         ),
       );
       var authFailures = 0;
+      var fullClears = 0;
       final controller = actionController(
         gateway,
         authFailure: () async => authFailures++,
+        clearDetails: () => fullClears++,
       );
       await controller.approveApplication(
         applicationId: 'app-1',
         reviewContext: reviewContext(),
       );
       expect(authFailures, 1);
+      expect(fullClears, 1);
       expect(controller.activePreview, isNull);
     });
+    for (final actionName in [
+      'approve document',
+      'request document reupload',
+      'approve application',
+      'reject application',
+    ]) {
+      test(
+        '$actionName invalidates context and refreshes all read models',
+        () async {
+          final gateway = FakeReviewGateway();
+          var invalidations = 0;
+          var detailsRefreshes = 0;
+          var listRefreshes = 0;
+          var timelineRefreshes = 0;
+          var fullClears = 0;
+          final controller = actionController(
+            gateway,
+            invalidateReviewContext: () => invalidations++,
+            clearDetails: () => fullClears++,
+            refreshDetails: () async => detailsRefreshes++,
+            refreshList: () async => listRefreshes++,
+            refreshTimeline: () async => timelineRefreshes++,
+          );
+
+          switch (actionName) {
+            case 'approve document':
+              await controller.approveDocument(
+                applicationId: 'test-application',
+                reviewContext: reviewContext(),
+                documentType: DriverDocumentType.criminalRecord,
+              );
+              break;
+            case 'request document reupload':
+              await controller.requestDocumentReupload(
+                applicationId: 'test-application',
+                reviewContext: reviewContext(),
+                documentType: DriverDocumentType.criminalRecord,
+                reason: DriverDocumentReuploadReason.unreadableDocument,
+              );
+              break;
+            case 'approve application':
+              await controller.approveApplication(
+                applicationId: 'test-application',
+                reviewContext: reviewContext(),
+              );
+              break;
+            case 'reject application':
+              await controller.rejectApplication(
+                applicationId: 'test-application',
+                reviewContext: reviewContext(),
+                reason: DriverApplicationRejectionReason
+                    .documentInformationMismatch,
+              );
+              break;
+          }
+
+          expect(invalidations, 1);
+          expect(fullClears, 0);
+          expect(detailsRefreshes, 1);
+          expect(listRefreshes, 1);
+          expect(timelineRefreshes, 1);
+        },
+      );
+    }
   });
 
   group('safe presentation helpers', () {
@@ -724,6 +941,92 @@ void main() {
       find.widgetWithText(FilledButton, 'Başvuruyu Onayla'),
     );
     expect(approve.onPressed, isNull);
+  });
+  testWidgets('mutation refresh keeps details visible and locks actions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = SequencedReadGateway([detailsResponse()]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverApplicationDetailsScreen(
+          applicationId: 'test-application',
+          gateway: gateway,
+          reviews: FakeReviewGateway(),
+          reviewEvents: DriverApplicationReviewEventsService(
+            FakeInvoker(timelineResponse()),
+          ),
+          refreshList: () async {},
+          auth: AdminAuthController(FakeAuthGateway()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    gateway.waitForNextDetails = true;
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Onayla').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Belgeyi Onayla'));
+    await tester.pump();
+
+    expect(find.text('Güncel bilgiler yükleniyor...'), findsOneWidget);
+    expect(find.text('Başvuru Özeti'), findsOneWidget);
+    final documentApprove = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Onayla').first,
+    );
+    expect(documentApprove.onPressed, isNull);
+    gateway.completeNextDetails(detailsResponse(status: 'approved'));
+    await tester.pumpAndSettle();
+    expect(find.text('Güncel bilgiler yükleniyor...'), findsNothing);
+    expect(find.text('Başvuru Özeti'), findsOneWidget);
+  });
+  testWidgets('refresh failure keeps detail shell and offers read retry', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = SequencedReadGateway([detailsResponse()]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverApplicationDetailsScreen(
+          applicationId: 'test-application',
+          gateway: gateway,
+          reviews: FakeReviewGateway(),
+          reviewEvents: DriverApplicationReviewEventsService(
+            FakeInvoker(timelineResponse()),
+          ),
+          refreshList: () async {},
+          auth: AdminAuthController(FakeAuthGateway()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    gateway.nextDetailsError = const AdminPanelException('unavailable');
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Onayla').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Belgeyi Onayla'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Başvuru Özeti'), findsOneWidget);
+    expect(
+      find.text('İşlem kaydedildi ancak güncel başvuru bilgileri yüklenemedi.'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(FilledButton, 'Tekrar Yükle'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Onayla').first,
+          )
+          .onPressed,
+      isNull,
+    );
   });
   testWidgets('approve application requires exact ONAYLA confirmation', (
     tester,
@@ -899,6 +1202,47 @@ final class FakeReadGateway implements DriverApplicationAdminReadGateway {
   }
 }
 
+final class SequencedReadGateway implements DriverApplicationAdminReadGateway {
+  SequencedReadGateway(this.responses);
+  final List<Map<String, Object?>> responses;
+  final List<String> detailIds = [];
+  bool waitForNextDetails = false;
+  Object? nextDetailsError;
+  Completer<Map<String, Object?>>? _detailsCompleter;
+
+  void completeNextDetails(Map<String, Object?> response) {
+    _detailsCompleter?.complete(response);
+  }
+
+  @override
+  Future<DriverApplicationReviewDetails> getDetails({
+    required String applicationId,
+  }) async {
+    detailIds.add(applicationId);
+    final error = nextDetailsError;
+    nextDetailsError = null;
+    if (error != null) throw error;
+    Map<String, Object?> response;
+    if (waitForNextDetails) {
+      waitForNextDetails = false;
+      _detailsCompleter = Completer<Map<String, Object?>>();
+      response = await _detailsCompleter!.future;
+    } else {
+      response = responses.length > 1 ? responses.removeAt(0) : responses.first;
+    }
+    return DriverApplicationAdminReadService(
+      FakeInvoker(response),
+    ).getDetails(applicationId: applicationId);
+  }
+
+  @override
+  Future<DriverApplicationReviewPage> list({
+    required DriverApplicationReviewStatus status,
+    int pageSize = 20,
+    DriverApplicationReviewCursor? cursor,
+  }) => throw UnimplementedError();
+}
+
 final class FakeReviewGateway implements DriverApplicationAdminReviewGateway {
   FakeReviewGateway({this.error});
   final Object? error;
@@ -981,13 +1325,16 @@ DriverApplicationReviewActionsController actionController(
   Future<void> Function()? refreshDetails,
   Future<void> Function()? refreshList,
   Future<void> Function()? refreshTimeline,
+  void Function()? invalidateReviewContext,
+  void Function()? clearDetails,
   Future<void> Function()? authFailure,
 }) => DriverApplicationReviewActionsController(
   gateway: gateway,
   refreshDetails: refreshDetails ?? () async {},
   refreshList: refreshList ?? () async {},
   refreshTimeline: refreshTimeline ?? () async {},
-  clearDetails: () {},
+  invalidateReviewContext: invalidateReviewContext ?? () {},
+  clearDetails: clearDetails ?? () {},
   handleAuthFailure: authFailure ?? () async {},
 );
 
@@ -1027,11 +1374,11 @@ Map<String, Object?> listResponse() => {
   'nextCursor': null,
 };
 
-Map<String, Object?> detailsResponse() => {
+Map<String, Object?> detailsResponse({String status = 'pendingReview'}) => {
   'reviewContext': {'submissionVersion': 1, 'documentSetId': 'set-secret'},
   'application': {
     'applicationId': 'app-1',
-    'status': 'pendingReview',
+    'status': status,
     'submittedAtMillis': 0,
     'updatedAtMillis': 1,
     'reviewedAtMillis': null,

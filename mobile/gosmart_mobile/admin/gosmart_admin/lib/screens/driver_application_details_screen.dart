@@ -40,7 +40,10 @@ class _DriverApplicationDetailsScreenState
   @override
   void initState() {
     super.initState();
-    controller = DriverApplicationDetailsController(widget.gateway);
+    controller = DriverApplicationDetailsController(
+      widget.gateway,
+      handleAuthFailure: widget.auth.signOut,
+    );
     timeline = DriverApplicationReviewEventsController(
       widget.reviewEvents,
       handleAuthFailure: () async {
@@ -53,6 +56,7 @@ class _DriverApplicationDetailsScreenState
       refreshDetails: controller.refresh,
       refreshList: widget.refreshList,
       refreshTimeline: timeline.refresh,
+      invalidateReviewContext: controller.invalidateReviewContext,
       clearDetails: controller.clearSensitiveState,
       handleAuthFailure: widget.auth.signOut,
     );
@@ -81,16 +85,16 @@ class _DriverApplicationDetailsScreenState
       ),
     ),
     body: ListenableBuilder(
-      listenable: controller,
+      listenable: Listenable.merge([controller, actions]),
       builder: (context, _) {
-        if (controller.isLoading) {
+        if (controller.isLoading && controller.details == null) {
           return const Center(
             child: CircularProgressIndicator(
               semanticsLabel: 'Başvuru ayrıntısı yükleniyor',
             ),
           );
         }
-        if (controller.errorMessage != null) {
+        if (controller.errorMessage != null && controller.details == null) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -99,7 +103,7 @@ class _DriverApplicationDetailsScreenState
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: controller.refresh,
-                  child: const Text('Tekrar Dene'),
+                  child: const Text('Tekrar Yükle'),
                 ),
               ],
             ),
@@ -111,6 +115,41 @@ class _DriverApplicationDetailsScreenState
         return ListView(
           padding: const EdgeInsets.all(24),
           children: [
+            if (controller.isRefreshing)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(child: Text('Güncel bilgiler yükleniyor...')),
+                    ],
+                  ),
+                ),
+              ),
+            if (controller.errorMessage != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(controller.errorMessage!),
+                      const SizedBox(height: 8),
+                      FilledButton(
+                        onPressed: controller.isRefreshing
+                            ? null
+                            : controller.refresh,
+                        child: const Text('Tekrar Yükle'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             _section(context, 'Başvuru Özeti', [
               _row('Durum', a.status.label),
               _row('Başvuru tarihi', formatAdminDate(a.submittedAt)),
@@ -184,7 +223,13 @@ class _DriverApplicationDetailsScreenState
     DriverApplicationReviewDetails details,
     DriverApplicationReviewDocument document,
   ) {
+    final actionsLocked =
+        !controller.hasFreshMutationContext ||
+        controller.isRefreshing ||
+        actions.isSubmittingDocumentDecision ||
+        actions.isSubmittingApplicationDecision;
     final canMutate =
+        !actionsLocked &&
         details.application.status ==
             DriverApplicationReviewStatus.pendingReview &&
         document.reviewStatus == DocumentReviewStatus.pendingReview;
@@ -210,7 +255,9 @@ class _DriverApplicationDetailsScreenState
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: () => _openPreview(details, document),
+                onPressed: actionsLocked
+                    ? null
+                    : () => _openPreview(details, document),
                 icon: const Icon(Icons.visibility_outlined),
                 label: Semantics(
                   label: '${document.documentType.label} belgesini görüntüle',
@@ -330,6 +377,10 @@ class _DriverApplicationDetailsScreenState
         details.application.status ==
         DriverApplicationReviewStatus.pendingReview;
     final canApprove =
+        controller.hasFreshMutationContext &&
+        !controller.isRefreshing &&
+        !actions.isSubmittingDocumentDecision &&
+        !actions.isSubmittingApplicationDecision &&
         pending &&
         approved == DriverDocumentType.values.length &&
         details.documents.length == DriverDocumentType.values.length;
@@ -352,7 +403,14 @@ class _DriverApplicationDetailsScreenState
             child: const Text('Başvuruyu Onayla'),
           ),
           OutlinedButton(
-            onPressed: pending ? () => _rejectApplication(details) : null,
+            onPressed:
+                pending &&
+                    controller.hasFreshMutationContext &&
+                    !controller.isRefreshing &&
+                    !actions.isSubmittingDocumentDecision &&
+                    !actions.isSubmittingApplicationDecision
+                ? () => _rejectApplication(details)
+                : null,
             child: const Text('Başvuruyu Reddet'),
           ),
         ],

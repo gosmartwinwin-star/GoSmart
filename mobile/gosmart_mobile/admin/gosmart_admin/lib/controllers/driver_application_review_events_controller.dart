@@ -97,6 +97,7 @@ final class DriverApplicationReviewEventsController extends ChangeNotifier {
     if (error is AdminPanelException &&
         (const {
               'authentication_required',
+              'session_expired',
               'admin_access_required',
             }.contains(error.reason) ||
             const {
