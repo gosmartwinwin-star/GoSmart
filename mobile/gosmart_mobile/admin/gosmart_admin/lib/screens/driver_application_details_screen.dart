@@ -311,7 +311,13 @@ class _DriverApplicationDetailsScreenState
                   ),
                 ),
               ] else
-                _documentStatusIndicator(document.reviewStatus),
+                _documentStatusIndicator(
+                  document.reviewStatus,
+                  awaitingDocumentResubmission:
+                      details.application.reviewState ==
+                      DriverApplicationReviewQueueState
+                          .awaitingDocumentResubmission,
+                ),
             ],
           ),
           const Divider(height: 24),
@@ -320,8 +326,15 @@ class _DriverApplicationDetailsScreenState
     );
   }
 
-  Widget _documentStatusIndicator(DocumentReviewStatus status) {
+  Widget _documentStatusIndicator(
+    DocumentReviewStatus status, {
+    required bool awaitingDocumentResubmission,
+  }) {
     final (label, semanticLabel) = switch (status) {
+      DocumentReviewStatus.pendingReview when awaitingDocumentResubmission => (
+        'Yeni belge gönderimi bekleniyor',
+        'Belge için yeni gönderim bekleniyor',
+      ),
       DocumentReviewStatus.pendingReview => (
         status.label,
         'Belge inceleme bekliyor',

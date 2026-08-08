@@ -1178,7 +1178,8 @@ void main() {
       expect(find.text('Görüntüle'), findsNWidgets(7));
       expect(find.text('✓ Onaylandı'), findsOneWidget);
       expect(find.text('Yeniden Yükleme İstendi'), findsOneWidget);
-      expect(find.text('İnceleme Bekliyor'), findsWidgets);
+      expect(find.text('Yeni belge gönderimi bekleniyor'), findsNWidgets(5));
+      expect(find.text('İnceleme Bekliyor'), findsNothing);
       expect(find.widgetWithText(FilledButton, 'Onayla'), findsNothing);
       expect(
         find.widgetWithText(OutlinedButton, 'Yeniden Yükleme İste'),
@@ -1193,6 +1194,20 @@ void main() {
       expect(find.text('Belge Yenileme Bekleniyor'), findsWidgets);
       expect(find.text('Yeni belge gönderimi bekleniyor.'), findsOneWidget);
       expect(find.text('Başvuruyu Reddet'), findsNothing);
+      expect(
+        find.bySemanticsLabel(
+          'Belge için yeni gönderim bekleniyor',
+          skipOffstage: false,
+        ),
+        findsNWidgets(5),
+      );
+      expect(
+        find.ancestor(
+          of: find.text('Yeni belge gönderimi bekleniyor').first,
+          matching: find.byType(ButtonStyleButton),
+        ),
+        findsNothing,
+      );
       expect(
         tester
             .widget<FilledButton>(
