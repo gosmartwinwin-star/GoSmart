@@ -223,6 +223,9 @@ class _DriverApplicationDetailsScreenState
     DriverApplicationReviewDetails details,
     DriverApplicationReviewDocument document,
   ) {
+    final applicationAllowsMutation =
+        details.application.status ==
+        DriverApplicationReviewStatus.pendingReview;
     final actionsLocked =
         !controller.hasFreshMutationContext ||
         controller.isRefreshing ||
@@ -230,8 +233,7 @@ class _DriverApplicationDetailsScreenState
         actions.isSubmittingApplicationDecision;
     final canMutate =
         !actionsLocked &&
-        details.application.status ==
-            DriverApplicationReviewStatus.pendingReview &&
+        applicationAllowsMutation &&
         document.reviewStatus == DocumentReviewStatus.pendingReview;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -264,29 +266,65 @@ class _DriverApplicationDetailsScreenState
                   child: const Text('Görüntüle'),
                 ),
               ),
-              FilledButton.tonal(
-                onPressed: canMutate
-                    ? () => _confirmDocumentApproval(details, document)
-                    : null,
-                child: Semantics(
-                  label: '${document.documentType.label} belgesini onayla',
-                  child: const Text('Onayla'),
+              if (document.reviewStatus == DocumentReviewStatus.pendingReview &&
+                  applicationAllowsMutation) ...[
+                FilledButton.tonal(
+                  onPressed: canMutate
+                      ? () => _confirmDocumentApproval(details, document)
+                      : null,
+                  child: Semantics(
+                    label: '${document.documentType.label} belgesini onayla',
+                    child: const Text('Onayla'),
+                  ),
                 ),
-              ),
-              OutlinedButton(
-                onPressed: canMutate
-                    ? () => _requestReupload(details, document)
-                    : null,
-                child: Semantics(
-                  label:
-                      '${document.documentType.label} belgesi için yeniden yükleme iste',
-                  child: const Text('Yeniden Yükleme İste'),
+                OutlinedButton(
+                  onPressed: canMutate
+                      ? () => _requestReupload(details, document)
+                      : null,
+                  child: Semantics(
+                    label:
+                        '${document.documentType.label} belgesi için yeniden yükleme iste',
+                    child: const Text('Yeniden Yükleme İste'),
+                  ),
                 ),
-              ),
+              ] else
+                _documentStatusIndicator(document.reviewStatus),
             ],
           ),
           const Divider(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _documentStatusIndicator(DocumentReviewStatus status) {
+    final (label, semanticLabel) = switch (status) {
+      DocumentReviewStatus.pendingReview => (
+        status.label,
+        'Belge inceleme bekliyor',
+      ),
+      DocumentReviewStatus.approved => ('✓ Onaylandı', 'Belge onaylandı'),
+      DocumentReviewStatus.reuploadRequired => (
+        'Yeniden Yükleme İstendi',
+        'Belgenin yeniden yüklenmesi istendi',
+      ),
+    };
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
       ),
     );
   }

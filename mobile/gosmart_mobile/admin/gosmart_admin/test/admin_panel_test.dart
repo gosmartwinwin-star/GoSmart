@@ -942,6 +942,113 @@ void main() {
     );
     expect(approve.onPressed, isNull);
   });
+  testWidgets('pending documents show all review actions', (tester) async {
+    await pumpDetailsFixture(tester);
+
+    expect(find.text('Görüntüle'), findsNWidgets(7));
+    expect(find.text('Onayla'), findsNWidgets(7));
+    expect(find.text('Yeniden Yükleme İste'), findsNWidgets(7));
+    expect(find.text('✓ Onaylandı'), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Onayla').first,
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+  testWidgets('approved documents use a non-interactive status indicator', (
+    tester,
+  ) async {
+    await pumpDetailsFixture(tester, documentStatus: 'approved');
+
+    expect(find.text('Onaylandı', skipOffstage: false), findsWidgets);
+    expect(find.text('✓ Onaylandı', skipOffstage: false), findsWidgets);
+    expect(find.widgetWithText(FilledButton, 'Onayla'), findsNothing);
+    expect(find.text('Yeniden Yükleme İste'), findsNothing);
+    expect(find.text('Görüntüle'), findsNWidgets(7));
+    expect(
+      find.bySemanticsLabel('Belge onaylandı', skipOffstage: false),
+      findsWidgets,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('✓ Onaylandı', skipOffstage: false).first,
+        matching: find.byType(ButtonStyleButton),
+      ),
+      findsNothing,
+    );
+  });
+  testWidgets('reupload documents use a safe read-only indicator', (
+    tester,
+  ) async {
+    await pumpDetailsFixture(
+      tester,
+      documentStatus: 'reuploadRequired',
+      documentReason: 'unreadable_document',
+    );
+    await scrollUntilBuilt(tester, find.text('Yeniden Yükleme İstendi'));
+
+    expect(
+      find.textContaining('Yeniden Yükleme Gerekli', skipOffstage: false),
+      findsWidgets,
+    );
+    expect(
+      find.text('Yeniden Yükleme İstendi', skipOffstage: false),
+      findsWidgets,
+    );
+    expect(find.widgetWithText(FilledButton, 'Onayla'), findsNothing);
+    expect(
+      find.widgetWithText(OutlinedButton, 'Yeniden Yükleme İste'),
+      findsNothing,
+    );
+    expect(
+      find.bySemanticsLabel(
+        'Belgenin yeniden yüklenmesi istendi',
+        skipOffstage: false,
+      ),
+      findsWidgets,
+    );
+    expect(find.text('unreadable_document'), findsNothing);
+  });
+  for (final applicationStatus in ['approved', 'rejected']) {
+    testWidgets(
+      '$applicationStatus application hides pending document mutations',
+      (tester) async {
+        await pumpDetailsFixture(tester, applicationStatus: applicationStatus);
+
+        expect(find.widgetWithText(FilledButton, 'Onayla'), findsNothing);
+        expect(
+          find.widgetWithText(OutlinedButton, 'Yeniden Yükleme İste'),
+          findsNothing,
+        );
+        expect(find.text('İnceleme Bekliyor'), findsWidgets);
+        expect(find.text('✓ Onaylandı'), findsNothing);
+        expect(
+          find.bySemanticsLabel('Belge inceleme bekliyor', skipOffstage: false),
+          findsWidgets,
+        );
+      },
+    );
+  }
+  for (final fixture in [
+    ('approved', '✓ Onaylandı'),
+    ('reuploadRequired', 'Yeniden Yükleme İstendi'),
+  ]) {
+    testWidgets('${fixture.$1} indicators fit a 360x640 viewport', (
+      tester,
+    ) async {
+      await pumpDetailsFixture(
+        tester,
+        documentStatus: fixture.$1,
+        size: const Size(360, 640),
+      );
+      await scrollUntilBuilt(tester, find.text(fixture.$2));
+      expect(find.text(fixture.$2, skipOffstage: false), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets('mutation refresh keeps details visible and locks actions', (
     tester,
   ) async {
@@ -974,6 +1081,7 @@ void main() {
 
     expect(find.text('Güncel bilgiler yükleniyor...'), findsOneWidget);
     expect(find.text('Başvuru Özeti'), findsOneWidget);
+    expect(find.text('✓ Onaylandı'), findsNothing);
     final documentApprove = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Onayla').first,
     );
@@ -1374,7 +1482,11 @@ Map<String, Object?> listResponse() => {
   'nextCursor': null,
 };
 
-Map<String, Object?> detailsResponse({String status = 'pendingReview'}) => {
+Map<String, Object?> detailsResponse({
+  String status = 'pendingReview',
+  String documentStatus = 'pendingReview',
+  String? documentReason,
+}) => {
   'reviewContext': {'submissionVersion': 1, 'documentSetId': 'set-secret'},
   'application': {
     'applicationId': 'app-1',
@@ -1417,12 +1529,56 @@ Map<String, Object?> detailsResponse({String status = 'pendingReview'}) => {
           .map(
             (type) => {
               'documentType': type,
-              'reviewStatus': 'pendingReview',
+              'reviewStatus': documentStatus,
               'reviewedAtMillis': null,
-              'rejectionReasonCode': null,
+              'rejectionReasonCode': documentReason,
               'contentType': 'image/jpeg',
               'sizeBytes': 100,
             },
           )
           .toList(),
 };
+
+Future<void> pumpDetailsFixture(
+  WidgetTester tester, {
+  String applicationStatus = 'pendingReview',
+  String documentStatus = 'pendingReview',
+  String? documentReason,
+  Size size = const Size(1440, 8000),
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final gateway = DriverApplicationAdminReadService(
+    FakeInvoker(
+      detailsResponse(
+        status: applicationStatus,
+        documentStatus: documentStatus,
+        documentReason: documentReason,
+      ),
+    ),
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      home: DriverApplicationDetailsScreen(
+        applicationId: 'test-application',
+        gateway: gateway,
+        reviews: FakeReviewGateway(),
+        reviewEvents: DriverApplicationReviewEventsService(
+          FakeInvoker(timelineResponse()),
+        ),
+        refreshList: () async {},
+        auth: AdminAuthController(FakeAuthGateway()),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> scrollUntilBuilt(WidgetTester tester, Finder finder) async {
+  for (var attempt = 0; attempt < 30 && finder.evaluate().isEmpty; attempt++) {
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump();
+  }
+}
