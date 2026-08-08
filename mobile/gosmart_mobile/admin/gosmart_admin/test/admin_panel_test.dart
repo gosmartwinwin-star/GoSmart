@@ -975,7 +975,58 @@ void main() {
     expect(find.text('Onaylanmayan'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+    'awaiting desktop row keeps inspect action visible and navigates',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final gateway = FakeReadGateway(
+        noCursor: true,
+        reviewState:
+            DriverApplicationReviewQueueState.awaitingDocumentResubmission,
+      );
+      final reviews = FakeReviewGateway();
+      final controller = DriverApplicationsController(gateway);
+      await controller.loadInitial();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DriverApplicationsScreen(
+              controller: controller,
+              gateway: gateway,
+              reviews: reviews,
+              reviewEvents: DriverApplicationReviewEventsService(
+                FakeInvoker(timelineResponse()),
+              ),
+              auth: AdminAuthController(FakeAuthGateway()),
+            ),
+          ),
+        ),
+      );
+
+      final inspect = find.widgetWithText(OutlinedButton, 'İncele');
+      expect(find.text('İşlem'), findsOneWidget);
+      expect(inspect, findsOneWidget);
+      expect(tester.getTopRight(inspect).dx, lessThanOrEqualTo(1440));
+      await tester.tap(inspect);
+      await tester.pumpAndSettle();
+      expect(find.text('Sürücü Başvurusu'), findsOneWidget);
+      expect(reviews.previewCalls, 0);
+      expect(reviews.approveCalls, 0);
+      expect(reviews.applicationApproveCalls, 0);
+      expect(reviews.documentReason, isNull);
+      expect(reviews.applicationReason, isNull);
+    },
+  );
   for (final fixture in const [
+    (
+      DriverApplicationReviewQueueState.pendingReview,
+      'İnceleme Bekleyen',
+      'Reddedilen',
+    ),
+    (DriverApplicationReviewQueueState.approved, 'Onaylanan', 'Reddedilen'),
     (
       DriverApplicationReviewQueueState.awaitingDocumentResubmission,
       'Belge Yenileme Bekleyen',
@@ -986,6 +1037,7 @@ void main() {
       'Reddedilen',
       'Belge Yenileme Bekleyen',
     ),
+    (DriverApplicationReviewQueueState.withdrawn, 'Geri Çekilen', 'Reddedilen'),
   ]) {
     testWidgets('${fixture.$1.name} list row uses only its safe label', (
       tester,
@@ -1013,6 +1065,7 @@ void main() {
         find.descendant(of: find.byType(Card), matching: find.text(fixture.$3)),
         findsNothing,
       );
+      expect(find.widgetWithText(OutlinedButton, 'İncele'), findsOneWidget);
     });
   }
   testWidgets('details shows safe sections and manual review actions', (
@@ -1550,7 +1603,7 @@ final class FakeReadGateway implements DriverApplicationAdminReadGateway {
   }) async {
     listCalls++;
     return DriverApplicationReviewPage(
-      items: [summary(reviewState: reviewState)],
+      items: [summary(reviewState: this.reviewState)],
       nextCursor: !noCursor && cursor == null
           ? DriverApplicationReviewCursor(
               submittedAt: _epoch,

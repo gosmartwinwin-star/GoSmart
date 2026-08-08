@@ -113,7 +113,7 @@ final class DriverApplicationsScreen extends StatelessWidget {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              if (constraints.maxWidth < 760) {
+              if (constraints.maxWidth < 1050) {
                 return ListView.separated(
                   itemCount: controller.items.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -121,47 +121,7 @@ final class DriverApplicationsScreen extends StatelessWidget {
                       _card(context, controller.items[index]),
                 );
               }
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SingleChildScrollView(
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('Başvuru Tarihi')),
-                      DataColumn(label: Text('Çalışma Şekli')),
-                      DataColumn(label: Text('Araç')),
-                      DataColumn(label: Text('Model Yılı')),
-                      DataColumn(label: Text('Ruhsat Sahibi')),
-                      DataColumn(label: Text('Durum')),
-                      DataColumn(label: Text('İşlem')),
-                    ],
-                    rows: controller.items
-                        .map(
-                          (item) => DataRow(
-                            cells: [
-                              DataCell(Text(formatAdminDate(item.submittedAt))),
-                              DataCell(Text(item.workType.label)),
-                              DataCell(
-                                Text(
-                                  '${item.vehicleBrand} ${item.vehicleModel}',
-                                ),
-                              ),
-                              DataCell(Text('${item.vehicleModelYear}')),
-                              DataCell(Text(item.registrationOwnerType.label)),
-                              DataCell(Text(item.reviewState.label)),
-                              DataCell(
-                                OutlinedButton(
-                                  onPressed: () =>
-                                      _open(context, item.applicationId),
-                                  child: const Text('İncele'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-              );
+              return _desktopList(context);
             },
           ),
         ),
@@ -185,6 +145,47 @@ final class DriverApplicationsScreen extends StatelessWidget {
       ],
     );
   }
+
+  Widget _desktopList(BuildContext context) => Column(
+    children: [
+      const _ApplicationTableRow(
+        isHeader: true,
+        cells: [
+          Text('Başvuru Tarihi'),
+          Text('Çalışma Şekli'),
+          Text('Araç'),
+          Text('Model Yılı'),
+          Text('Ruhsat Sahibi'),
+          Text('Durum'),
+          Text('İşlem'),
+        ],
+      ),
+      const Divider(height: 1),
+      Expanded(
+        child: ListView.separated(
+          itemCount: controller.items.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (_, index) {
+            final item = controller.items[index];
+            return _ApplicationTableRow(
+              cells: [
+                Text(formatAdminDate(item.submittedAt)),
+                Text(item.workType.label),
+                Text('${item.vehicleBrand} ${item.vehicleModel}'),
+                Text('${item.vehicleModelYear}'),
+                Text(item.registrationOwnerType.label),
+                Text(item.reviewState.label),
+                OutlinedButton(
+                  onPressed: () => _open(context, item.applicationId),
+                  child: const Text('İncele'),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    ],
+  );
 
   Widget _card(BuildContext context, DriverApplicationReviewSummary item) =>
       Card(
@@ -214,4 +215,41 @@ final class DriverApplicationsScreen extends StatelessWidget {
           ),
         ),
       );
+}
+
+final class _ApplicationTableRow extends StatelessWidget {
+  const _ApplicationTableRow({required this.cells, this.isHeader = false});
+  final List<Widget> cells;
+  final bool isHeader;
+
+  static const _flexes = [15, 12, 15, 8, 13, 17, 10];
+
+  @override
+  Widget build(BuildContext context) => Container(
+    color: isHeader ? Theme.of(context).colorScheme.surfaceContainerLow : null,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: List.generate(
+        cells.length,
+        (index) => Expanded(
+          flex: _flexes[index],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: DefaultTextStyle.merge(
+              style: isHeader
+                  ? const TextStyle(fontWeight: FontWeight.w600)
+                  : null,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: cells[index],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
