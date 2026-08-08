@@ -1012,6 +1012,90 @@ void main() {
     );
     expect(find.text('unreadable_document'), findsNothing);
   });
+  testWidgets(
+    'mixed rejected set explains why pending document actions are locked',
+    (tester) async {
+      await pumpDetailsFixture(
+        tester,
+        applicationStatus: 'rejected',
+        applicationReason: 'document_reupload_required',
+        documentStatuses: const [
+          'approved',
+          'reuploadRequired',
+          'pendingReview',
+          'pendingReview',
+          'pendingReview',
+          'pendingReview',
+          'pendingReview',
+        ],
+      );
+
+      expect(find.text('Görüntüle'), findsNWidgets(7));
+      expect(find.text('✓ Onaylandı'), findsOneWidget);
+      expect(find.text('Yeniden Yükleme İstendi'), findsOneWidget);
+      expect(find.text('İnceleme Bekliyor'), findsWidgets);
+      expect(find.widgetWithText(FilledButton, 'Onayla'), findsNothing);
+      expect(
+        find.widgetWithText(OutlinedButton, 'Yeniden Yükleme İste'),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          'Başvuru belge yeniden yüklemesi bekliyor. Yeni belge gönderilene kadar kalan belgeler için karar verilemez.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Başvuruyu Onayla'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.text('document_reupload_required'), findsNothing);
+    },
+  );
+  testWidgets('mixed reupload workflow message fits compact viewport', (
+    tester,
+  ) async {
+    await pumpDetailsFixture(
+      tester,
+      applicationStatus: 'rejected',
+      applicationReason: 'document_reupload_required',
+      documentStatuses: const [
+        'approved',
+        'reuploadRequired',
+        'pendingReview',
+        'pendingReview',
+        'pendingReview',
+        'pendingReview',
+        'pendingReview',
+      ],
+      size: const Size(360, 640),
+    );
+
+    await scrollUntilBuilt(
+      tester,
+      find.textContaining('Başvuru belge yeniden yüklemesi bekliyor'),
+    );
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('new pending document set removes reupload workflow lock', (
+    tester,
+  ) async {
+    await pumpDetailsFixture(tester);
+
+    expect(
+      find.textContaining('Başvuru belge yeniden yüklemesi bekliyor'),
+      findsNothing,
+    );
+    expect(find.widgetWithText(FilledButton, 'Onayla'), findsNWidgets(7));
+    expect(
+      find.widgetWithText(OutlinedButton, 'Yeniden Yükleme İste'),
+      findsNWidgets(7),
+    );
+  });
   for (final applicationStatus in ['approved', 'rejected']) {
     testWidgets(
       '$applicationStatus application hides pending document mutations',
@@ -1485,7 +1569,9 @@ Map<String, Object?> listResponse() => {
 Map<String, Object?> detailsResponse({
   String status = 'pendingReview',
   String documentStatus = 'pendingReview',
+  List<String>? documentStatuses,
   String? documentReason,
+  String? applicationReason,
 }) => {
   'reviewContext': {'submissionVersion': 1, 'documentSetId': 'set-secret'},
   'application': {
@@ -1514,36 +1600,37 @@ Map<String, Object?> detailsResponse({
     'kvkkNoticeAccepted': true,
     'termsAccepted': true,
     'marketingConsent': false,
-    'rejectionReasonCode': null,
+    'rejectionReasonCode': applicationReason,
   },
   'documents':
       [
-            'driverLicenseFront',
-            'driverLicenseBack',
-            'identityCardFront',
-            'identityCardBack',
-            'vehicleRegistration',
-            'driverProfilePhoto',
-            'criminalRecord',
-          ]
-          .map(
-            (type) => {
-              'documentType': type,
-              'reviewStatus': documentStatus,
-              'reviewedAtMillis': null,
-              'rejectionReasonCode': documentReason,
-              'contentType': 'image/jpeg',
-              'sizeBytes': 100,
-            },
-          )
-          .toList(),
+        'driverLicenseFront',
+        'driverLicenseBack',
+        'identityCardFront',
+        'identityCardBack',
+        'vehicleRegistration',
+        'driverProfilePhoto',
+        'criminalRecord',
+      ].indexed.map((entry) {
+        final (index, type) = entry;
+        return {
+          'documentType': type,
+          'reviewStatus': documentStatuses?[index] ?? documentStatus,
+          'reviewedAtMillis': null,
+          'rejectionReasonCode': documentReason,
+          'contentType': 'image/jpeg',
+          'sizeBytes': 100,
+        };
+      }).toList(),
 };
 
 Future<void> pumpDetailsFixture(
   WidgetTester tester, {
   String applicationStatus = 'pendingReview',
   String documentStatus = 'pendingReview',
+  List<String>? documentStatuses,
   String? documentReason,
+  String? applicationReason,
   Size size = const Size(1440, 8000),
 }) async {
   tester.view.physicalSize = size;
@@ -1555,7 +1642,9 @@ Future<void> pumpDetailsFixture(
       detailsResponse(
         status: applicationStatus,
         documentStatus: documentStatus,
+        documentStatuses: documentStatuses,
         documentReason: documentReason,
+        applicationReason: applicationReason,
       ),
     ),
   );

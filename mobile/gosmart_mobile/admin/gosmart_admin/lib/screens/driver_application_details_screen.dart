@@ -199,13 +199,29 @@ class _DriverApplicationDetailsScreenState
               _row('Koşullar', _yesNo(a.termsAccepted)),
               _row('Pazarlama izni', _yesNo(a.marketingConsent)),
             ]),
-            _section(
-              context,
-              'Belgeler',
-              details.documents
-                  .map((document) => _documentRow(details, document))
-                  .toList(),
-            ),
+            _section(context, 'Belgeler', [
+              if (_isWaitingForDocumentReupload(details))
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Başvuru belge yeniden yüklemesi bekliyor. Yeni belge gönderilene kadar kalan belgeler için karar verilemez.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ...details.documents.map(
+                (document) => _documentRow(details, document),
+              ),
+            ]),
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: DriverApplicationReviewEventsTimeline(
@@ -218,6 +234,18 @@ class _DriverApplicationDetailsScreenState
       },
     ),
   );
+
+  bool _isWaitingForDocumentReupload(DriverApplicationReviewDetails details) =>
+      details.application.status == DriverApplicationReviewStatus.rejected &&
+      details.application.rejectionReasonCode == 'document_reupload_required' &&
+      details.documents.any(
+        (document) =>
+            document.reviewStatus == DocumentReviewStatus.reuploadRequired,
+      ) &&
+      details.documents.any(
+        (document) =>
+            document.reviewStatus == DocumentReviewStatus.pendingReview,
+      );
 
   Widget _documentRow(
     DriverApplicationReviewDetails details,
