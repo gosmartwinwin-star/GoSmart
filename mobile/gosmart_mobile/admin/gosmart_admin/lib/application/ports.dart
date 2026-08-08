@@ -21,7 +21,7 @@ abstract interface class AdminCallableInvoker {
 
 abstract interface class DriverApplicationAdminReadGateway {
   Future<DriverApplicationReviewPage> list({
-    required DriverApplicationReviewStatus status,
+    required DriverApplicationReviewQueueState reviewState,
     int pageSize = 20,
     DriverApplicationReviewCursor? cursor,
   });

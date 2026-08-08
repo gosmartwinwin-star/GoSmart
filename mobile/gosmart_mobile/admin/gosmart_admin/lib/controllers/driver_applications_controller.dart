@@ -6,8 +6,8 @@ import '../domain/driver_application.dart';
 final class DriverApplicationsController extends ChangeNotifier {
   DriverApplicationsController(this._gateway);
   final DriverApplicationAdminReadGateway _gateway;
-  DriverApplicationReviewStatus selectedStatus =
-      DriverApplicationReviewStatus.pendingReview;
+  DriverApplicationReviewQueueState selectedReviewState =
+      DriverApplicationReviewQueueState.pendingReview;
   List<DriverApplicationReviewSummary> items = const [];
   DriverApplicationReviewCursor? nextCursor;
   bool isLoading = false;
@@ -21,7 +21,7 @@ final class DriverApplicationsController extends ChangeNotifier {
     errorMessage = null;
     _notify();
     try {
-      final page = await _gateway.list(status: selectedStatus);
+      final page = await _gateway.list(reviewState: selectedReviewState);
       items = page.items;
       nextCursor = page.nextCursor;
     } catch (error) {
@@ -32,9 +32,11 @@ final class DriverApplicationsController extends ChangeNotifier {
     }
   }
 
-  Future<void> changeStatus(DriverApplicationReviewStatus status) async {
-    if (selectedStatus == status) return;
-    selectedStatus = status;
+  Future<void> changeReviewState(
+    DriverApplicationReviewQueueState reviewState,
+  ) async {
+    if (selectedReviewState == reviewState) return;
+    selectedReviewState = reviewState;
     items = const [];
     nextCursor = null;
     errorMessage = null;
@@ -49,7 +51,10 @@ final class DriverApplicationsController extends ChangeNotifier {
     errorMessage = null;
     _notify();
     try {
-      final page = await _gateway.list(status: selectedStatus, cursor: cursor);
+      final page = await _gateway.list(
+        reviewState: selectedReviewState,
+        cursor: cursor,
+      );
       final ids = items.map((item) => item.applicationId).toSet();
       items = [
         ...items,

@@ -151,17 +151,12 @@ class _DriverApplicationDetailsScreenState
                 ),
               ),
             _section(context, 'Başvuru Özeti', [
-              _row('Durum', a.status.label),
+              _row('Durum', _applicationStatusLabel(a)),
               _row('Başvuru tarihi', formatAdminDate(a.submittedAt)),
               _row('Güncellenme tarihi', formatAdminDate(a.updatedAt)),
               if (a.reviewedAt != null)
                 _row('İnceleme tarihi', formatAdminDate(a.reviewedAt!)),
               _row('Başvuru sürümü', '${a.submissionVersion}'),
-              if (a.rejectionReasonCode != null)
-                _row(
-                  'İnceleme açıklaması',
-                  rejectionReasonLabel(a.rejectionReasonCode),
-                ),
             ]),
             _section(context, 'Kişisel Bilgiler', [
               _row('Ad Soyad', a.fullName),
@@ -236,8 +231,8 @@ class _DriverApplicationDetailsScreenState
   );
 
   bool _isWaitingForDocumentReupload(DriverApplicationReviewDetails details) =>
-      details.application.status == DriverApplicationReviewStatus.rejected &&
-      details.application.rejectionReasonCode == 'document_reupload_required' &&
+      details.application.reviewState ==
+          DriverApplicationReviewQueueState.awaitingDocumentResubmission &&
       details.documents.any(
         (document) =>
             document.reviewStatus == DocumentReviewStatus.reuploadRequired,
@@ -442,6 +437,9 @@ class _DriverApplicationDetailsScreenState
     final pending =
         details.application.status ==
         DriverApplicationReviewStatus.pendingReview;
+    final awaitingResubmission =
+        details.application.reviewState ==
+        DriverApplicationReviewQueueState.awaitingDocumentResubmission;
     final canApprove =
         controller.hasFreshMutationContext &&
         !controller.isRefreshing &&
@@ -451,8 +449,13 @@ class _DriverApplicationDetailsScreenState
         approved == DriverDocumentType.values.length &&
         details.documents.length == DriverDocumentType.values.length;
     return _section(context, 'Başvuru Kararı', [
-      _row('Güncel durum', details.application.status.label),
+      _row('Güncel durum', _applicationStatusLabel(details.application)),
       _row('Belge özeti', '$approved / ${details.documents.length} onaylandı'),
+      if (awaitingResubmission)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Text('Yeni belge gönderimi bekleniyor.'),
+        ),
       if (!canApprove)
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
@@ -468,21 +471,31 @@ class _DriverApplicationDetailsScreenState
             onPressed: canApprove ? () => _approveApplication(details) : null,
             child: const Text('Başvuruyu Onayla'),
           ),
-          OutlinedButton(
-            onPressed:
-                pending &&
-                    controller.hasFreshMutationContext &&
-                    !controller.isRefreshing &&
-                    !actions.isSubmittingDocumentDecision &&
-                    !actions.isSubmittingApplicationDecision
-                ? () => _rejectApplication(details)
-                : null,
-            child: const Text('Başvuruyu Reddet'),
-          ),
+          if (!awaitingResubmission)
+            OutlinedButton(
+              onPressed:
+                  pending &&
+                      controller.hasFreshMutationContext &&
+                      !controller.isRefreshing &&
+                      !actions.isSubmittingDocumentDecision &&
+                      !actions.isSubmittingApplicationDecision
+                  ? () => _rejectApplication(details)
+                  : null,
+              child: const Text('Başvuruyu Reddet'),
+            ),
         ],
       ),
     ]);
   }
+
+  String _applicationStatusLabel(
+    DriverApplicationReviewApplication application,
+  ) => switch (application.reviewState) {
+    DriverApplicationReviewQueueState.awaitingDocumentResubmission =>
+      'Belge Yenileme Bekleniyor',
+    DriverApplicationReviewQueueState.rejected => 'Reddedildi',
+    _ => application.reviewState.label,
+  };
 
   Future<void> _approveApplication(
     DriverApplicationReviewDetails details,

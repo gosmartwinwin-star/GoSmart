@@ -9,13 +9,13 @@ final class DriverApplicationAdminReadService
 
   @override
   Future<DriverApplicationReviewPage> list({
-    required DriverApplicationReviewStatus status,
+    required DriverApplicationReviewQueueState reviewState,
     int pageSize = 20,
     DriverApplicationReviewCursor? cursor,
   }) async {
     if (pageSize < 1 || pageSize > 50) throw RangeError.range(pageSize, 1, 50);
     final payload = <String, Object?>{
-      'status': status.name,
+      'reviewState': reviewState.name,
       'pageSize': pageSize,
       if (cursor != null)
         'cursor': <String, Object?>{
@@ -56,6 +56,10 @@ final class DriverApplicationAdminReadService
             status: _enum(
               DriverApplicationReviewStatus.values,
               value['status'],
+            ),
+            reviewState: _enum(
+              DriverApplicationReviewQueueState.values,
+              value['reviewState'],
             ),
             submittedAt: _date(value['submittedAtMillis']),
             updatedAt: _date(value['updatedAtMillis']),
@@ -115,6 +119,10 @@ final class DriverApplicationAdminReadService
     return DriverApplicationReviewApplication(
       applicationId: _text(m['applicationId'], 'applicationId'),
       status: _enum(DriverApplicationReviewStatus.values, m['status']),
+      reviewState: _enum(
+        DriverApplicationReviewQueueState.values,
+        m['reviewState'],
+      ),
       submittedAt: _date(m['submittedAtMillis']),
       updatedAt: _date(m['updatedAtMillis']),
       reviewedAt: _nullableDate(m['reviewedAtMillis']),
@@ -145,7 +153,6 @@ final class DriverApplicationAdminReadService
       kvkkNoticeAccepted: _boolean(m['kvkkNoticeAccepted']),
       termsAccepted: _boolean(m['termsAccepted']),
       marketingConsent: _boolean(m['marketingConsent']),
-      rejectionReasonCode: _nullableText(m['rejectionReasonCode']),
     );
   }
 

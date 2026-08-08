@@ -50,6 +50,7 @@ import {
   calculateReviewUrlExpiry,
   mapApplicationReviewDetails,
   mapApplicationSummary,
+  reviewStateQuery,
   validateApplicationDetailsPayload,
   validateApplicationListPayload,
   validateDocumentReviewUrlPayload,
@@ -806,8 +807,15 @@ export const listDriverApplicationsForReview = onCall(
     requireGoSmartAdmin(request.auth);
     const input = validateApplicationListPayload(request.data);
     try {
+      const filter = input.status === null ? reviewStateQuery(input.reviewState) :
+        {status: input.status, rejectionReasonCodes: null};
       let query = firestore.collection("driverApplications")
-        .where("status", "==", input.status)
+        .where("status", "==", filter.status);
+      if (filter.rejectionReasonCodes !== null) {
+        query = query.where("rejectionReasonCode", "in",
+          filter.rejectionReasonCodes);
+      }
+      query = query
         .orderBy("submittedAt", "desc")
         .orderBy(FieldPath.documentId(), "desc");
       if (input.cursor) {

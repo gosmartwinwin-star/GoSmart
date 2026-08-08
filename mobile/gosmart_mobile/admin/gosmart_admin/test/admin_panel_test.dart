@@ -68,9 +68,9 @@ void main() {
       final invoker = FakeInvoker(listResponse());
       final page = await DriverApplicationAdminReadService(
         invoker,
-      ).list(status: DriverApplicationReviewStatus.pendingReview);
+      ).list(reviewState: DriverApplicationReviewQueueState.pendingReview);
       expect(page.items, hasLength(1));
-      expect(invoker.payload, {'status': 'pendingReview', 'pageSize': 20});
+      expect(invoker.payload, {'reviewState': 'pendingReview', 'pageSize': 20});
       for (final key in ['admin', 'uid', 'offset', 'documentSetId']) {
         expect(invoker.payload, isNot(contains(key)));
       }
@@ -79,7 +79,7 @@ void main() {
     test('cursor is serialized with exact fields', () async {
       final invoker = FakeInvoker(listResponse());
       await DriverApplicationAdminReadService(invoker).list(
-        status: DriverApplicationReviewStatus.approved,
+        reviewState: DriverApplicationReviewQueueState.approved,
         cursor: DriverApplicationReviewCursor(
           submittedAt: DateTime.fromMillisecondsSinceEpoch(12, isUtc: true),
           applicationId: 'app-1',
@@ -90,6 +90,28 @@ void main() {
         'applicationId': 'app-1',
       });
     });
+    test('all five filters send exact reviewState wire values', () async {
+      for (final state in DriverApplicationReviewQueueState.values) {
+        final invoker = FakeInvoker(listResponse(reviewState: state.name));
+        await DriverApplicationAdminReadService(
+          invoker,
+        ).list(reviewState: state);
+        expect(invoker.payload, {'reviewState': state.name, 'pageSize': 20});
+      }
+    });
+    test('awaiting and rejected rows remain distinct safe states', () async {
+      for (final state in const [
+        DriverApplicationReviewQueueState.awaitingDocumentResubmission,
+        DriverApplicationReviewQueueState.rejected,
+      ]) {
+        final page = await DriverApplicationAdminReadService(
+          FakeInvoker(
+            listResponse(status: 'rejected', reviewState: state.name),
+          ),
+        ).list(reviewState: state);
+        expect(page.items.single.reviewState, state);
+      }
+    });
     test('bool, double and negative millis are rejected', () async {
       for (final bad in [true, 1.2, -1]) {
         final response = listResponse();
@@ -97,7 +119,7 @@ void main() {
         expect(
           DriverApplicationAdminReadService(
             FakeInvoker(response),
-          ).list(status: DriverApplicationReviewStatus.pendingReview),
+          ).list(reviewState: DriverApplicationReviewQueueState.pendingReview),
           throwsFormatException,
         );
       }
@@ -108,7 +130,27 @@ void main() {
       expect(
         DriverApplicationAdminReadService(
           FakeInvoker(response),
-        ).list(status: DriverApplicationReviewStatus.pendingReview),
+        ).list(reviewState: DriverApplicationReviewQueueState.pendingReview),
+        throwsFormatException,
+      );
+      final unknownState = listResponse();
+      (unknownState['items']! as List).first['reviewState'] = 'rawState';
+      expect(
+        DriverApplicationAdminReadService(
+          FakeInvoker(unknownState),
+        ).list(reviewState: DriverApplicationReviewQueueState.pendingReview),
+        throwsFormatException,
+      );
+    });
+    test('unsupported sixth review state is rejected safely', () async {
+      final response = listResponse(
+        status: 'rejected',
+        reviewState: 'unsupportedReviewState',
+      );
+      expect(
+        DriverApplicationAdminReadService(
+          FakeInvoker(response),
+        ).list(reviewState: DriverApplicationReviewQueueState.rejected),
         throwsFormatException,
       );
     });
@@ -126,7 +168,7 @@ void main() {
         expect(
           DriverApplicationAdminReadService(
             FakeInvoker(response),
-          ).list(status: DriverApplicationReviewStatus.pendingReview),
+          ).list(reviewState: DriverApplicationReviewQueueState.pendingReview),
           throwsFormatException,
         );
       });
@@ -137,9 +179,10 @@ void main() {
       item['fullName'] = 'Gizli';
       item['vehiclePlate'] = 'Gizli';
       item['documentSetId'] = 'Gizli';
-      final summary = (await DriverApplicationAdminReadService(
-        FakeInvoker(response),
-      ).list(status: DriverApplicationReviewStatus.pendingReview)).items.single;
+      final summary =
+          (await DriverApplicationAdminReadService(FakeInvoker(response)).list(
+            reviewState: DriverApplicationReviewQueueState.pendingReview,
+          )).items.single;
       expect(summary.toString(), isNot(contains('Gizli')));
     });
     test('malformed cursor is rejected', () async {
@@ -151,7 +194,7 @@ void main() {
       expect(
         DriverApplicationAdminReadService(
           FakeInvoker(response),
-        ).list(status: DriverApplicationReviewStatus.pendingReview),
+        ).list(reviewState: DriverApplicationReviewQueueState.pendingReview),
         throwsFormatException,
       );
     });
@@ -262,8 +305,13 @@ void main() {
       final gateway = FakeReadGateway();
       final controller = DriverApplicationsController(gateway);
       await controller.loadInitial();
-      await controller.changeStatus(DriverApplicationReviewStatus.approved);
-      expect(controller.selectedStatus, DriverApplicationReviewStatus.approved);
+      await controller.changeReviewState(
+        DriverApplicationReviewQueueState.approved,
+      );
+      expect(
+        controller.selectedReviewState,
+        DriverApplicationReviewQueueState.approved,
+      );
       expect(gateway.listCalls, 2);
     });
     test('load more does nothing without cursor', () async {
@@ -889,14 +937,84 @@ void main() {
       ),
     );
     expect(find.text('Sürücü Başvuruları'), findsOneWidget);
-    for (final status in DriverApplicationReviewStatus.values) {
-      expect(find.text(status.label), findsWidgets);
+    for (final state in DriverApplicationReviewQueueState.values) {
+      expect(find.text(state.label), findsWidgets);
     }
+    expect(find.text('Onaylanmayan'), findsNothing);
     expect(find.text('İncele'), findsOneWidget);
     expect(find.text('Ad Soyad'), findsNothing);
     expect(find.text('00 XX 000'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('five review filters fit a 360x640 viewport', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = FakeReadGateway(noCursor: true);
+    final controller = DriverApplicationsController(gateway);
+    await controller.loadInitial();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DriverApplicationsScreen(
+            controller: controller,
+            gateway: gateway,
+            reviews: FakeReviewGateway(),
+            reviewEvents: DriverApplicationReviewEventsService(
+              FakeInvoker(timelineResponse()),
+            ),
+            auth: AdminAuthController(FakeAuthGateway()),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(ChoiceChip), findsNWidgets(5));
+    expect(find.text('Belge Yenileme Bekleyen'), findsOneWidget);
+    expect(find.text('Reddedilen'), findsOneWidget);
+    expect(find.text('Onaylanmayan'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  for (final fixture in const [
+    (
+      DriverApplicationReviewQueueState.awaitingDocumentResubmission,
+      'Belge Yenileme Bekleyen',
+      'Reddedilen',
+    ),
+    (
+      DriverApplicationReviewQueueState.rejected,
+      'Reddedilen',
+      'Belge Yenileme Bekleyen',
+    ),
+  ]) {
+    testWidgets('${fixture.$1.name} list row uses only its safe label', (
+      tester,
+    ) async {
+      final gateway = FakeReadGateway(noCursor: true, reviewState: fixture.$1);
+      final controller = DriverApplicationsController(gateway);
+      await controller.loadInitial();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DriverApplicationsScreen(
+              controller: controller,
+              gateway: gateway,
+              reviews: FakeReviewGateway(),
+              reviewEvents: DriverApplicationReviewEventsService(
+                FakeInvoker(timelineResponse()),
+              ),
+              auth: AdminAuthController(FakeAuthGateway()),
+            ),
+          ),
+        ),
+      );
+      expect(find.text(fixture.$2), findsWidgets);
+      expect(
+        find.descendant(of: find.byType(Card), matching: find.text(fixture.$3)),
+        findsNothing,
+      );
+    });
+  }
   testWidgets('details shows safe sections and manual review actions', (
     tester,
   ) async {
@@ -941,6 +1059,33 @@ void main() {
       find.widgetWithText(FilledButton, 'Başvuruyu Onayla'),
     );
     expect(approve.onPressed, isNull);
+  });
+  testWidgets('unsupported details review state fails safely without actions', (
+    tester,
+  ) async {
+    final gateway = DriverApplicationAdminReadService(
+      FakeInvoker(detailsResponse(reviewState: 'unsupportedReviewState')),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverApplicationDetailsScreen(
+          applicationId: 'test-application',
+          gateway: gateway,
+          reviews: FakeReviewGateway(),
+          reviewEvents: DriverApplicationReviewEventsService(
+            FakeInvoker(timelineResponse()),
+          ),
+          refreshList: () async {},
+          auth: AdminAuthController(FakeAuthGateway()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('unsupportedReviewState'), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'Onayla'), findsNothing);
+    expect(find.text('Başvuruyu Onayla'), findsNothing);
+    expect(find.text('Başvuruyu Reddet'), findsNothing);
+    expect(find.text('Tekrar Yükle'), findsOneWidget);
   });
   testWidgets('pending documents show all review actions', (tester) async {
     await pumpDetailsFixture(tester);
@@ -1045,6 +1190,9 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(find.text('Belge Yenileme Bekleniyor'), findsWidgets);
+      expect(find.text('Yeni belge gönderimi bekleniyor.'), findsOneWidget);
+      expect(find.text('Başvuruyu Reddet'), findsNothing);
       expect(
         tester
             .widget<FilledButton>(
@@ -1113,6 +1261,13 @@ void main() {
           find.bySemanticsLabel('Belge inceleme bekliyor', skipOffstage: false),
           findsWidgets,
         );
+        if (applicationStatus == 'rejected') {
+          expect(find.text('Reddedildi'), findsWidgets);
+          expect(
+            find.textContaining('Başvuru belge yeniden yüklemesi bekliyor'),
+            findsNothing,
+          );
+        }
       },
     );
   }
@@ -1363,19 +1518,24 @@ final class FakeInvoker implements AdminCallableInvoker {
 }
 
 final class FakeReadGateway implements DriverApplicationAdminReadGateway {
-  FakeReadGateway({this.failDetails = false, this.noCursor = false});
+  FakeReadGateway({
+    this.failDetails = false,
+    this.noCursor = false,
+    this.reviewState = DriverApplicationReviewQueueState.pendingReview,
+  });
   final bool failDetails;
   final bool noCursor;
+  final DriverApplicationReviewQueueState reviewState;
   int listCalls = 0;
   @override
   Future<DriverApplicationReviewPage> list({
-    required DriverApplicationReviewStatus status,
+    required DriverApplicationReviewQueueState reviewState,
     int pageSize = 20,
     DriverApplicationReviewCursor? cursor,
   }) async {
     listCalls++;
     return DriverApplicationReviewPage(
-      items: [summary()],
+      items: [summary(reviewState: reviewState)],
       nextCursor: !noCursor && cursor == null
           ? DriverApplicationReviewCursor(
               submittedAt: _epoch,
@@ -1429,7 +1589,7 @@ final class SequencedReadGateway implements DriverApplicationAdminReadGateway {
 
   @override
   Future<DriverApplicationReviewPage> list({
-    required DriverApplicationReviewStatus status,
+    required DriverApplicationReviewQueueState reviewState,
     int pageSize = 20,
     DriverApplicationReviewCursor? cursor,
   }) => throw UnimplementedError();
@@ -1535,9 +1695,13 @@ Map<String, Object?> timelineResponse() => {
   'items': <Object?>[],
   'nextCursor': null,
 };
-DriverApplicationReviewSummary summary() => DriverApplicationReviewSummary(
+DriverApplicationReviewSummary summary({
+  DriverApplicationReviewQueueState reviewState =
+      DriverApplicationReviewQueueState.pendingReview,
+}) => DriverApplicationReviewSummary(
   applicationId: 'app-1',
   status: DriverApplicationReviewStatus.pendingReview,
+  reviewState: reviewState,
   submittedAt: _epoch,
   updatedAt: _epoch,
   submissionVersion: 1,
@@ -1548,11 +1712,15 @@ DriverApplicationReviewSummary summary() => DriverApplicationReviewSummary(
   registrationOwnerType: RegistrationOwnerType.applicant,
 );
 
-Map<String, Object?> listResponse() => {
+Map<String, Object?> listResponse({
+  String status = 'pendingReview',
+  String reviewState = 'pendingReview',
+}) => {
   'items': [
     {
       'applicationId': 'app-1',
-      'status': 'pendingReview',
+      'status': status,
+      'reviewState': reviewState,
       'submittedAtMillis': 0,
       'updatedAtMillis': 1,
       'submissionVersion': 1,
@@ -1568,6 +1736,7 @@ Map<String, Object?> listResponse() => {
 
 Map<String, Object?> detailsResponse({
   String status = 'pendingReview',
+  String? reviewState,
   String documentStatus = 'pendingReview',
   List<String>? documentStatuses,
   String? documentReason,
@@ -1577,6 +1746,11 @@ Map<String, Object?> detailsResponse({
   'application': {
     'applicationId': 'app-1',
     'status': status,
+    'reviewState':
+        reviewState ??
+        (applicationReason == 'document_reupload_required'
+            ? 'awaitingDocumentResubmission'
+            : status),
     'submittedAtMillis': 0,
     'updatedAtMillis': 1,
     'reviewedAtMillis': null,

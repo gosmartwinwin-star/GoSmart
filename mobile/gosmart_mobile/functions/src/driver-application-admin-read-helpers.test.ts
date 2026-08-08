@@ -1,11 +1,13 @@
 /* eslint-disable max-len */
 import assert from "node:assert/strict";
 import test from "node:test";
+import {readFileSync} from "node:fs";
 import {Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {buildUpdatedCustomClaims, maskUidForConsole, parseAdminClaimCommand} from "./admin-claim-management-helpers.js";
-import {buildNextCursor, buildReviewContext, calculateReviewUrlExpiry, mapApplicationReviewDetails,
-  mapApplicationSummary, validateApplicationDetailsPayload,
+import {applicationReviewState, buildNextCursor, buildReviewContext,
+  calculateReviewUrlExpiry, mapApplicationReviewDetails,
+  mapApplicationSummary, reviewStateQuery, validateApplicationDetailsPayload,
   validateApplicationListPayload, validateDocumentReviewUrlPayload} from
   "./driver-application-admin-read-helpers.js";
 import {REQUIRED_DOCUMENT_TYPES} from "./driver-application-helpers.js";
@@ -38,9 +40,14 @@ test("claim güncellemesi diğer claimleri korur ve disable alanı kaldırır", 
 
 test("liste varsayılanları, status ve pageSize sınırları doğrulanır", () => {
   assert.deepEqual(validateApplicationListPayload({}),
-    {status: "pendingReview", pageSize: 20, cursor: null});
+    {status: null, reviewState: "pendingReview", pageSize: 20, cursor: null});
   for (const status of ["pendingReview", "approved", "rejected", "withdrawn"]) {
     assert.equal(validateApplicationListPayload({status}).status, status);
+  }
+  for (const reviewState of ["pendingReview", "approved",
+    "awaitingDocumentResubmission", "rejected", "withdrawn"]) {
+    assert.equal(validateApplicationListPayload({reviewState}).reviewState,
+      reviewState);
   }
   assert.equal(validateApplicationListPayload({pageSize: 1}).pageSize, 1);
   assert.equal(validateApplicationListPayload({pageSize: 50}).pageSize, 50);
@@ -48,7 +55,41 @@ test("liste varsayılanları, status ve pageSize sınırları doğrulanır", () 
     reason(() => validateApplicationListPayload({pageSize}), "invalid_page_size");
   }
   reason(() => validateApplicationListPayload({status: "other"}), "invalid_review_status");
+  reason(() => validateApplicationListPayload({reviewState: "other"}), "invalid_review_state");
+  reason(() => validateApplicationListPayload({reviewState:
+    "unsupportedReviewState"}), "invalid_review_state");
+  reason(() => validateApplicationListPayload({status: "rejected",
+    reviewState: "rejected"}), "invalid_admin_list_payload");
   reason(() => validateApplicationListPayload({admin: true}), "invalid_admin_list_payload");
+});
+
+test("persisted application alanları review state'i kesin ve güvenli ayırır", () => {
+  assert.equal(applicationReviewState({status: "pendingReview"}), "pendingReview");
+  assert.equal(applicationReviewState({status: "approved"}), "approved");
+  assert.equal(applicationReviewState({status: "withdrawn"}), "withdrawn");
+  assert.equal(applicationReviewState({status: "rejected",
+    rejectionReasonCode: "document_reupload_required"}),
+  "awaitingDocumentResubmission");
+  assert.equal(applicationReviewState({status: "rejected",
+    rejectionReasonCode: "duplicate_application"}), "rejected");
+  for (const rejectionReasonCode of [undefined, "unsupported_reason", 1]) {
+    reason(() => applicationReviewState({status: "rejected",
+      rejectionReasonCode}), "driver_application_review_state_invalid");
+  }
+  reason(() => applicationReviewState({status: "raw"}),
+    "driver_application_review_data_invalid");
+});
+
+test("review state query final ret ile belge yenilemeyi ayırır", () => {
+  assert.deepEqual(reviewStateQuery("awaitingDocumentResubmission"),
+    {status: "rejected", rejectionReasonCodes: ["document_reupload_required"]});
+  const rejected = reviewStateQuery("rejected");
+  assert.equal(rejected.status, "rejected");
+  assert.equal(rejected.rejectionReasonCodes?.includes(
+    "document_reupload_required"), false);
+  assert.equal(rejected.rejectionReasonCodes?.length, 6);
+  assert.deepEqual(reviewStateQuery("pendingReview"),
+    {status: "pendingReview", rejectionReasonCodes: null});
 });
 
 test("cursor tam ve negatif olmayan integer olmalıdır", () => {
@@ -85,6 +126,7 @@ test("summary hassas ve storage alanlarını taşımaz", () => {
     vehicleModelYear: 2024, registrationOwnerType: "applicant",
     fullName: "Secret", storagePath: "secret", documentSetId: "secret"});
   assert.equal(summary.applicationId, "user-a");
+  assert.equal(summary.reviewState, "pendingReview");
   assert.equal("fullName" in summary, false);
   assert.equal("storagePath" in summary, false);
   assert.equal("documentSetId" in summary, false);
@@ -122,6 +164,22 @@ test("details yedi canonical belgeyi map eder ve sunucu alanlarını çıkarır"
   assert.equal("storagePath" in details.documents[0], false);
   assert.equal("documentSetId" in details.application, false);
   assert.equal("reviewedByAdminUid" in details.documents[0], false);
+  assert.equal(details.application.reviewState, "pendingReview");
+  assert.equal("rejectionReasonCode" in details.application, false);
+  const ambiguous = {...application, status: "rejected",
+    rejectionReasonCode: null};
+  reason(() => mapApplicationReviewDetails("user-a", ambiguous, documents,
+    reviewContext), "driver_application_review_state_invalid");
+});
+
+test("ambiguous rejected application public summary üretemez", () => {
+  const now = Timestamp.fromMillis(1000);
+  const base = {status: "rejected", submittedAt: now, updatedAt: now,
+    submissionVersion: 1, workType: "vehicleOwner", vehicleBrand: "Fiat",
+    vehicleModel: "Egea", vehicleModelYear: 2024,
+    registrationOwnerType: "applicant"};
+  reason(() => mapApplicationSummary("user-a", base),
+    "driver_application_review_state_invalid");
 });
 
 test("reviewContext yalnız geçerli güncel application alanlarından üretilir", () => {
@@ -140,4 +198,36 @@ test("signed URL expiry üç dakika ve en fazla beş dakikadır", () => {
   assert.equal(calculateReviewUrlExpiry(1000), 181000);
   assert.equal(calculateReviewUrlExpiry(1000, 300000), 301000);
   assert.throws(() => calculateReviewUrlExpiry(1000, 300001));
+});
+
+test("liste callable tek sorgu, deterministic pagination ve audit side-effect kullanmaz", () => {
+  const source = readFileSync("src/index.ts", "utf8");
+  const start = source.indexOf("export const listDriverApplicationsForReview");
+  const end = source.indexOf("export const listDriverApplicationReviewEvents", start);
+  assert.ok(start >= 0 && end > start);
+  const callable = source.slice(start, end);
+  assert.match(callable, /reviewStateQuery\(input\.reviewState\)/u);
+  assert.match(callable, /where\("status", "==", filter\.status\)/u);
+  assert.match(callable, /where\("rejectionReasonCode", "in",/u);
+  assert.match(callable, /orderBy\("submittedAt", "desc"\)/u);
+  assert.match(callable, /orderBy\(FieldPath\.documentId\(\), "desc"\)/u);
+  assert.match(callable, /startAfter\(Timestamp\.fromMillis\(/u);
+  assert.match(callable, /limit\(input\.pageSize \+ 1\)/u);
+  assert.doesNotMatch(callable, /getDriverApplicationReviewDetails/u);
+  assert.doesNotMatch(callable, /applicationViewed/u);
+  assert.doesNotMatch(callable, /\.add\(|\.create\(|\.update\(|\.delete\(/u);
+});
+
+test("belge yenileme ve final ret sorgusu için composite index tanımlıdır", () => {
+  const config = JSON.parse(readFileSync("../firestore.indexes.json", "utf8")) as {
+    indexes: {collectionGroup: string; fields: {fieldPath: string; order: string}[]}[];
+  };
+  assert.equal(config.indexes.some((index) =>
+    index.collectionGroup === "driverApplications" &&
+    JSON.stringify(index.fields) === JSON.stringify([
+      {fieldPath: "status", order: "ASCENDING"},
+      {fieldPath: "rejectionReasonCode", order: "ASCENDING"},
+      {fieldPath: "submittedAt", order: "DESCENDING"},
+      {fieldPath: "__name__", order: "DESCENDING"},
+    ])), true);
 });

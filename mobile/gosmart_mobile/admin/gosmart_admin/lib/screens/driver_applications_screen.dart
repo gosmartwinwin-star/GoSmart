@@ -64,12 +64,12 @@ final class DriverApplicationsScreen extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: DriverApplicationReviewStatus.values
+              children: DriverApplicationReviewQueueState.values
                   .map(
-                    (status) => ChoiceChip(
-                      label: Text(status.label),
-                      selected: controller.selectedStatus == status,
-                      onSelected: (_) => controller.changeStatus(status),
+                    (state) => ChoiceChip(
+                      label: Text(state.label),
+                      selected: controller.selectedReviewState == state,
+                      onSelected: (_) => controller.changeReviewState(state),
                     ),
                   )
                   .toList(),
@@ -147,7 +147,7 @@ final class DriverApplicationsScreen extends StatelessWidget {
                               ),
                               DataCell(Text('${item.vehicleModelYear}')),
                               DataCell(Text(item.registrationOwnerType.label)),
-                              DataCell(Text(item.status.label)),
+                              DataCell(Text(item.reviewState.label)),
                               DataCell(
                                 OutlinedButton(
                                   onPressed: () =>
@@ -201,7 +201,7 @@ final class DriverApplicationsScreen extends StatelessWidget {
               Text(formatAdminDate(item.submittedAt)),
               Text(item.workType.label),
               Text(item.registrationOwnerType.label),
-              Text(item.status.label),
+              Text(item.reviewState.label),
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerRight,

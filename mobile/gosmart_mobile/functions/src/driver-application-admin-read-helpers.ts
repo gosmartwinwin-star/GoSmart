@@ -6,8 +6,16 @@ import {validateCurrentApplicationVersion, validateCurrentDocumentMetadata} from
 
 const STATUSES = ["pendingReview", "approved", "rejected", "withdrawn"] as const;
 type ReviewStatus = typeof STATUSES[number];
+const REVIEW_STATES = ["pendingReview", "approved",
+  "awaitingDocumentResubmission", "rejected", "withdrawn"] as const;
+export type ReviewState = typeof REVIEW_STATES[number];
+const APPLICATION_REJECTION_REASONS = ["personal_information_invalid",
+  "vehicle_information_invalid", "document_information_mismatch",
+  "eligibility_requirements_not_met", "duplicate_application",
+  "application_information_incomplete"] as const;
 export type PageCursor = {submittedAtMillis: number; applicationId: string};
-export type ListInput = {status: ReviewStatus; pageSize: number; cursor: PageCursor | null};
+export type ListInput = {status: ReviewStatus | null; reviewState: ReviewState;
+  pageSize: number; cursor: PageCursor | null};
 export type DetailsInput = {applicationId: string};
 export type ReviewContext = {submissionVersion: number; documentSetId: string};
 export type UrlInput = DetailsInput & ReviewContext & {documentType: DocumentType};
@@ -34,9 +42,18 @@ const positiveVersion = (value: unknown) => {
 };
 
 export const validateApplicationListPayload = (value: unknown): ListInput => {
-  const input = exact(value, ["status", "pageSize", "cursor"], "invalid_admin_list_payload");
-  const status = input.status ?? "pendingReview";
-  if (!STATUSES.includes(status as ReviewStatus)) throw invalid("invalid_review_status");
+  const input = exact(value, ["status", "reviewState", "pageSize", "cursor"], "invalid_admin_list_payload");
+  if (input.status !== undefined && input.reviewState !== undefined) {
+    throw invalid("invalid_admin_list_payload");
+  }
+  const status = input.status;
+  if (status !== undefined && !STATUSES.includes(status as ReviewStatus)) {
+    throw invalid("invalid_review_status");
+  }
+  const reviewState = input.reviewState ?? status ?? "pendingReview";
+  if (!REVIEW_STATES.includes(reviewState as ReviewState)) {
+    throw invalid("invalid_review_state");
+  }
   const pageSize = input.pageSize ?? 20;
   if (typeof pageSize !== "number" || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50) {
     throw invalid("invalid_page_size");
@@ -51,7 +68,39 @@ export const validateApplicationListPayload = (value: unknown): ListInput => {
     cursor = {submittedAtMillis: raw.submittedAtMillis,
       applicationId: identifier(raw.applicationId, "invalid_page_cursor")};
   }
-  return {status: status as ReviewStatus, pageSize, cursor};
+  return {status: status === undefined ? null : status as ReviewStatus,
+    reviewState: reviewState as ReviewState, pageSize, cursor};
+};
+
+export const applicationReviewState = (
+  data: Record<string, unknown>,
+): ReviewState => {
+  const status = data.status;
+  if (status === "pendingReview" || status === "approved" ||
+      status === "withdrawn") return status;
+  if (status !== "rejected") {
+    throw new HttpsError("internal", "Başvuru verisi doğrulanamadı.",
+      {reason: "driver_application_review_data_invalid"});
+  }
+  if (data.rejectionReasonCode === "document_reupload_required") {
+    return "awaitingDocumentResubmission";
+  }
+  if (APPLICATION_REJECTION_REASONS.includes(
+    data.rejectionReasonCode as typeof APPLICATION_REJECTION_REASONS[number])) {
+    return "rejected";
+  }
+  throw new HttpsError("internal", "Başvuru inceleme durumu doğrulanamadı.",
+    {reason: "driver_application_review_state_invalid"});
+};
+
+export const reviewStateQuery = (reviewState: ReviewState) => {
+  if (reviewState === "awaitingDocumentResubmission") {
+    return {status: "rejected", rejectionReasonCodes: ["document_reupload_required"]};
+  }
+  if (reviewState === "rejected") {
+    return {status: "rejected", rejectionReasonCodes: [...APPLICATION_REJECTION_REASONS]};
+  }
+  return {status: reviewState, rejectionReasonCodes: null};
 };
 
 export const validateApplicationDetailsPayload = (value: unknown): DetailsInput => {
@@ -105,6 +154,7 @@ const stringValue = (value: unknown, nullable = false): string | null => {
 
 export const mapApplicationSummary = (id: string, data: Record<string, unknown>) => ({
   applicationId: id, status: stringValue(data.status),
+  reviewState: applicationReviewState(data),
   submittedAtMillis: timestampMillis(data.submittedAt) as number,
   updatedAtMillis: timestampMillis(data.updatedAt) as number,
   submissionVersion: positiveStoredInteger(data.submissionVersion), workType: stringValue(data.workType),
@@ -154,6 +204,7 @@ export const mapApplicationReviewDetails = (id: string, data: Record<string, unk
   });
   return {reviewContext: {...reviewContext},
     application: {applicationId: id, status: stringValue(data.status),
+    reviewState: applicationReviewState(data),
     submittedAtMillis: timestampMillis(data.submittedAt), updatedAtMillis: timestampMillis(data.updatedAt),
     reviewedAtMillis: timestampMillis(data.reviewedAt, true), submissionVersion: positiveStoredInteger(data.submissionVersion),
     fullName: stringValue(data.fullName), verifiedPhoneNumber: stringValue(data.verifiedPhoneNumber),
@@ -168,8 +219,7 @@ export const mapApplicationReviewDetails = (id: string, data: Record<string, unk
     documentValidityNotificationAccepted: data.documentValidityNotificationAccepted === true,
     documentProcessingNoticeAccepted: data.documentProcessingNoticeAccepted === true,
     kvkkNoticeAccepted: data.kvkkNoticeAccepted === true, termsAccepted: data.termsAccepted === true,
-    marketingConsent: data.marketingConsent === true,
-    rejectionReasonCode: stringValue(data.rejectionReasonCode, true)}, documents: mappedDocuments};
+    marketingConsent: data.marketingConsent === true}, documents: mappedDocuments};
 };
 
 export const calculateReviewUrlExpiry = (nowMillis: number, durationMillis = 180000): number => {

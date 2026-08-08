@@ -3,10 +3,21 @@ import 'dart:collection';
 enum DriverApplicationReviewStatus {
   pendingReview('İnceleme Bekleyen'),
   approved('Onaylanan'),
-  rejected('Onaylanmayan'),
+  rejected('Reddedildi'),
   withdrawn('Geri Çekilen');
 
   const DriverApplicationReviewStatus(this.label);
+  final String label;
+}
+
+enum DriverApplicationReviewQueueState {
+  pendingReview('İnceleme Bekleyen'),
+  approved('Onaylanan'),
+  awaitingDocumentResubmission('Belge Yenileme Bekleyen'),
+  rejected('Reddedilen'),
+  withdrawn('Geri Çekilen');
+
+  const DriverApplicationReviewQueueState(this.label);
   final String label;
 }
 
@@ -131,6 +142,7 @@ final class DriverApplicationReviewSummary {
   const DriverApplicationReviewSummary({
     required this.applicationId,
     required this.status,
+    required this.reviewState,
     required this.submittedAt,
     required this.updatedAt,
     required this.submissionVersion,
@@ -142,6 +154,7 @@ final class DriverApplicationReviewSummary {
   });
   final String applicationId;
   final DriverApplicationReviewStatus status;
+  final DriverApplicationReviewQueueState reviewState;
   final DateTime submittedAt;
   final DateTime updatedAt;
   final int submissionVersion;
@@ -189,6 +202,7 @@ final class DriverApplicationReviewApplication {
   const DriverApplicationReviewApplication({
     required this.applicationId,
     required this.status,
+    required this.reviewState,
     required this.submittedAt,
     required this.updatedAt,
     this.reviewedAt,
@@ -212,10 +226,10 @@ final class DriverApplicationReviewApplication {
     required this.kvkkNoticeAccepted,
     required this.termsAccepted,
     required this.marketingConsent,
-    this.rejectionReasonCode,
   });
   final String applicationId;
   final DriverApplicationReviewStatus status;
+  final DriverApplicationReviewQueueState reviewState;
   final DateTime submittedAt;
   final DateTime updatedAt;
   final DateTime? reviewedAt;
@@ -239,7 +253,6 @@ final class DriverApplicationReviewApplication {
   final bool kvkkNoticeAccepted;
   final bool termsAccepted;
   final bool marketingConsent;
-  final String? rejectionReasonCode;
 }
 
 final class DriverApplicationReviewDocument {
