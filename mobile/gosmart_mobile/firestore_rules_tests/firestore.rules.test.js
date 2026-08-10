@@ -203,6 +203,16 @@ for (const [name, operation] of ownProfileWrites) {
   test(`${name} is denied`, async () => assertFails(operation(dbFor('user-a'))));
 }
 
+test('server-only resubmission operations deny every client operation', async () => {
+  const db = dbFor('user-a');
+  const reference = doc(db, 'driverApplicationResubmissionOperations/opaque');
+  await assertFails(getDoc(reference));
+  await assertFails(getDocs(collection(db, 'driverApplicationResubmissionOperations')));
+  await assertFails(setDoc(reference, { status: 'processing' }));
+  await assertFails(updateDoc(reference, { status: 'completed' }));
+  await assertFails(deleteDoc(reference));
+});
+
 test('18 unauthenticated user cannot get a pass', async () => {
   await assertFails(getDoc(doc(dbFor(), 'driverAccessPasses/pass-a-current')));
 });

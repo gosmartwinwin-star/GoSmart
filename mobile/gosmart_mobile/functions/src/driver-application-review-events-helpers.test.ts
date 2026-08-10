@@ -49,6 +49,7 @@ test("known event types map to safe fields and derived decisions", () => {
     ["applicationViewed", undefined], ["documentViewed", undefined],
     ["documentApproved", "approve"], ["documentReuploadRequired", "requireReupload"],
     ["applicationApproved", "approve"], ["applicationRejected", "reject"],
+    ["applicationResubmitted", undefined],
   ];
   for (const [type, decision] of cases) {
     const mapped = mapReviewEvent(event({eventType: type,

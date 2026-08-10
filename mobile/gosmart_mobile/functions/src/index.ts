@@ -59,6 +59,14 @@ import {
   buildReviewEventsPage,
   validateReviewEventsPayload,
 } from "./driver-application-review-events-helpers.js";
+import {
+  buildPublicDriverApplicationStatus,
+  operationDocumentId,
+  requestDigest,
+  validateCurrentDocuments,
+  validateResubmissionEligibility,
+  validateResubmissionPayload,
+} from "./driver-application-resubmission-helpers.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -99,6 +107,11 @@ type SubmitDriverApplicationInput = {
   kvkkNoticeAccepted: boolean;
   termsAccepted: boolean;
   marketingConsent?: boolean;
+};
+
+type ResubmitDriverApplicationInput = {
+  expectedSubmissionVersion: number;
+  requestId: string;
 };
 
 const routesClient = new v2.RoutesClient();
@@ -434,6 +447,259 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
   },
 );
 
+/* eslint-disable max-len */
+export const getMyDriverApplicationStatus = onCall(
+  {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Oturum açmanız gereklidir.",
+        {reason: "authentication_required"});
+    }
+    if (request.data !== undefined && request.data !== null &&
+        (typeof request.data !== "object" || Array.isArray(request.data) ||
+         Object.keys(request.data as Record<string, unknown>).length !== 0)) {
+      throw new HttpsError("invalid-argument", "İstek uygun değildir.",
+        {reason: "invalid_driver_application_status_payload"});
+    }
+    const uid = request.auth.uid;
+    const applicationRef = firestore.collection("driverApplications").doc(uid);
+    try {
+      const [application, ...documents] = await Promise.all([
+        applicationRef.get(), ...getRequiredDocumentTypes().map((type) =>
+          applicationRef.collection("documents").doc(type).get()),
+      ]);
+      if (!application.exists) {
+        throw new HttpsError("not-found", "Sürücü başvurusu bulunamadı.",
+          {reason: "driver_application_not_found"});
+      }
+      if (documents.some((document) => !document.exists)) {
+        throw new HttpsError("internal", "Sürücü başvurusu doğrulanamadı.",
+          {reason: "driver_application_document_data_invalid"});
+      }
+      const applicationData = application.data() ?? {};
+      const currentDocuments = validateCurrentDocuments(uid, applicationData,
+        documents.map((document) => document.data() ?? {}));
+      return buildPublicDriverApplicationStatus(applicationData, currentDocuments);
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", "Sürücü başvurusu yüklenemedi.",
+        {reason: "driver_application_status_read_failed"});
+    }
+  },
+);
+
+export const resubmitDriverApplicationDocuments =
+  onCall<ResubmitDriverApplicationInput>(
+    {region: "europe-west1", timeoutSeconds: 120, memory: "512MiB",
+      minInstances: 0, maxInstances: 3},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Oturum açmanız gereklidir.",
+          {reason: "authentication_required"});
+      }
+      const input = validateResubmissionPayload(request.data);
+      const uid = request.auth.uid;
+      const applicationRef = firestore.collection("driverApplications").doc(uid);
+      const documentRefs = getRequiredDocumentTypes().map((type) =>
+        applicationRef.collection("documents").doc(type));
+      const operationRef = firestore.collection("driverApplicationResubmissionOperations")
+        .doc(operationDocumentId(uid));
+      const digest = requestDigest(input.requestId);
+      const now = Timestamp.now();
+
+      type Reservation = {completed: true; result: Record<string, unknown>} |
+        {completed: false; documentSetId: string; submissionVersion: number};
+      let reservation: Reservation;
+      try {
+        reservation = await firestore.runTransaction(async (transaction) => {
+          const [operation, application, ...documents] = await Promise.all([
+            transaction.get(operationRef), transaction.get(applicationRef),
+            ...documentRefs.map((reference) => transaction.get(reference)),
+          ]);
+          const operationData = operation.data() ?? {};
+          if (operation.exists && operationData.requestDigest === digest &&
+              operationData.expectedSubmissionVersion === input.expectedSubmissionVersion) {
+            if (operationData.status === "completed" &&
+                typeof operationData.result === "object" && operationData.result !== null) {
+              return {completed: true,
+                result: operationData.result as Record<string, unknown>} as Reservation;
+            }
+            if (operationData.status === "processing" &&
+                typeof operationData.documentSetId === "string" &&
+                typeof operationData.submissionVersion === "number") {
+              return {completed: false, documentSetId: operationData.documentSetId,
+                submissionVersion: operationData.submissionVersion} as Reservation;
+            }
+          }
+          if (operation.exists && operationData.status === "processing") {
+            throw new HttpsError("aborted", "Belge gönderimi devam ediyor.",
+              {reason: "driver_application_resubmission_in_progress"});
+          }
+          if (!application.exists) {
+            throw new HttpsError("not-found", "Sürücü başvurusu bulunamadı.",
+              {reason: "driver_application_not_found"});
+          }
+          if (documents.some((document) => !document.exists)) {
+            throw new HttpsError("internal", "Sürücü başvurusu doğrulanamadı.",
+              {reason: "driver_application_document_data_invalid"});
+          }
+          const applicationData = application.data() ?? {};
+          const currentDocuments = validateCurrentDocuments(uid, applicationData,
+            documents.map((document) => document.data() ?? {}));
+          const submissionVersion = validateResubmissionEligibility(applicationData,
+            currentDocuments, input.expectedSubmissionVersion);
+          const documentSetId = randomUUID();
+          transaction.set(operationRef, {status: "processing", requestDigest: digest,
+            expectedSubmissionVersion: input.expectedSubmissionVersion,
+            submissionVersion, documentSetId, createdAt: now, updatedAt: now});
+          return {completed: false, documentSetId, submissionVersion} as Reservation;
+        });
+      } catch (error: unknown) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("unavailable", "Belge gönderimi başlatılamadı.",
+          {reason: "driver_application_resubmission_persistence_failed"});
+      }
+      if (reservation.completed) return reservation.result;
+
+      const destinationPaths: string[] = [];
+      const consumedStaging: Array<{path: string; generation: string}> = [];
+      try {
+        const [application, ...documents] = await Promise.all([
+          applicationRef.get(), ...documentRefs.map((reference) => reference.get()),
+        ]);
+        if (!application.exists || documents.some((document) => !document.exists)) {
+          throw new HttpsError("failed-precondition", "Başvuru güncel değildir.",
+            {reason: "stale_driver_application_submission"});
+        }
+        const applicationData = application.data() ?? {};
+        const currentDocuments = validateCurrentDocuments(uid, applicationData,
+          documents.map((document) => document.data() ?? {}));
+        validateResubmissionEligibility(applicationData, currentDocuments,
+          input.expectedSubmissionVersion);
+
+        const copiedDocuments = [] as Array<{documentType: typeof currentDocuments[number]["documentType"];
+          path: string; metadata: ReturnType<typeof validateDocumentMetadata>;
+          reviewStatus: "pendingReview" | "approved"; reviewedAt: unknown}>;
+        for (const document of currentDocuments) {
+          let sourcePath = document.storagePath;
+          let sourceGeneration = document.storageGeneration;
+          let expectedContentType = document.contentType;
+          let expectedSizeBytes = document.sizeBytes;
+          if (document.reviewStatus === "reuploadRequired") {
+            sourcePath = buildStagingDocumentPath(uid, document.documentType);
+            const [metadata] = await storageBucket.file(sourcePath).getMetadata();
+            const validated = validateDocumentMetadata(document.documentType, metadata, uid);
+            if (!validated.generation) {
+              throw new HttpsError("failed-precondition", "Belge doğrulanamadı.",
+                {reason: "driver_application_document_invalid"});
+            }
+            sourceGeneration = validated.generation;
+            expectedContentType = validated.contentType;
+            expectedSizeBytes = validated.sizeBytes;
+            consumedStaging.push({path: sourcePath, generation: sourceGeneration});
+          } else {
+            const [metadata] = await storageBucket.file(sourcePath,
+              {generation: sourceGeneration}).getMetadata();
+            const validated = validateDocumentMetadata(document.documentType, metadata, uid);
+            if (validated.generation !== sourceGeneration ||
+                validated.contentType !== document.contentType ||
+                validated.sizeBytes !== document.sizeBytes) {
+              throw new HttpsError("failed-precondition", "Belge doğrulanamadı.",
+                {reason: "driver_application_document_invalid"});
+            }
+          }
+          const path = buildSubmissionDocumentPath(uid, reservation.documentSetId,
+            document.documentType);
+          const destination = storageBucket.file(path);
+          destinationPaths.push(path);
+          try {
+            await storageBucket.file(sourcePath, {generation: sourceGeneration})
+              .copy(destination, {preconditionOpts: {ifGenerationMatch: 0}});
+          } catch (_error: unknown) {
+            const [existing] = await destination.getMetadata();
+            validateDocumentMetadata(document.documentType, existing, uid);
+          }
+          const [destinationMetadata] = await destination.getMetadata();
+          const metadata = validateDocumentMetadata(document.documentType,
+            destinationMetadata, uid);
+          if (metadata.contentType !== expectedContentType ||
+              metadata.sizeBytes !== expectedSizeBytes) {
+            throw new HttpsError("failed-precondition", "Belge doğrulanamadı.",
+              {reason: "driver_application_document_invalid"});
+          }
+          copiedDocuments.push({documentType: document.documentType, path, metadata,
+            reviewStatus: document.reviewStatus === "approved" ? "approved" : "pendingReview",
+            reviewedAt: document.reviewStatus === "approved" ? document.reviewedAt : null});
+        }
+
+        const completedAt = Timestamp.now();
+        const result = {status: "pendingReview", submittedAtMillis: completedAt.toMillis(),
+          updatedAtMillis: completedAt.toMillis(),
+          submissionVersion: reservation.submissionVersion};
+        await firestore.runTransaction(async (transaction) => {
+          const [operation, currentApplication, ...currentDocumentSnapshots] =
+            await Promise.all([transaction.get(operationRef),
+              transaction.get(applicationRef),
+              ...documentRefs.map((reference) => transaction.get(reference))]);
+          const operationData = operation.data() ?? {};
+          if (!operation.exists || operationData.status !== "processing" ||
+              operationData.requestDigest !== digest ||
+              operationData.documentSetId !== reservation.documentSetId) {
+            throw new HttpsError("aborted", "Belge gönderimi güncel değildir.",
+              {reason: "driver_application_resubmission_in_progress"});
+          }
+          if (!currentApplication.exists ||
+              currentDocumentSnapshots.some((document) => !document.exists)) {
+            throw new HttpsError("failed-precondition", "Başvuru güncel değildir.",
+              {reason: "stale_driver_application_submission"});
+          }
+          const currentApplicationData = currentApplication.data() ?? {};
+          const currentDocuments = validateCurrentDocuments(uid, currentApplicationData,
+            currentDocumentSnapshots.map((document) => document.data() ?? {}));
+          validateResubmissionEligibility(currentApplicationData, currentDocuments,
+            input.expectedSubmissionVersion);
+          transaction.update(applicationRef, {status: "pendingReview",
+            submissionVersion: reservation.submissionVersion,
+            documentSetId: reservation.documentSetId, submittedAt: completedAt,
+            updatedAt: completedAt, reviewedAt: null, rejectionReasonCode: null,
+            reviewedByAdminUid: null});
+          copiedDocuments.forEach((document, index) => transaction.set(
+            documentRefs[index], {documentType: document.documentType,
+              storagePath: document.path, contentType: document.metadata.contentType,
+              sizeBytes: document.metadata.sizeBytes,
+              uploadedAt: Timestamp.fromMillis(document.metadata.uploadedAtMillis),
+              reviewStatus: document.reviewStatus, reviewedAt: document.reviewedAt,
+              rejectionReasonCode: null, documentSetId: reservation.documentSetId,
+              submissionVersion: reservation.submissionVersion,
+              storageGeneration: document.metadata.generation ?? null}));
+          transaction.set(firestore.collection("driverApplicationReviewEvents")
+            .doc(`resubmission_${operationRef.id}_${digest.slice(0, 32)}`),
+          {applicationId: uid,
+            eventType: "applicationResubmitted", documentType: null,
+            reasonCode: null, createdAt: completedAt});
+          transaction.update(operationRef, {status: "completed", result,
+            updatedAt: completedAt});
+        });
+        await Promise.allSettled(consumedStaging.map((item) =>
+          storageBucket.file(item.path).delete({ignoreNotFound: true,
+            ifGenerationMatch: item.generation})));
+        return result;
+      } catch (error: unknown) {
+        const current = await applicationRef.get().catch(() => null);
+        if (!current?.exists ||
+            current.data()?.documentSetId !== reservation.documentSetId) {
+          await Promise.allSettled(destinationPaths.map((path) =>
+            storageBucket.file(path).delete({ignoreNotFound: true})));
+        }
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("unavailable", "Belgeler yeniden gönderilemedi.",
+          {reason: "driver_application_resubmission_failed"});
+      }
+    },
+  );
+
+/* eslint-enable max-len */
 export const submitDriverApplication =
   onCall<SubmitDriverApplicationInput>(
     {

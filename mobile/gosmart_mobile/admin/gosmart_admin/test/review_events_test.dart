@@ -61,6 +61,31 @@ void main() {
       );
     });
 
+    test('parses resubmission with safe Turkish label', () async {
+      final response = _response();
+      final item = (response['items']! as List).single as Map<String, Object?>;
+      item
+        ..['type'] = 'applicationResubmitted'
+        ..['documentType'] = null
+        ..['decision'] = null
+        ..['reasonCode'] = null
+        ..['documentSetId'] = 'internal-set'
+        ..['submissionVersion'] = 3
+        ..['requestId'] = 'internal-request';
+      final event = (await DriverApplicationReviewEventsService(
+        _Invoker(response),
+      ).listReviewEvents(applicationId: 'app-1')).items.single;
+      expect(
+        event.type,
+        DriverApplicationReviewEventType.applicationResubmitted,
+      );
+      expect(event.type.label, 'Başvuru belgeleri yeniden gönderildi');
+      expect(event.documentType, isNull);
+      expect(event.decision, isNull);
+      expect(event.reason, isNull);
+      expect(event.toString(), isNot(contains('internal-')));
+    });
+
     for (final badMillis in <Object?>[true, 1.2, -1, null]) {
       test('rejects invalid event millis $badMillis', () async {
         final response = _response();

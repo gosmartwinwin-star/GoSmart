@@ -8,6 +8,7 @@ enum DriverApplicationReviewEventType {
   documentReuploadRequired('Belgenin yeniden yüklenmesi istendi'),
   applicationApproved('Başvuru onaylandı'),
   applicationRejected('Başvuru reddedildi'),
+  applicationResubmitted('Başvuru belgeleri yeniden gönderildi'),
   unknownReviewEvent('İnceleme işlemi gerçekleştirildi');
 
   const DriverApplicationReviewEventType(this.label);

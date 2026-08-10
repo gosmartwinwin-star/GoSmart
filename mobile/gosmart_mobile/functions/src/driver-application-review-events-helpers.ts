@@ -4,7 +4,8 @@ import {HttpsError} from "firebase-functions/v2/https";
 import {DocumentType, REQUIRED_DOCUMENT_TYPES} from "./driver-application-helpers.js";
 
 const EVENT_TYPES = ["applicationViewed", "documentViewed", "documentApproved",
-  "documentReuploadRequired", "applicationApproved", "applicationRejected"] as const;
+  "documentReuploadRequired", "applicationApproved", "applicationRejected",
+  "applicationResubmitted"] as const;
 const DOCUMENT_REASONS = ["unreadable_document", "incomplete_document",
   "expired_document", "information_mismatch", "wrong_document",
   "unsupported_document"] as const;

@@ -190,18 +190,18 @@ test("64 pending submission rejected", () => assert.equal(reasonOf(() =>
     submissionVersion: 1})), "driver_application_exists"));
 test("65 approved submission rejected", () => assert.equal(reasonOf(() =>
   determineSubmissionTransition({status: "approved", submissionVersion: 1})),
-"driver_application_already_approved"));
-test("66 rejected submission increments", () => assert.deepEqual(
-  determineSubmissionTransition({status: "rejected", submissionVersion: 2}),
-  {submissionVersion: 3}));
-test("67 withdrawn submission increments", () => assert.deepEqual(
-  determineSubmissionTransition({status: "withdrawn", submissionVersion: 2}),
-  {submissionVersion: 3}));
+"driver_application_exists"));
+test("66 rejected submission rejected", () => assert.equal(reasonOf(() =>
+  determineSubmissionTransition({status: "rejected", submissionVersion: 2})),
+"driver_application_exists"));
+test("67 withdrawn submission rejected", () => assert.equal(reasonOf(() =>
+  determineSubmissionTransition({status: "withdrawn", submissionVersion: 2})),
+"driver_application_exists"));
 test("68 unknown status rejected", () => assert.equal(reasonOf(() =>
   determineSubmissionTransition({status: "unknown", submissionVersion: 1})),
-"driver_application_data_invalid"));
+"driver_application_exists"));
 test("69 invalid version rejected", () => assert.equal(reasonOf(() =>
   determineSubmissionTransition({status: "rejected", submissionVersion: 0})),
-"driver_application_data_invalid"));
+"driver_application_exists"));
 test("70 missing phone rejected safely", () => assert.equal(reasonOf(() =>
   validateVerifiedPhone(null)), "verified_phone_required"));

@@ -252,23 +252,7 @@ export const determineSubmissionTransition = (
   existingData: Record<string, unknown> | null,
 ): {submissionVersion: number} => {
   if (existingData === null) return {submissionVersion: 1};
-  if (existingData.status === "pendingReview") {
-    throw new HttpsError(
-      "failed-precondition", "Açık bir sürücü başvurusu bulunmaktadır.",
-      {reason: "driver_application_exists"});
-  }
-  if (existingData.status === "approved") {
-    throw new HttpsError(
-      "failed-precondition", "Sürücü başvurusu daha önce onaylanmıştır.",
-      {reason: "driver_application_already_approved"});
-  }
-  const version = existingData.submissionVersion;
-  if ((existingData.status !== "rejected" &&
-      existingData.status !== "withdrawn") || typeof version !== "number" ||
-      !Number.isInteger(version) || version < 1) {
-    throw new HttpsError(
-      "internal", "Sürücü başvurusu verileri doğrulanamadı.",
-      {reason: "driver_application_data_invalid"});
-  }
-  return {submissionVersion: version + 1};
+  throw new HttpsError(
+    "failed-precondition", "Mevcut sürücü başvurusu yeniden oluşturulamaz.",
+    {reason: "driver_application_exists"});
 };

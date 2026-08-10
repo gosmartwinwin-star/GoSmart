@@ -3,10 +3,10 @@ import {Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {DocumentType, REQUIRED_DOCUMENT_TYPES} from "./driver-application-helpers.js";
 
-const DOCUMENT_REASONS = ["unreadable_document", "incomplete_document",
+export const DOCUMENT_REUPLOAD_REASONS = ["unreadable_document", "incomplete_document",
   "expired_document", "information_mismatch", "wrong_document",
   "unsupported_document"] as const;
-const APPLICATION_REASONS = ["personal_information_invalid",
+export const APPLICATION_REJECTION_REASONS = ["personal_information_invalid",
   "vehicle_information_invalid", "document_information_mismatch",
   "eligibility_requirements_not_met", "duplicate_application",
   "application_information_incomplete"] as const;
@@ -59,7 +59,7 @@ export const validateDocumentReviewPayload = (value: unknown): DocumentReviewInp
   const reason = input.reasonCode;
   if ((input.decision === "approve" && reason !== undefined && reason !== null) ||
       (input.decision === "requireReupload" &&
-       !DOCUMENT_REASONS.includes(reason as typeof DOCUMENT_REASONS[number]))) {
+       !DOCUMENT_REUPLOAD_REASONS.includes(reason as typeof DOCUMENT_REUPLOAD_REASONS[number]))) {
     throw invalid("invalid_document_rejection_reason");
   }
   return {applicationId: text(input.applicationId, "invalid_application_id"),
@@ -78,7 +78,7 @@ export const validateApplicationReviewPayload = (value: unknown): ApplicationRev
   const reason = input.rejectionReasonCode;
   if ((input.decision === "approve" && reason !== undefined && reason !== null) ||
       (input.decision === "reject" &&
-       !APPLICATION_REASONS.includes(reason as typeof APPLICATION_REASONS[number]))) {
+       !APPLICATION_REJECTION_REASONS.includes(reason as typeof APPLICATION_REJECTION_REASONS[number]))) {
     throw invalid("invalid_application_rejection_reason");
   }
   return {applicationId: text(input.applicationId, "invalid_application_id"),
