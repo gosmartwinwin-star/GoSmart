@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_pass_repository.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_profile_repository.dart';
+import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
 import 'package:gosmart_mobile/application/return_route/publish_return_route_gateway.dart';
 import 'package:gosmart_mobile/application/return_route/published_return_route.dart';
 import 'package:gosmart_mobile/controllers/driver_center_controller.dart';
 import 'package:gosmart_mobile/core/branding/gosmart_slogans.dart';
 import 'package:gosmart_mobile/domain/driver/driver_profile.dart';
+import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:gosmart_mobile/domain/driver_application/driver_application_review.dart';
 import 'package:gosmart_mobile/domain/driver/driver_profile_status.dart';
 import 'package:gosmart_mobile/domain/return_route/geo_coordinate.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_access_pass.dart';
@@ -40,6 +43,7 @@ void main() {
   DriverCenterController controller({
     DriverProfile? loadedProfile,
     DriverAccessPass? loadedPass,
+    DriverApplicationReview? application,
   }) => DriverCenterController(
     auth: _Auth(),
     profiles: _Profiles(loadedProfile),
@@ -47,7 +51,37 @@ void main() {
     publisher: _Publisher(),
     location: _Location(origin),
     now: () => now,
+    applications: application == null ? null : _Applications(application),
   );
+
+  DriverApplicationReview application(DriverApplicationReviewState state) =>
+      DriverApplicationReview(
+        state: state,
+        submissionVersion: 2,
+        finalRejectionReason: state == DriverApplicationReviewState.rejected
+            ? DriverApplicationFinalRejectionReason.duplicateApplication
+            : null,
+        documents: [
+          for (final type in DriverApplicationDocumentType.values)
+            DriverApplicationReviewDocument(
+              type: type,
+              status:
+                  state ==
+                          DriverApplicationReviewState
+                              .awaitingDocumentResubmission &&
+                      type.index == 0
+                  ? DriverApplicationPublicDocumentStatus.reuploadRequired
+                  : DriverApplicationPublicDocumentStatus.pendingReview,
+              reuploadReason:
+                  state ==
+                          DriverApplicationReviewState
+                              .awaitingDocumentResubmission &&
+                      type.index == 0
+                  ? DriverApplicationReuploadReason.unreadableDocument
+                  : null,
+            ),
+        ],
+      );
   Future<void> show(WidgetTester tester, DriverCenterController value) async {
     await tester.pumpWidget(
       MaterialApp(home: DriverCenterScreen(controller: value)),
@@ -125,6 +159,50 @@ void main() {
     expect(find.text('İptal Et'), findsNothing);
     expect(find.text('Duraklat'), findsNothing);
   });
+
+  testWidgets('awaiting state only offers document renewal', (tester) async {
+    await show(
+      tester,
+      controller(
+        application: application(
+          DriverApplicationReviewState.awaitingDocumentResubmission,
+        ),
+      ),
+    );
+    expect(find.text('Belge Yenileme Gerekli'), findsOneWidget);
+    expect(find.text('Belgeleri Yenile'), findsOneWidget);
+    expect(find.text('Yeniden Başvur'), findsNothing);
+  });
+
+  testWidgets('final rejected is read-only with safe reason', (tester) async {
+    await show(
+      tester,
+      controller(
+        application: application(DriverApplicationReviewState.rejected),
+      ),
+    );
+    expect(find.text('Başvurunuz reddedildi'), findsOneWidget);
+    expect(find.text('Tekrarlanan başvuru.'), findsOneWidget);
+    expect(find.text('Yeniden Başvur'), findsNothing);
+  });
+
+  testWidgets('withdrawn has no generic reapply action', (tester) async {
+    await show(
+      tester,
+      controller(
+        application: application(DriverApplicationReviewState.withdrawn),
+      ),
+    );
+    expect(find.text('Başvurunuz geri çekildi'), findsOneWidget);
+    expect(find.text('Yeniden Başvur'), findsNothing);
+  });
+}
+
+class _Applications implements DriverApplicationRepository {
+  _Applications(this.value);
+  final DriverApplicationReview value;
+  @override
+  Future<DriverApplicationReview?> findForAuthenticatedUser() async => value;
 }
 
 class _Auth implements DriverCenterAuthGateway {

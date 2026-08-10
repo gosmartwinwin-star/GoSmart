@@ -5,6 +5,7 @@ import '../application/driver_access/driver_profile_repository.dart';
 import '../application/return_route/publish_return_route_gateway.dart';
 import '../application/return_route/published_return_route.dart';
 import '../application/driver_application/driver_application_repository.dart';
+import '../domain/driver_application/driver_application_review.dart';
 import '../domain/driver/driver_eligibility_policy.dart';
 import '../domain/driver/driver_eligibility_result.dart';
 import '../domain/return_route/geo_coordinate.dart';
@@ -41,7 +42,7 @@ class DriverCenterController extends ChangeNotifier {
   bool locationLoading = false;
   bool publishing = false;
   bool _disposed = false;
-  DriverApplicationSummary? application;
+  DriverApplicationReview? application;
   bool applicationLoadFailed = false;
 
   DriverCenterController({
@@ -94,7 +95,7 @@ class DriverCenterController extends ChangeNotifier {
       final profile = await _profiles.findByAuthenticatedUserId(userId!);
       if (profile == null && _applications != null) {
         try {
-          application = await _applications.findForAuthenticatedUser(userId);
+          application = await _applications.findForAuthenticatedUser();
           applicationLoadFailed = false;
         } catch (_) {
           application = null;

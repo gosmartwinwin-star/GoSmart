@@ -9,9 +9,10 @@ import '../../infrastructure/firestore/repositories/firestore_driver_access_pass
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 import '../../models/address_model.dart';
 import '../../services/publish_return_route_service.dart';
-import '../../infrastructure/firestore/repositories/firestore_driver_application_repository.dart';
-import '../../domain/driver_application/driver_application_status.dart';
+import '../../domain/driver_application/driver_application_review.dart';
+import '../../services/driver_application_review_service.dart';
 import 'driver_application_screen.dart';
+import 'driver_application_document_resubmission_screen.dart';
 import '../../widgets/driver/active_return_route_card.dart';
 import '../../widgets/driver/return_route_map_preview.dart';
 import '../search/search_address_screen.dart';
@@ -19,11 +20,14 @@ import '../search/search_address_screen.dart';
 class DriverCenterScreen extends StatefulWidget {
   final DriverCenterController? controller;
   final Widget Function()? applicationScreenBuilder;
+  final Widget Function(DriverApplicationReview review)?
+  resubmissionScreenBuilder;
 
   const DriverCenterScreen({
     super.key,
     this.controller,
     this.applicationScreenBuilder,
+    this.resubmissionScreenBuilder,
   });
 
   @override
@@ -46,7 +50,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           passes: FirestoreDriverAccessPassRepository(),
           publisher: PublishReturnRouteService(),
           location: _GeolocatorDriverLocation(),
-          applications: FirestoreDriverApplicationRepository(),
+          applications: DriverApplicationReviewService(),
         );
     controller.addListener(_refresh);
     controller.load();
@@ -183,15 +187,12 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
         ),
       );
     }
-    return switch (application.status) {
-      DriverApplicationStatus.pendingReview => _StatusCard(
+    return switch (application.state) {
+      DriverApplicationReviewState.pendingReview => const _StatusCard(
         title: 'Başvurunuz inceleniyor',
-        description:
-            'Sürücü başvurunuz değerlendirme aşamasında.\n'
-            'Başvuru tarihi: ${_date(application.submittedAt)}\n'
-            'Başvuru sürümü: ${application.submissionVersion}',
+        description: 'Sürücü başvurunuz değerlendirme aşamasında.',
       ),
-      DriverApplicationStatus.approved => _StatusCard(
+      DriverApplicationReviewState.approved => _StatusCard(
         title: 'Başvurunuz onaylandı',
         description:
             'Sürücü profiliniz hazırlanıyor. Kısa süre sonra tekrar kontrol edin.',
@@ -200,28 +201,28 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           child: const Text('Tekrar Kontrol Et'),
         ),
       ),
-      DriverApplicationStatus.rejected => _StatusCard(
-        title: 'Sürücü başvurunuz onaylanmadı',
+      DriverApplicationReviewState.awaitingDocumentResubmission => _StatusCard(
+        title: 'Belge Yenileme Gerekli',
         description:
-            'Bilgilerinizi ve belgelerinizi kontrol ederek yeniden başvuru yapabilirsiniz.',
+            'Başvurunuzdaki bir veya daha fazla belgenin yeniden '
+            'yüklenmesi gerekiyor.',
         action: FilledButton(
-          onPressed: _openApplication,
-          child: const Text('Yeniden Başvur'),
+          onPressed: () => _openResubmission(application),
+          child: const Text('Belgeleri Yenile'),
         ),
       ),
-      DriverApplicationStatus.withdrawn => _StatusCard(
+      DriverApplicationReviewState.rejected => _StatusCard(
+        title: 'Başvurunuz reddedildi',
+        description:
+            application.finalRejectionReason?.label ??
+            'Başvurunuz bu aşamada yeniden gönderilemez.',
+      ),
+      DriverApplicationReviewState.withdrawn => const _StatusCard(
         title: 'Başvurunuz geri çekildi',
-        description: 'Yeniden başvuru yapabilirsiniz.',
-        action: FilledButton(
-          onPressed: _openApplication,
-          child: const Text('Yeniden Başvur'),
-        ),
+        description: 'Başvurunuz geri çekilmiş durumda.',
       ),
     };
   }
-
-  String _date(DateTime value) =>
-      '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
 
   Future<void> _openApplication() async {
     final result = await Navigator.push<bool>(
@@ -230,6 +231,18 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
         builder: (_) =>
             widget.applicationScreenBuilder?.call() ??
             const DriverApplicationScreen(),
+      ),
+    );
+    if (result == true) await controller.load();
+  }
+
+  Future<void> _openResubmission(DriverApplicationReview review) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            widget.resubmissionScreenBuilder?.call(review) ??
+            DriverApplicationDocumentResubmissionScreen(initialReview: review),
       ),
     );
     if (result == true) await controller.load();
