@@ -117,6 +117,28 @@ beforeEach(async () => {
     batch.set(doc(db, 'driverActiveReturnRoutes/driver-a'), {
       routeId: 'route-a', activatedAt: approvedAt, expiresAt,
     });
+    batch.set(doc(db, 'rides/ride-a'), {
+      passengerId: 'user-c', driverId: 'driver-a', status: 'driverEnRoute',
+      version: 2, createdAt, updatedAt: currentPurchase,
+    });
+    batch.set(doc(db, 'rides/ride-b'), {
+      passengerId: 'user-b', driverId: 'driver-b', status: 'matching',
+      version: 1, createdAt, updatedAt: currentPurchase,
+    });
+    batch.set(doc(db, 'rides/ride-a/events/created'), {
+      type: 'rideRequestCreated', fromStatus: null, toStatus: 'matching',
+      actorType: 'passenger', actorId: 'user-c', createdAt,
+    });
+    batch.set(doc(db, 'passengerActiveRides/user-c'), {
+      rideId: 'ride-a', status: 'driverEnRoute', updatedAt: currentPurchase,
+    });
+    batch.set(doc(db, 'driverActiveRides/driver-a'), {
+      rideId: 'ride-a', status: 'driverEnRoute', updatedAt: currentPurchase,
+    });
+    batch.set(doc(db, 'rideOperations/operation-a'), {
+      actorUid: 'user-c', callableName: 'createRideRequest',
+      requestDigest: 'digest', status: 'completed', createdAt, updatedAt: createdAt,
+    });
     batch.set(doc(db, 'driverApplications/user-a'), {
       authUserId: 'user-a', fullName: 'Ali Veli', vehiclePlate: '06ABC123',
       taxiStandName: null, serviceCity: 'ankara', status: 'pendingReview',
@@ -344,6 +366,59 @@ test('53 no client can write active return route lock', async () => {
     routeId: 'other-route',
   }));
 });
+
+test('ride participant passenger and assigned driver can get ride', async () => {
+  await assertSucceeds(getDoc(doc(dbFor('user-c'), 'rides/ride-a')));
+  await assertSucceeds(getDoc(doc(dbFor('user-a'), 'rides/ride-a')));
+});
+
+test('unauthenticated and non-participant cannot get ride', async () => {
+  await assertFails(getDoc(doc(dbFor(), 'rides/ride-a')));
+  await assertFails(getDoc(doc(dbFor('user-b'), 'rides/ride-a')));
+});
+
+test('ride collection list is denied to participants', async () => {
+  await assertFails(getDocs(collection(dbFor('user-a'), 'rides')));
+});
+
+test('all client ride writes are denied', async () => {
+  const db = dbFor('user-a');
+  await assertFails(setDoc(doc(db, 'rides/new-ride'), {
+    passengerId: 'user-a', status: 'matching', version: 1,
+  }));
+  await assertFails(updateDoc(doc(db, 'rides/ride-a'), {status: 'completed'}));
+  await assertFails(deleteDoc(doc(db, 'rides/ride-a')));
+});
+
+test('participant can read own ride events but non-participant cannot', async () => {
+  const event = 'rides/ride-a/events/created';
+  await assertSucceeds(getDoc(doc(dbFor('user-c'), event)));
+  await assertFails(getDoc(doc(dbFor('user-b'), event)));
+  await assertFails(getDoc(doc(dbFor(), event)));
+  await assertSucceeds(getDocs(collection(dbFor('user-c'), 'rides/ride-a/events')));
+});
+
+test('all client ride event writes are denied', async () => {
+  const reference = doc(dbFor('user-a'), 'rides/ride-a/events/created');
+  await assertFails(setDoc(doc(dbFor('user-a'), 'rides/ride-a/events/new'),
+    {type: 'rideCancelled'}));
+  await assertFails(updateDoc(reference, {type: 'rideCancelled'}));
+  await assertFails(deleteDoc(reference));
+});
+
+for (const collectionName of ['passengerActiveRides', 'driverActiveRides',
+  'rideOperations']) {
+  test(`${collectionName} is completely server-only`, async () => {
+    const id = collectionName === 'driverActiveRides' ? 'driver-a' :
+      collectionName === 'passengerActiveRides' ? 'user-c' : 'operation-a';
+    const reference = doc(dbFor('user-a'), `${collectionName}/${id}`);
+    await assertFails(getDoc(reference));
+    await assertFails(getDocs(collection(dbFor('user-a'), collectionName)));
+    await assertFails(setDoc(reference, {rideId: 'ride-a'}));
+    await assertFails(updateDoc(reference, {status: 'cancelled'}));
+    await assertFails(deleteDoc(reference));
+  });
+}
 
 test('54 unauthenticated user cannot read an application', async () => {
   await assertFails(getDoc(doc(dbFor(), 'driverApplications/user-a')));

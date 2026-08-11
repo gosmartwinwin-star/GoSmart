@@ -67,6 +67,15 @@ import {
   validateResubmissionEligibility,
   validateResubmissionPayload,
 } from "./driver-application-resubmission-helpers.js";
+import {
+  parseRideStatus,
+  serializeActiveRide,
+  TERMINAL_RIDE_STATUSES,
+} from "./ride-lifecycle-helpers.js";
+import {
+  cancelRideForPassenger,
+  createRideRequestForPassenger,
+} from "./ride-lifecycle-orchestration.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -446,6 +455,76 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
     }
   },
 );
+
+/* eslint-disable max-len */
+export const createRideRequest = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Yolculuk oluÅŸturmak iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    return createRideRequestForPassenger(
+      {firestore, computeRoute: computePublishedRoute},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
+export const getMyActiveRide = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Aktif yolculuk iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    if (typeof request.data !== "object" || request.data === null ||
+        Array.isArray(request.data) || Object.keys(request.data).length !== 0) {
+      throw new HttpsError("invalid-argument", "Aktif yolculuk isteÄŸi geÃ§ersiz.",
+        {reason: "invalid_active_ride_payload"});
+    }
+    const passengerId = request.auth.uid;
+    const pointer = await firestore.collection("passengerActiveRides")
+      .doc(passengerId).get();
+    if (!pointer.exists) return {activeRide: null};
+    const rideId = pointer.get("rideId");
+    if (typeof rideId !== "string" || rideId.length === 0) {
+      throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
+        {reason: "active_ride_pointer_inconsistent"});
+    }
+    const ride = await firestore.collection("rides").doc(rideId).get();
+    const data = ride.data();
+    if (!ride.exists || !data || data.passengerId !== passengerId ||
+        pointer.get("status") !== data.status ||
+        TERMINAL_RIDE_STATUSES.includes(parseRideStatus(data.status))) {
+      throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
+        {reason: "active_ride_pointer_inconsistent"});
+    }
+    return {activeRide: serializeActiveRide(ride.id, data)};
+  },
+);
+
+export const cancelRide = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Yolculuk iptali iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    return cancelRideForPassenger(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+/* eslint-enable max-len */
 
 /* eslint-disable max-len */
 export const getMyDriverApplicationStatus = onCall(
