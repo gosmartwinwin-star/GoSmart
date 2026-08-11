@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../controllers/taxi_controller.dart';
+import '../../controllers/passenger_ride_controller.dart';
+import '../../domain/ride/canonical_ride.dart';
+import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../models/address_model.dart';
 import '../../models/taxi_model.dart';
 import '../../screens/search/search_address_screen.dart';
@@ -14,6 +18,8 @@ import '../../screens/driver/driver_center_screen.dart';
 import '../../services/marker_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
+import '../../services/ride_lifecycle_service.dart';
+import '../../widgets/ride/canonical_ride_card.dart';
 import '../../widgets/cards/route_summary_card.dart';
 import '../../widgets/cards/taxi_info_card.dart';
 import '../../widgets/map/gosmart_map.dart';
@@ -21,13 +27,17 @@ import '../../widgets/panels/home_bottom_panel.dart';
 import '../../widgets/panels/ride_request_panel.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.rideController});
+  final PassengerRideController? rideController;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late final PassengerRideController rideController;
+  late final bool _ownsRideController;
+  StreamSubscription<User?>? _authSubscription;
   GoogleMapController? mapController;
 
   final TaxiController taxiController = TaxiController();
@@ -61,7 +71,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
 
-    debugPrint("HomeScreen Açıldı");
+    _ownsRideController = widget.rideController == null;
+    rideController = widget.rideController ?? PassengerRideController(gateway: RideLifecycleService(), repository: FirestoreRideRepository(), authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid);
+    rideController.addListener(_refreshRide);
+    rideController.recover();
+    if (_ownsRideController) { _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((user) => rideController.authChanged(user?.uid)); }
 
     _initializeTaxis();
 
@@ -85,8 +99,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    rideController.removeListener(_refreshRide);
+    _authSubscription?.cancel();
+    if (_ownsRideController) rideController.dispose();
     taxiController.stopSimulation();
     super.dispose();
+  }
+
+  void _refreshRide() { if (mounted) setState(() {}); }
+
+  Future<void> _createCanonicalRide() async {
+    final pickup = pickupAddress; final dropoff = destinationAddress;
+    if (pickup == null || dropoff == null) return;
+    await rideController.create(
+      pickup: RideLocation(latitude: pickup.latitude, longitude: pickup.longitude, addressLabel: pickup.title),
+      dropoff: RideLocation(latitude: dropoff.latitude, longitude: dropoff.longitude, addressLabel: dropoff.title),
+    );
+    if (mounted && rideController.errorMessage != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(rideController.errorMessage!)));
   }
 
   void _initializeTaxis() {
@@ -484,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
 
-          if (selectedTaxi == null)
+          if (rideController.ride == null && selectedTaxi == null)
             RideRequestPanel(
               pickupText: pickupAddress?.title,
               destinationText: destinationAddress?.title,
@@ -494,24 +523,14 @@ class _HomeScreenState extends State<HomeScreen> {
               isLoading: _isRouteLoading,
             ),
 
-          if (selectedTaxi != null)
+          if (rideController.ride == null && selectedTaxi != null)
             Positioned(
               left: 16,
               right: 16,
               bottom: 110,
               child: TaxiInfoCard(
                 taxi: selectedTaxi!,
-                onRequestTaxi: () {
-                  debugPrint("Taksi çağrıldı: ${selectedTaxi!.driverName}");
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        "${selectedTaxi!.driverName} için çağrı oluşturuldu.",
-                      ),
-                    ),
-                  );
-                },
+                onRequestTaxi: rideController.mutating ? () {} : _createCanonicalRide,
               ),
             ),
 
@@ -530,6 +549,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+
+          if (rideController.ride case final ride?)
+            Positioned(left: 16, right: 16, bottom: 108, child: SafeArea(top: false, child: CanonicalRideCard(
+              ride: ride, driver: false, loading: rideController.mutating,
+              onCancel: ride.status.passengerCanCancel ? rideController.cancel : null,
+              onDismiss: ride.status.isTerminal ? rideController.dismissTerminal : null,
+            ))),
 
           HomeBottomPanel(
             onDriverTap: () {

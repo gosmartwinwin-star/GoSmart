@@ -1,8 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../controllers/driver_center_controller.dart';
+import '../../controllers/driver_ride_controller.dart';
+import '../../domain/ride/canonical_ride.dart';
+import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
+import '../../services/ride_lifecycle_service.dart';
+import '../../widgets/ride/canonical_ride_card.dart';
 import '../../core/branding/gosmart_slogans.dart';
 import '../../domain/return_route/geo_coordinate.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_pass_repository.dart';
@@ -22,12 +28,14 @@ class DriverCenterScreen extends StatefulWidget {
   final Widget Function()? applicationScreenBuilder;
   final Widget Function(DriverApplicationReview review)?
   resubmissionScreenBuilder;
+  final DriverRideController? rideController;
 
   const DriverCenterScreen({
     super.key,
     this.controller,
     this.applicationScreenBuilder,
     this.resubmissionScreenBuilder,
+    this.rideController,
   });
 
   @override
@@ -37,6 +45,9 @@ class DriverCenterScreen extends StatefulWidget {
 class _DriverCenterScreenState extends State<DriverCenterScreen> {
   late final DriverCenterController controller;
   late final bool _ownsController;
+  DriverRideController? rideController;
+  late final bool _ownsRideController;
+  StreamSubscription<User?>? _authSubscription;
 
   @override
   void initState() {
@@ -53,7 +64,12 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           applications: DriverApplicationReviewService(),
         );
     controller.addListener(_refresh);
+    _ownsRideController = widget.rideController == null && widget.controller == null;
+    rideController = widget.rideController ?? (widget.controller == null ? DriverRideController(gateway: RideLifecycleService(), repository: FirestoreRideRepository(), authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid) : null);
+    rideController?.addListener(_refresh);
     controller.load();
+    rideController?.recover();
+    if (_ownsRideController) { _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((user) => rideController?.authChanged(user?.uid)); }
   }
 
   void _refresh() {
@@ -63,6 +79,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   @override
   void dispose() {
     controller.removeListener(_refresh);
+    rideController?.removeListener(_refresh);
+    _authSubscription?.cancel();
+    if (_ownsRideController) rideController?.dispose();
     if (_ownsController) controller.dispose();
     super.dispose();
   }
@@ -108,6 +127,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   }
 
   Widget _content() {
+    if (rideController?.ride != null) return _activeRide();
     switch (controller.status) {
       case DriverCenterStatus.loading:
         return const Center(child: CircularProgressIndicator());
@@ -249,6 +269,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   }
 
   Widget _ready() {
+    if (rideController?.ride != null) return _activeRide();
     final published = controller.publishedRoute;
     if (published != null) {
       return Column(
@@ -333,6 +354,28 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
               : const Text('Dönüş Rotasını Yayınla'),
         ),
       ],
+    );
+  }
+
+  Widget _activeRide() {
+    final lifecycle = rideController!;
+    final activeRide = lifecycle.ride!;
+    final primary = switch (activeRide.status) {
+      RideStatus.driverEnRoute => () => lifecycle.act(DriverRideAction.arrive),
+      RideStatus.driverArrived => () => lifecycle.act(DriverRideAction.start),
+      RideStatus.inProgress => () => lifecycle.act(DriverRideAction.complete),
+      _ => null,
+    };
+    final canCancel = activeRide.status == RideStatus.driverEnRoute ||
+        activeRide.status == RideStatus.driverArrived;
+    return CanonicalRideCard(
+      ride: activeRide,
+      driver: true,
+      loading: lifecycle.mutating,
+      onPrimary: primary,
+      onCancel: canCancel
+          ? () => lifecycle.act(DriverRideAction.cancel)
+          : null,
     );
   }
 }
