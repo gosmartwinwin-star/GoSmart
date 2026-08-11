@@ -398,6 +398,18 @@ test('participant can read own ride events but non-participant cannot', async ()
   await assertSucceeds(getDocs(collection(dbFor('user-c'), 'rides/ride-a/events')));
 });
 
+test('assigned driver can get and list ride events', async () => {
+  const db = dbFor('user-a');
+  await assertSucceeds(getDoc(doc(db, 'rides/ride-a/events/created')));
+  await assertSucceeds(getDocs(collection(db, 'rides/ride-a/events')));
+});
+
+test('unrelated driver cannot get or list ride events', async () => {
+  const db = dbFor('user-b');
+  await assertFails(getDoc(doc(db, 'rides/ride-a/events/created')));
+  await assertFails(getDocs(collection(db, 'rides/ride-a/events')));
+});
+
 test('all client ride event writes are denied', async () => {
   const reference = doc(dbFor('user-a'), 'rides/ride-a/events/created');
   await assertFails(setDoc(doc(dbFor('user-a'), 'rides/ride-a/events/new'),

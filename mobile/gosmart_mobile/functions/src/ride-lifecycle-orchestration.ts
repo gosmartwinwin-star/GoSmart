@@ -3,15 +3,22 @@ import {Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {
   buildInitialRide,
+  requireDriverCancellation,
   requirePassengerCancellation,
   requirePositiveVersion,
+  requireRideTransition,
   RideRoute,
   rideOperationId,
   rideRequestDigest,
   validateCancelRidePayload,
   validateCreateRideRequestPayload,
+  validateRideMutationPayload,
   parseRideStatus,
 } from "./ride-lifecycle-helpers.js";
+import {
+  loadApprovedDriverId,
+  loadApprovedDriverIdInTransaction,
+} from "./ride-driver-identity.js";
 
 export type RideRouteProvider = (pickup: {latitude: number; longitude: number},
   dropoff: {latitude: number; longitude: number}) => Promise<RideRoute>;
@@ -103,17 +110,16 @@ export const createRideRequestForPassenger = async (
   }
 };
 
-export const cancelRideForPassenger = async (
+export const cancelRideForActor = async (
   dependencies: Pick<RideLifecycleDependencies, "firestore" | "now">,
-  passengerId: string,
+  actorUid: string,
   rawInput: unknown,
 ): Promise<Record<string, unknown>> => {
   const input = validateCancelRidePayload(rawInput);
   const {firestore} = dependencies;
   const rideRef = firestore.collection("rides").doc(input.rideId);
-  const passengerActiveRef = firestore.collection("passengerActiveRides").doc(passengerId);
   const operationRef = firestore.collection("rideOperations")
-    .doc(rideOperationId(passengerId, "cancelRide", input.requestId));
+    .doc(rideOperationId(actorUid, "cancelRide", input.requestId));
   const digest = rideRequestDigest("cancelRide", input);
   const now = dependencies.now?.() ?? Timestamp.now();
   try {
@@ -138,9 +144,31 @@ export const cancelRideForPassenger = async (
           {reason: "ride_not_found"});
       }
       const data = ride.data() ?? {};
-      if (data.passengerId !== passengerId) {
-        throw new HttpsError("permission-denied", "Bu yolculuÄŸu iptal edemezsiniz.",
-          {reason: "ride_participant_required"});
+      const passengerId = data.passengerId;
+      if (typeof passengerId !== "string") {
+        throw new HttpsError("internal",
+          "Yolculuk bilgisi doÄŸrulanamadÄ±.", {reason: "ride_data_invalid"});
+      }
+      let actorType: "passenger" | "driver";
+      const driverId = typeof data.driverId === "string" ? data.driverId : null;
+      if (passengerId === actorUid) {
+        actorType = "passenger";
+        if (input.reasonCode !== "passenger_cancelled") {
+          throw new HttpsError("failed-precondition", "Ä°ptal nedeni uygun deÄŸildir.",
+            {reason: "cancellation_actor_mismatch"});
+        }
+      } else {
+        const authenticatedDriverId = await loadApprovedDriverIdInTransaction(
+          firestore, actorUid, transaction);
+        if (driverId !== authenticatedDriverId) {
+          throw new HttpsError("permission-denied", "Bu yolculuÄŸu iptal edemezsiniz.",
+            {reason: "ride_participant_required"});
+        }
+        actorType = "driver";
+        if (input.reasonCode !== "driver_cancelled") {
+          throw new HttpsError("failed-precondition", "Ä°ptal nedeni uygun deÄŸildir.",
+            {reason: "cancellation_actor_mismatch"});
+        }
       }
       const status = parseRideStatus(data.status);
       const version = requirePositiveVersion(data.version);
@@ -148,14 +176,16 @@ export const cancelRideForPassenger = async (
         throw new HttpsError("failed-precondition", "Yolculuk bilgisi gÃ¼ncel deÄŸil.",
           {reason: "stale_ride_version"});
       }
-      requirePassengerCancellation(status);
+      if (actorType === "passenger") requirePassengerCancellation(status);
+      else requireDriverCancellation(status);
+      const passengerActiveRef = firestore.collection("passengerActiveRides")
+        .doc(passengerId);
       const passengerPointer = await transaction.get(passengerActiveRef);
       if (!passengerPointer.exists || passengerPointer.get("rideId") !== ride.id) {
         throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
           {reason: "active_ride_pointer_inconsistent"});
       }
-      const driverId = data.driverId;
-      const driverActiveRef = typeof driverId === "string" ?
+      const driverActiveRef = driverId ?
         firestore.collection("driverActiveRides").doc(driverId) : null;
       const driverPointer = driverActiveRef ? await transaction.get(driverActiveRef) : null;
       if (driverPointer?.exists && driverPointer.get("rideId") !== ride.id) {
@@ -165,17 +195,17 @@ export const cancelRideForPassenger = async (
       const nextVersion = version + 1;
       const result = {rideId: ride.id, status: "cancelled",
         version: nextVersion, cancelledAtMillis: now.toMillis(),
-        cancelledBy: "passenger", terminalReason: input.reasonCode};
+        cancelledBy: actorType, terminalReason: input.reasonCode};
       transaction.update(rideRef, {status: "cancelled", version: nextVersion,
-        updatedAt: now, cancelledAt: now, cancelledBy: "passenger",
+        updatedAt: now, cancelledAt: now, cancelledBy: actorType,
         terminalReason: input.reasonCode});
       transaction.delete(passengerActiveRef);
       if (driverActiveRef && driverPointer?.exists) transaction.delete(driverActiveRef);
       transaction.create(rideRef.collection("events").doc(
         `rideCancelled_${operationRef.id.slice(0, 32)}`),
       {type: "rideCancelled", fromStatus: status, toStatus: "cancelled",
-        actorType: "passenger", actorId: passengerId, createdAt: now});
-      transaction.create(operationRef, {actorUid: passengerId,
+        actorType, actorId: actorUid, createdAt: now});
+      transaction.create(operationRef, {actorUid,
         callableName: "cancelRide", requestDigest: digest,
         status: "completed", result, createdAt: now, updatedAt: now});
       return result;
@@ -186,3 +216,198 @@ export const cancelRideForPassenger = async (
       {reason: "ride_persistence_failed"});
   }
 };
+
+export const cancelRideForPassenger = cancelRideForActor;
+
+type DriverTransitionConfig = {
+  callableName: "markDriverArrived" | "startRide" | "completeRide";
+  fromStatus: "driverEnRoute" | "driverArrived" | "inProgress";
+  toStatus: "driverArrived" | "inProgress" | "completed";
+  timestampField: "arrivedAt" | "startedAt" | "completedAt";
+  eventType: "rideDriverArrived" | "rideStarted" | "rideCompleted";
+  terminal: boolean;
+};
+
+const replayOperation = (data: Record<string, unknown>, digest: string) => {
+  if (data.requestDigest !== digest) {
+    throw new HttpsError("failed-precondition", "Ä°stek daha Ã¶nce farklÄ± veriyle kullanÄ±ldÄ±.",
+      {reason: "idempotency_payload_mismatch"});
+  }
+  if (data.status === "completed" && typeof data.result === "object" &&
+      data.result !== null) return data.result as Record<string, unknown>;
+  throw new HttpsError("aborted", "Yolculuk iÅŸlemi tamamlanamadÄ±.",
+    {reason: "ride_operation_in_progress"});
+};
+
+export const acceptRideForDriver = async (
+  dependencies: Pick<RideLifecycleDependencies, "firestore" | "now">,
+  actorUid: string, rawInput: unknown,
+): Promise<Record<string, unknown>> => {
+  const input = validateRideMutationPayload(rawInput);
+  const {firestore} = dependencies;
+  const operationRef = firestore.collection("rideOperations")
+    .doc(rideOperationId(actorUid, "acceptRide", input.requestId));
+  const digest = rideRequestDigest("acceptRide", input);
+  const existing = await operationRef.get();
+  if (existing.exists) return replayOperation(existing.data() ?? {}, digest);
+  const driverId = await loadApprovedDriverId(firestore, actorUid);
+  const rideRef = firestore.collection("rides").doc(input.rideId);
+  const driverActiveRef = firestore.collection("driverActiveRides").doc(driverId);
+  const now = dependencies.now?.() ?? Timestamp.now();
+  try {
+    return await firestore.runTransaction(async (transaction) => {
+      const [operation, verifiedDriverId, ride, driverPointer] = await Promise.all([
+        transaction.get(operationRef),
+        loadApprovedDriverIdInTransaction(firestore, actorUid, transaction),
+        transaction.get(rideRef), transaction.get(driverActiveRef),
+      ]);
+      if (verifiedDriverId !== driverId) {
+        throw new HttpsError("failed-precondition",
+          "SÃ¼rÃ¼cÃ¼ profili deÄŸiÅŸti.", {reason: "driver_identity_changed"});
+      }
+      if (operation.exists) return replayOperation(operation.data() ?? {}, digest);
+      if (!ride.exists) {
+        throw new HttpsError("not-found", "Yolculuk bulunamadÄ±.",
+          {reason: "ride_not_found"});
+      }
+      const data = ride.data() ?? {};
+      const version = requirePositiveVersion(data.version);
+      if (version !== input.expectedVersion) {
+        throw new HttpsError("failed-precondition",
+          "Yolculuk bilgisi gÃ¼ncel deÄŸil.", {reason: "stale_ride_version"});
+      }
+      requireRideTransition(parseRideStatus(data.status), "matching");
+      if (data.driverId !== null) {
+        throw new HttpsError("failed-precondition",
+          "Yolculuk daha Ã¶nce atandÄ±.", {reason: "ride_already_assigned"});
+      }
+      if (driverPointer.exists) {
+        throw new HttpsError("already-exists",
+          "SÃ¼rÃ¼cÃ¼nÃ¼n aktif yolculuÄŸu var.", {reason: "driver_active_ride_exists"});
+      }
+      const passengerId = data.passengerId;
+      if (typeof passengerId !== "string") {
+        throw new HttpsError("internal",
+          "Yolculuk bilgisi doÄŸrulanamadÄ±.", {reason: "ride_data_invalid"});
+      }
+      const passengerRef = firestore.collection("passengerActiveRides").doc(passengerId);
+      const passengerPointer = await transaction.get(passengerRef);
+      if (!passengerPointer.exists || passengerPointer.get("rideId") !== ride.id) {
+        throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
+          {reason: "active_ride_pointer_inconsistent"});
+      }
+      const nextVersion = version + 1;
+      const result = {rideId: ride.id, status: "driverEnRoute",
+        version: nextVersion, updatedAtMillis: now.toMillis()};
+      transaction.update(rideRef, {driverId, status: "driverEnRoute",
+        version: nextVersion, acceptedAt: now, driverEnRouteAt: now, updatedAt: now});
+      transaction.update(passengerRef, {status: "driverEnRoute", updatedAt: now});
+      transaction.create(driverActiveRef,
+        {rideId: ride.id, status: "driverEnRoute", updatedAt: now});
+      transaction.create(rideRef.collection("events").doc(
+        `rideDriverAccepted_${operationRef.id.slice(0, 32)}`),
+      {type: "rideDriverAccepted", fromStatus: "matching", toStatus: "driverEnRoute",
+        actorType: "driver", actorId: actorUid, createdAt: now});
+      transaction.create(operationRef, {actorUid, callableName: "acceptRide",
+        requestDigest: digest, status: "completed", result, createdAt: now, updatedAt: now});
+      return result;
+    });
+  } catch (error: unknown) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("unavailable", "Yolculuk kabul edilemedi.",
+      {reason: "ride_persistence_failed"});
+  }
+};
+
+export const transitionRideForDriver = async (
+  dependencies: Pick<RideLifecycleDependencies, "firestore" | "now">,
+  actorUid: string, rawInput: unknown, config: DriverTransitionConfig,
+): Promise<Record<string, unknown>> => {
+  const input = validateRideMutationPayload(rawInput);
+  const {firestore} = dependencies;
+  const operationRef = firestore.collection("rideOperations")
+    .doc(rideOperationId(actorUid, config.callableName, input.requestId));
+  const digest = rideRequestDigest(config.callableName, input);
+  const existing = await operationRef.get();
+  if (existing.exists) return replayOperation(existing.data() ?? {}, digest);
+  const driverId = await loadApprovedDriverId(firestore, actorUid);
+  const rideRef = firestore.collection("rides").doc(input.rideId);
+  const driverRef = firestore.collection("driverActiveRides").doc(driverId);
+  const now = dependencies.now?.() ?? Timestamp.now();
+  try {
+    return await firestore.runTransaction(async (transaction) => {
+      const [operation, verifiedDriverId, ride, driverPointer] = await Promise.all([
+        transaction.get(operationRef),
+        loadApprovedDriverIdInTransaction(firestore, actorUid, transaction),
+        transaction.get(rideRef), transaction.get(driverRef),
+      ]);
+      if (verifiedDriverId !== driverId) {
+        throw new HttpsError("failed-precondition",
+          "SÃ¼rÃ¼cÃ¼ profili deÄŸiÅŸti.", {reason: "driver_identity_changed"});
+      }
+      if (operation.exists) return replayOperation(operation.data() ?? {}, digest);
+      if (!ride.exists) {
+        throw new HttpsError("not-found", "Yolculuk bulunamadÄ±.",
+          {reason: "ride_not_found"});
+      }
+      const data = ride.data() ?? {};
+      if (data.driverId !== driverId) {
+        throw new HttpsError("permission-denied",
+          "AtanmÄ±ÅŸ sÃ¼rÃ¼cÃ¼ gereklidir.", {reason: "assigned_driver_required"});
+      }
+      const version = requirePositiveVersion(data.version);
+      if (version !== input.expectedVersion) {
+        throw new HttpsError("failed-precondition",
+          "Yolculuk bilgisi gÃ¼ncel deÄŸil.", {reason: "stale_ride_version"});
+      }
+      requireRideTransition(parseRideStatus(data.status), config.fromStatus);
+      const passengerId = data.passengerId;
+      if (typeof passengerId !== "string") {
+        throw new HttpsError("internal",
+          "Yolculuk bilgisi doÄŸrulanamadÄ±.", {reason: "ride_data_invalid"});
+      }
+      const passengerRef = firestore.collection("passengerActiveRides").doc(passengerId);
+      const passengerPointer = await transaction.get(passengerRef);
+      if (!driverPointer.exists || driverPointer.get("rideId") !== ride.id ||
+          !passengerPointer.exists || passengerPointer.get("rideId") !== ride.id) {
+        throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
+          {reason: "active_ride_pointer_inconsistent"});
+      }
+      const nextVersion = version + 1;
+      const result = {rideId: ride.id, status: config.toStatus,
+        version: nextVersion, updatedAtMillis: now.toMillis()};
+      transaction.update(rideRef, {status: config.toStatus, version: nextVersion,
+        updatedAt: now, [config.timestampField]: now});
+      if (config.terminal) {
+        transaction.delete(passengerRef);
+        transaction.delete(driverRef);
+      } else {
+        transaction.update(passengerRef, {status: config.toStatus, updatedAt: now});
+        transaction.update(driverRef, {status: config.toStatus, updatedAt: now});
+      }
+      transaction.create(rideRef.collection("events").doc(
+        `${config.eventType}_${operationRef.id.slice(0, 32)}`),
+      {type: config.eventType, fromStatus: config.fromStatus, toStatus: config.toStatus,
+        actorType: "driver", actorId: actorUid, createdAt: now});
+      transaction.create(operationRef, {actorUid, callableName: config.callableName,
+        requestDigest: digest, status: "completed", result, createdAt: now, updatedAt: now});
+      return result;
+    });
+  } catch (error: unknown) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("unavailable", "Yolculuk durumu gÃ¼ncellenemedi.",
+      {reason: "ride_persistence_failed"});
+  }
+};
+
+export const DRIVER_TRANSITIONS = {
+  markDriverArrived: {callableName: "markDriverArrived", fromStatus: "driverEnRoute",
+    toStatus: "driverArrived", timestampField: "arrivedAt",
+    eventType: "rideDriverArrived", terminal: false},
+  startRide: {callableName: "startRide", fromStatus: "driverArrived",
+    toStatus: "inProgress", timestampField: "startedAt",
+    eventType: "rideStarted", terminal: false},
+  completeRide: {callableName: "completeRide", fromStatus: "inProgress",
+    toStatus: "completed", timestampField: "completedAt",
+    eventType: "rideCompleted", terminal: true},
+} as const;

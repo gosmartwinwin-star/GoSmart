@@ -154,7 +154,7 @@ test("ride callables preserve auth, transactions, locks and events", () => {
   assert.doesNotMatch(create, /request\.data\.(uid|passengerId|status|version|route)/u);
   assert.match(read, /activeRide: null/u);
   assert.doesNotMatch(read, /events.*create|rideRequestCreated|rideCancelled/u);
-  assert.match(cancel, /cancelRideForPassenger/u);
+  assert.match(cancel, /cancelRideForActor/u);
   assert.match(orchestration, /expectedVersion/u);
   assert.match(orchestration, /passengerActiveRides/u);
   assert.match(orchestration, /runTransaction/u);

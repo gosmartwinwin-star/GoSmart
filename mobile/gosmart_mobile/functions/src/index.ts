@@ -73,9 +73,13 @@ import {
   TERMINAL_RIDE_STATUSES,
 } from "./ride-lifecycle-helpers.js";
 import {
-  cancelRideForPassenger,
+  acceptRideForDriver,
+  cancelRideForActor,
   createRideRequestForPassenger,
+  DRIVER_TRANSITIONS,
+  transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
+import {loadApprovedDriverId} from "./ride-driver-identity.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -517,11 +521,95 @@ export const cancelRide = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Yolculuk iptali iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
     }
-    return cancelRideForPassenger(
+    return cancelRideForActor(
       {firestore},
       request.auth.uid,
       request.data,
     );
+  },
+);
+
+export const acceptRide = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated",
+        "Yolculuk kabulÃ¼ iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    return acceptRideForDriver({firestore}, request.auth.uid, request.data);
+  },
+);
+
+export const markDriverArrived = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated",
+        "SÃ¼rÃ¼cÃ¼ iÅŸlemi iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    return transitionRideForDriver({firestore}, request.auth.uid, request.data,
+      DRIVER_TRANSITIONS.markDriverArrived);
+  },
+);
+
+export const startRide = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated",
+        "SÃ¼rÃ¼cÃ¼ iÅŸlemi iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    return transitionRideForDriver({firestore}, request.auth.uid, request.data,
+      DRIVER_TRANSITIONS.startRide);
+  },
+);
+
+export const completeRide = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated",
+        "SÃ¼rÃ¼cÃ¼ iÅŸlemi iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    return transitionRideForDriver({firestore}, request.auth.uid, request.data,
+      DRIVER_TRANSITIONS.completeRide);
+  },
+);
+
+export const getMyActiveDriverRide = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated",
+        "Aktif yolculuk iÃ§in giriÅŸ yapmalÄ±sÄ±nÄ±z.");
+    }
+    if (typeof request.data !== "object" || request.data === null ||
+        Array.isArray(request.data) || Object.keys(request.data).length !== 0) {
+      throw new HttpsError("invalid-argument", "Aktif yolculuk isteÄŸi geÃ§ersiz.",
+        {reason: "invalid_active_ride_payload"});
+    }
+    const driverId = await loadApprovedDriverId(firestore, request.auth.uid);
+    const pointer = await firestore.collection("driverActiveRides").doc(driverId).get();
+    if (!pointer.exists) return {activeRide: null};
+    const rideId = pointer.get("rideId");
+    if (typeof rideId !== "string" || rideId.length === 0) {
+      throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
+        {reason: "active_ride_pointer_inconsistent"});
+    }
+    const ride = await firestore.collection("rides").doc(rideId).get();
+    const data = ride.data();
+    if (!ride.exists || !data || data.driverId !== driverId ||
+        pointer.get("status") !== data.status ||
+        TERMINAL_RIDE_STATUSES.includes(parseRideStatus(data.status))) {
+      throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
+        {reason: "active_ride_pointer_inconsistent"});
+    }
+    return {activeRide: serializeActiveRide(ride.id, data)};
   },
 );
 /* eslint-enable max-len */

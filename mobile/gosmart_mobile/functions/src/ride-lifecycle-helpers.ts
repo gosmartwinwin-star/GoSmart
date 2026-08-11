@@ -14,7 +14,9 @@ export type RideLocationInput = CoordinateInput & {addressLabel: string};
 export type CreateRideRequestInput = {requestId: string;
   pickup: RideLocationInput; dropoff: RideLocationInput};
 export type CancelRideInput = {rideId: string; requestId: string;
-  expectedVersion: number; reasonCode: "passenger_cancelled"};
+  expectedVersion: number; reasonCode: "passenger_cancelled" | "driver_cancelled"};
+export type RideMutationInput = {rideId: string; requestId: string;
+  expectedVersion: number};
 export type RideRoute = {distanceMeters: number; durationSeconds: number;
   encodedPolyline: string};
 
@@ -74,10 +76,7 @@ export const validateCreateRideRequestPayload =
     return {requestId: validateRequestId(input.requestId), pickup, dropoff};
   };
 
-export const validateCancelRidePayload = (value: unknown): CancelRideInput => {
-  const input = exactObject(value,
-    ["rideId", "requestId", "expectedVersion", "reasonCode"],
-    "invalid_cancel_ride_payload");
+const validateMutationFields = (input: Record<string, unknown>): RideMutationInput => {
   if (typeof input.rideId !== "string" || input.rideId.length === 0 ||
       input.rideId.length > 128 || !/^[A-Za-z0-9_-]+$/u.test(input.rideId)) {
     throw failure("invalid-argument", "invalid_ride_id");
@@ -86,12 +85,26 @@ export const validateCancelRidePayload = (value: unknown): CancelRideInput => {
       !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) {
     throw failure("invalid-argument", "invalid_ride_version");
   }
-  if (input.reasonCode !== "passenger_cancelled") {
+  return {rideId: input.rideId, requestId: validateRequestId(input.requestId),
+    expectedVersion: input.expectedVersion};
+};
+
+export const validateRideMutationPayload = (value: unknown): RideMutationInput => {
+  const input = exactObject(value, ["rideId", "requestId", "expectedVersion"],
+    "invalid_ride_mutation_payload");
+  return validateMutationFields(input);
+};
+
+export const validateCancelRidePayload = (value: unknown): CancelRideInput => {
+  const input = exactObject(value,
+    ["rideId", "requestId", "expectedVersion", "reasonCode"],
+    "invalid_cancel_ride_payload");
+  const mutation = validateMutationFields(input);
+  if (input.reasonCode !== "passenger_cancelled" &&
+      input.reasonCode !== "driver_cancelled") {
     throw failure("invalid-argument", "invalid_cancellation_reason");
   }
-  return {rideId: input.rideId, requestId: validateRequestId(input.requestId),
-    expectedVersion: input.expectedVersion,
-    reasonCode: "passenger_cancelled"};
+  return {...mutation, reasonCode: input.reasonCode};
 };
 
 export const parseRideStatus = (value: unknown): RideStatus => {
@@ -112,6 +125,21 @@ export const requirePassengerCancellation = (status: RideStatus): void => {
   if (!["matching", "driverEnRoute", "driverArrived"].includes(status)) {
     throw failure("failed-precondition",
       TERMINAL_RIDE_STATUSES.includes(status) ? "ride_is_terminal" : "ride_cannot_be_cancelled");
+  }
+};
+
+export const requireDriverCancellation = (status: RideStatus): void => {
+  if (!["driverEnRoute", "driverArrived"].includes(status)) {
+    throw failure("failed-precondition",
+      TERMINAL_RIDE_STATUSES.includes(status) ? "ride_is_terminal" : "ride_cannot_be_cancelled");
+  }
+};
+
+export const requireRideTransition = (current: RideStatus,
+  expected: RideStatus): void => {
+  if (current !== expected) {
+    throw failure("failed-precondition",
+      TERMINAL_RIDE_STATUSES.includes(current) ? "ride_is_terminal" : "invalid_ride_transition");
   }
 };
 

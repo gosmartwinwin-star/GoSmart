@@ -5,9 +5,13 @@ import {App, deleteApp, initializeApp} from "firebase-admin/app";
 import {Firestore, getFirestore} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {
+  acceptRideForDriver,
+  cancelRideForActor,
   cancelRideForPassenger,
   createRideRequestForPassenger,
+  DRIVER_TRANSITIONS,
   RideLifecycleDependencies,
+  transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
 import {rideOperationId} from "./ride-lifecycle-helpers.js";
 
@@ -54,6 +58,34 @@ const eventsFor = (rideId: string) => firestore.collection("rides").doc(rideId)
   .collection("events").get();
 const errorCode = (reason: PromiseRejectedResult) =>
   (reason.reason as HttpsError).code;
+const seedDriver = async (uid: string, status = "approved") => {
+  const driverId = `driver_${uid}`;
+  await firestore.collection("driverProfiles").doc(driverId)
+    .set({authUserId: uid, status});
+  return driverId;
+};
+const acceptPayload = (rideId: string, requestId: string,
+  expectedVersion = 1) => ({rideId, requestId, expectedVersion});
+const createFor = async (uid: string, label: string) =>
+  createRideRequestForPassenger(dependencies(), uid,
+    payload(`${identity(label)}_123456789`));
+const eventTypes = async (rideId: string) =>
+  (await eventsFor(rideId)).docs.map((event) => event.get("type"));
+const advanceToInProgress = async (passengerUid: string, driverUid: string) => {
+  await seedDriver(driverUid);
+  const created = await createFor(passengerUid, "lifecycle_create");
+  const rideId = created.rideId as string;
+  const accepted = await acceptRideForDriver({firestore}, driverUid,
+    acceptPayload(rideId, `${identity("lifecycle_accept")}_123456789`,
+      created.version as number));
+  const arrived = await transitionRideForDriver({firestore}, driverUid,
+    acceptPayload(rideId, `${identity("lifecycle_arrive")}_123456789`,
+      accepted.version as number), DRIVER_TRANSITIONS.markDriverArrived);
+  const started = await transitionRideForDriver({firestore}, driverUid,
+    acceptPayload(rideId, `${identity("lifecycle_start")}_123456789`,
+      arrived.version as number), DRIVER_TRANSITIONS.startRide);
+  return {rideId, created, accepted, arrived, started};
+};
 
 test("two concurrent create requests allow one ride without orphans", async () => {
   const uid = identity("create_race_user");
@@ -201,4 +233,279 @@ test("stale cancel after mutation leaves canonical state unchanged", async () =>
   const losingOperation = await firestore.collection("rideOperations").doc(
     rideOperationId(uid, "cancelRide", losingRequestId)).get();
   assert.equal(losingOperation.exists, false);
+});
+
+test("two drivers accepting one ride concurrently produce one assignment", async () => {
+  const passenger = identity("accept_race_passenger");
+  const driverA = identity("accept_race_driver_a");
+  const driverB = identity("accept_race_driver_b");
+  const [driverIdA, driverIdB] = await Promise.all([
+    seedDriver(driverA), seedDriver(driverB),
+  ]);
+  const created = await createFor(passenger, "accept_race_create");
+  const rideId = created.rideId as string;
+  const results = await Promise.allSettled([
+    acceptRideForDriver({firestore}, driverA, acceptPayload(rideId,
+      `${identity("accept_race_a")}_123456789`)),
+    acceptRideForDriver({firestore}, driverB, acceptPayload(rideId,
+      `${identity("accept_race_b")}_123456789`)),
+  ]);
+  assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+  const ride = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(ride.get("version"), 2);
+  assert.ok([driverIdA, driverIdB].includes(ride.get("driverId")));
+  const pointers = await Promise.all([driverIdA, driverIdB].map((id) =>
+    firestore.collection("driverActiveRides").doc(id).get()));
+  assert.equal(pointers.filter((item) => item.exists).length, 1);
+  assert.equal((await eventTypes(rideId)).filter((type) =>
+    type === "rideDriverAccepted").length, 1);
+  const loser = ride.get("driverId") === driverIdA ? driverB : driverA;
+  assert.equal((await operationsFor(loser)).size, 0);
+});
+
+test("one driver accepting two rides concurrently locks only one", async () => {
+  const driverUid = identity("driver_two_rides");
+  const driverId = await seedDriver(driverUid);
+  const first = await createFor(identity("two_rides_passenger_a"), "two_rides_create_a");
+  const second = await createFor(identity("two_rides_passenger_b"), "two_rides_create_b");
+  const results = await Promise.allSettled([
+    acceptRideForDriver({firestore}, driverUid, acceptPayload(first.rideId as string,
+      `${identity("two_rides_accept_a")}_123456789`)),
+    acceptRideForDriver({firestore}, driverUid, acceptPayload(second.rideId as string,
+      `${identity("two_rides_accept_b")}_123456789`)),
+  ]);
+  assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+  const rides = await Promise.all([first, second].map((item) =>
+    firestore.collection("rides").doc(item.rideId as string).get()));
+  assert.equal(rides.filter((ride) => ride.get("status") === "driverEnRoute").length, 1);
+  assert.equal(rides.filter((ride) => ride.get("status") === "matching").length, 1);
+  assert.equal(rides.filter((ride) => ride.get("driverId") === null).length, 1);
+  assert.ok((await firestore.collection("driverActiveRides").doc(driverId).get()).exists);
+  const loserRide = rides.find((ride) => ride.get("status") === "matching")!;
+  assert.equal((await eventTypes(loserRide.id)).includes("rideDriverAccepted"), false);
+});
+
+test("same accept request replays without duplicate event", async () => {
+  const passenger = identity("accept_replay_passenger");
+  const driver = identity("accept_replay_driver");
+  await seedDriver(driver);
+  const created = await createFor(passenger, "accept_replay_create");
+  const input = acceptPayload(created.rideId as string,
+    `${identity("accept_replay_request")}_123456789`);
+  const first = await acceptRideForDriver({firestore}, driver, input);
+  const second = await acceptRideForDriver({firestore}, driver, input);
+  assert.deepEqual(second, first);
+  assert.equal((await eventTypes(created.rideId as string)).filter((type) =>
+    type === "rideDriverAccepted").length, 1);
+});
+
+test("concurrent duplicate accept is exactly once", async () => {
+  const passenger = identity("accept_duplicate_passenger");
+  const driver = identity("accept_duplicate_driver");
+  await seedDriver(driver);
+  const created = await createFor(passenger, "accept_duplicate_create");
+  const input = acceptPayload(created.rideId as string,
+    `${identity("accept_duplicate_request")}_123456789`);
+  const results = await Promise.all([
+    acceptRideForDriver({firestore}, driver, input),
+    acceptRideForDriver({firestore}, driver, input),
+  ]);
+  assert.deepEqual(results[1], results[0]);
+  assert.equal((await eventTypes(created.rideId as string)).filter((type) =>
+    type === "rideDriverAccepted").length, 1);
+});
+
+test("same accept request id with different payload is rejected", async () => {
+  const driver = identity("accept_mismatch_driver");
+  await seedDriver(driver);
+  const first = await createFor(identity("accept_mismatch_passenger_a"),
+    "accept_mismatch_create_a");
+  const second = await createFor(identity("accept_mismatch_passenger_b"),
+    "accept_mismatch_create_b");
+  const requestId = `${identity("accept_mismatch_request")}_123456789`;
+  await acceptRideForDriver({firestore}, driver,
+    acceptPayload(first.rideId as string, requestId));
+  await assert.rejects(acceptRideForDriver({firestore}, driver,
+    acceptPayload(second.rideId as string, requestId)),
+  (error: HttpsError) => error.code === "failed-precondition");
+  assert.equal((await firestore.collection("rides").doc(second.rideId as string).get())
+    .get("status"), "matching");
+});
+
+test("accept and passenger cancel with same version have one winner", async () => {
+  const passenger = identity("accept_cancel_passenger");
+  const driver = identity("accept_cancel_driver");
+  await seedDriver(driver);
+  const created = await createFor(passenger, "accept_cancel_create");
+  const rideId = created.rideId as string;
+  const results = await Promise.allSettled([
+    acceptRideForDriver({firestore}, driver, acceptPayload(rideId,
+      `${identity("accept_cancel_accept")}_123456789`)),
+    cancelRideForActor({firestore}, passenger, cancelPayload(rideId,
+      `${identity("accept_cancel_cancel")}_123456789`)),
+  ]);
+  assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+  const ride = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(ride.get("version"), 2);
+  assert.ok(["driverEnRoute", "cancelled"].includes(ride.get("status")));
+  const transitions = (await eventTypes(rideId)).filter((type) =>
+    type === "rideDriverAccepted" || type === "rideCancelled");
+  assert.equal(transitions.length, 1);
+});
+
+test("arrived replay is exactly once and stale arrived is rejected", async () => {
+  const passenger = identity("arrived_passenger");
+  const driver = identity("arrived_driver");
+  await seedDriver(driver);
+  const created = await createFor(passenger, "arrived_create");
+  const accepted = await acceptRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("arrived_accept")}_123456789`));
+  const input = acceptPayload(created.rideId as string,
+    `${identity("arrived_request")}_123456789`, accepted.version as number);
+  const first = await transitionRideForDriver({firestore}, driver, input,
+    DRIVER_TRANSITIONS.markDriverArrived);
+  assert.deepEqual(await transitionRideForDriver({firestore}, driver, input,
+    DRIVER_TRANSITIONS.markDriverArrived), first);
+  await assert.rejects(transitionRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("arrived_stale")}_123456789`,
+      accepted.version as number), DRIVER_TRANSITIONS.markDriverArrived));
+  assert.equal((await eventTypes(created.rideId as string)).filter((type) =>
+    type === "rideDriverArrived").length, 1);
+});
+
+test("start replay is exactly once and stale start is rejected", async () => {
+  const passenger = identity("start_passenger");
+  const driver = identity("start_driver");
+  await seedDriver(driver);
+  const created = await createFor(passenger, "start_create");
+  const accepted = await acceptRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("start_accept")}_123456789`));
+  const arrived = await transitionRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("start_arrive")}_123456789`,
+      accepted.version as number), DRIVER_TRANSITIONS.markDriverArrived);
+  const input = acceptPayload(created.rideId as string,
+    `${identity("start_request")}_123456789`, arrived.version as number);
+  const first = await transitionRideForDriver({firestore}, driver, input,
+    DRIVER_TRANSITIONS.startRide);
+  assert.deepEqual(await transitionRideForDriver({firestore}, driver, input,
+    DRIVER_TRANSITIONS.startRide), first);
+  await assert.rejects(transitionRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("start_stale")}_123456789`,
+      arrived.version as number), DRIVER_TRANSITIONS.startRide));
+  assert.equal((await eventTypes(created.rideId as string)).filter((type) =>
+    type === "rideStarted").length, 1);
+});
+
+test("complete replay cleans pointers and emits exactly once", async () => {
+  const passenger = identity("complete_passenger");
+  const driver = identity("complete_driver");
+  const driverId = `driver_${driver}`;
+  const lifecycle = await advanceToInProgress(passenger, driver);
+  const input = acceptPayload(lifecycle.rideId,
+    `${identity("complete_request")}_123456789`, lifecycle.started.version as number);
+  const first = await transitionRideForDriver({firestore}, driver, input,
+    DRIVER_TRANSITIONS.completeRide);
+  assert.deepEqual(await transitionRideForDriver({firestore}, driver, input,
+    DRIVER_TRANSITIONS.completeRide), first);
+  const ride = await firestore.collection("rides").doc(lifecycle.rideId).get();
+  assert.equal(ride.get("status"), "completed");
+  assert.equal(ride.get("version"), (lifecycle.started.version as number) + 1);
+  assert.equal(ride.get("completedAt") !== null, true);
+  assert.equal((await firestore.collection("passengerActiveRides").doc(passenger).get()).exists,
+    false);
+  assert.equal((await firestore.collection("driverActiveRides").doc(driverId).get()).exists,
+    false);
+  assert.equal((await eventTypes(lifecycle.rideId)).filter((type) =>
+    type === "rideCompleted").length, 1);
+});
+
+test("concurrent duplicate complete is deterministic", async () => {
+  const passenger = identity("complete_duplicate_passenger");
+  const driver = identity("complete_duplicate_driver");
+  const lifecycle = await advanceToInProgress(passenger, driver);
+  const input = acceptPayload(lifecycle.rideId,
+    `${identity("complete_duplicate_request")}_123456789`,
+    lifecycle.started.version as number);
+  const results = await Promise.all([
+    transitionRideForDriver({firestore}, driver, input, DRIVER_TRANSITIONS.completeRide),
+    transitionRideForDriver({firestore}, driver, input, DRIVER_TRANSITIONS.completeRide),
+  ]);
+  assert.deepEqual(results[1], results[0]);
+  assert.equal((await eventTypes(lifecycle.rideId)).filter((type) =>
+    type === "rideCompleted").length, 1);
+});
+
+test("different complete request cannot mutate terminal ride", async () => {
+  const passenger = identity("complete_terminal_passenger");
+  const driver = identity("complete_terminal_driver");
+  const lifecycle = await advanceToInProgress(passenger, driver);
+  await transitionRideForDriver({firestore}, driver,
+    acceptPayload(lifecycle.rideId, `${identity("complete_terminal_first")}_123456789`,
+      lifecycle.started.version as number), DRIVER_TRANSITIONS.completeRide);
+  await assert.rejects(transitionRideForDriver({firestore}, driver,
+    acceptPayload(lifecycle.rideId, `${identity("complete_terminal_second")}_123456789`,
+      (lifecycle.started.version as number) + 1), DRIVER_TRANSITIONS.completeRide),
+  (error: HttpsError) => error.code === "failed-precondition");
+  assert.equal((await eventTypes(lifecycle.rideId)).filter((type) =>
+    type === "rideCompleted").length, 1);
+});
+
+test("driver and passenger cancel race has one terminal transition", async () => {
+  const passenger = identity("cancel_actor_race_passenger");
+  const driver = identity("cancel_actor_race_driver");
+  await seedDriver(driver);
+  const created = await createFor(passenger, "cancel_actor_race_create");
+  const accepted = await acceptRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("cancel_actor_accept")}_123456789`));
+  const rideId = created.rideId as string;
+  const results = await Promise.allSettled([
+    cancelRideForActor({firestore}, passenger, {...cancelPayload(rideId,
+      `${identity("cancel_actor_passenger")}_123456789`),
+    expectedVersion: accepted.version}),
+    cancelRideForActor({firestore}, driver, {rideId,
+      requestId: `${identity("cancel_actor_driver")}_123456789`,
+      expectedVersion: accepted.version, reasonCode: "driver_cancelled"}),
+  ]);
+  assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+  const ride = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(ride.get("status"), "cancelled");
+  assert.equal((await eventTypes(rideId)).filter((type) => type === "rideCancelled").length, 1);
+});
+
+test("pointer mismatch rejects transition without partial writes", async () => {
+  const passenger = identity("pointer_mismatch_passenger");
+  const driver = identity("pointer_mismatch_driver");
+  const driverId = await seedDriver(driver);
+  const created = await createFor(passenger, "pointer_mismatch_create");
+  const accepted = await acceptRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("pointer_mismatch_accept")}_123456789`));
+  await firestore.collection("driverActiveRides").doc(driverId)
+    .set({rideId: "wrong_ride", status: "driverEnRoute"});
+  await assert.rejects(transitionRideForDriver({firestore}, driver,
+    acceptPayload(created.rideId as string, `${identity("pointer_mismatch_arrive")}_123456789`,
+      accepted.version as number), DRIVER_TRANSITIONS.markDriverArrived),
+  (error: HttpsError) => error.code === "failed-precondition");
+  const ride = await firestore.collection("rides").doc(created.rideId as string).get();
+  assert.equal(ride.get("status"), "driverEnRoute");
+  assert.equal(ride.get("version"), accepted.version);
+  assert.equal((await eventTypes(ride.id)).includes("rideDriverArrived"), false);
+});
+
+test("non-driver, unapproved and non-assigned actors are rejected", async () => {
+  const passenger = identity("auth_role_passenger");
+  const approved = identity("auth_role_approved");
+  const pending = identity("auth_role_pending");
+  const stranger = identity("auth_role_stranger");
+  await Promise.all([seedDriver(approved), seedDriver(pending, "pendingReview"),
+    seedDriver(stranger)]);
+  const created = await createFor(passenger, "auth_role_create");
+  await assert.rejects(acceptRideForDriver({firestore}, identity("auth_role_no_profile"),
+    acceptPayload(created.rideId as string, `${identity("auth_role_no_profile_req")}_123456789`)));
+  await assert.rejects(acceptRideForDriver({firestore}, pending,
+    acceptPayload(created.rideId as string, `${identity("auth_role_pending_req")}_123456789`)));
+  const accepted = await acceptRideForDriver({firestore}, approved,
+    acceptPayload(created.rideId as string, `${identity("auth_role_accept")}_123456789`));
+  await assert.rejects(transitionRideForDriver({firestore}, stranger,
+    acceptPayload(created.rideId as string, `${identity("auth_role_stranger_req")}_123456789`,
+      accepted.version as number), DRIVER_TRANSITIONS.markDriverArrived));
 });
