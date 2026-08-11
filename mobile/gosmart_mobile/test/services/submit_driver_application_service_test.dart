@@ -8,8 +8,9 @@ class Auth implements SubmitDriverApplicationAuthSession {
   Auth(this.valid);
   @override
   Future<void> requireAuthenticatedUser() async {
-    if (!valid)
+    if (!valid) {
       throw const SubmitDriverApplicationException(code: 'unauthenticated');
+    }
   }
 }
 

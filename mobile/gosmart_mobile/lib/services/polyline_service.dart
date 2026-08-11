@@ -2,7 +2,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class PolylineService {
   /// Google Encoded Polyline formatını
-  /// List<LatLng> haline dönüştürür.
+  /// `List<LatLng>` haline dönüştürür.
   List<LatLng> decode(String encoded) {
     List<LatLng> points = [];
 
