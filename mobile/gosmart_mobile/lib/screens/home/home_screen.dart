@@ -1,5 +1,5 @@
-import 'dart:math' as math;
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -12,6 +12,7 @@ import '../../controllers/passenger_ride_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../models/address_model.dart';
+import '../../models/route_result_model.dart';
 import '../../models/taxi_model.dart';
 import '../../screens/search/search_address_screen.dart';
 import '../../screens/driver/driver_center_screen.dart';
@@ -26,9 +27,21 @@ import '../../widgets/map/gosmart_map.dart';
 import '../../widgets/panels/home_bottom_panel.dart';
 import '../../widgets/panels/ride_request_panel.dart';
 
+typedef HomeRouteLoader = Future<RouteResultModel> Function({
+  required LatLng pickup,
+  required LatLng destination,
+});
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.rideController});
+  const HomeScreen({
+    super.key,
+    this.rideController,
+    this.routeLoader,
+    this.authenticate,
+  });
   final PassengerRideController? rideController;
+  final HomeRouteLoader? routeLoader;
+  final Future<bool> Function()? authenticate;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -46,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final RouteMarkerService routeMarkerService = RouteMarkerService();
 
-  final RouteService routeService = RouteService();
+  late final HomeRouteLoader routeLoader;
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
@@ -73,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _ownsRideController = widget.rideController == null;
     rideController = widget.rideController ?? PassengerRideController(gateway: RideLifecycleService(), repository: FirestoreRideRepository(), authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid);
+    routeLoader = widget.routeLoader ?? RouteService().getRoute;
     rideController.addListener(_refreshRide);
     rideController.recover();
     if (_ownsRideController) { _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((user) => rideController.authChanged(user?.uid)); }
@@ -108,14 +122,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _refreshRide() { if (mounted) setState(() {}); }
 
-  Future<void> _createCanonicalRide() async {
-    final pickup = pickupAddress; final dropoff = destinationAddress;
-    if (pickup == null || dropoff == null) return;
-    await rideController.create(
-      pickup: RideLocation(latitude: pickup.latitude, longitude: pickup.longitude, addressLabel: pickup.title),
-      dropoff: RideLocation(latitude: dropoff.latitude, longitude: dropoff.longitude, addressLabel: dropoff.title),
-    );
-    if (mounted && rideController.errorMessage != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(rideController.errorMessage!)));
+  Future<bool> _authenticate() async {
+    if (widget.authenticate case final authenticate?) return authenticate();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    try {
+      await user.getIdToken(true);
+      return true;
+    } on FirebaseAuthException {
+      return false;
+    }
   }
 
   void _initializeTaxis() {
@@ -270,7 +286,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _searchTaxi() async {
-    if (_isRouteLoading) return;
+    if (_isRouteLoading ||
+        rideController.loading ||
+        rideController.mutating ||
+        rideController.ride != null) {
+      return;
+    }
 
     final pickup = pickupAddress;
     final destination = destinationAddress;
@@ -283,28 +304,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Oturumunuz bulunamadı. Lütfen yeniden giriş yapın."),
-        ),
-      );
-      return;
-    }
-
-    try {
-      await user.getIdToken(true);
-    } on FirebaseAuthException {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Oturum doğrulanamadı. Lütfen yeniden giriş yapın."),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _isRouteLoading = true;
       _routeDistanceMeters = null;
@@ -312,7 +311,17 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final route = await routeService.getRoute(
+      if (!await _authenticate()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Oturum doğrulanamadı. Lütfen yeniden giriş yapın."),
+          ),
+        );
+        return;
+      }
+
+      final route = await routeLoader(
         pickup: LatLng(pickup.latitude, pickup.longitude),
         destination: LatLng(destination.latitude, destination.longitude),
       );
@@ -340,14 +349,23 @@ class _HomeScreenState extends State<HomeScreen> {
       await _focusRoutePoints(route.points);
       if (!mounted) return;
 
-      final distance = route.distanceMeters < 1000
-          ? "${route.distanceMeters} m"
-          : "${(route.distanceMeters / 1000).toStringAsFixed(1)} km";
-      final durationMinutes = math.max(1, (route.durationSeconds / 60).ceil());
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Rota hazır • $distance • $durationMinutes dk")),
+      await rideController.create(
+        pickup: RideLocation(
+          latitude: pickup.latitude,
+          longitude: pickup.longitude,
+          addressLabel: pickup.title,
+        ),
+        dropoff: RideLocation(
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+          addressLabel: destination.title,
+        ),
       );
+      if (mounted && rideController.errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(rideController.errorMessage!)),
+        );
+      }
     } on RouteServiceException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -513,24 +531,28 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
 
-          if (rideController.ride == null && selectedTaxi == null)
+          if (!rideController.loading &&
+              rideController.ride == null &&
+              selectedTaxi == null)
             RideRequestPanel(
               pickupText: pickupAddress?.title,
               destinationText: destinationAddress?.title,
               onPickupTap: _selectPickupAddress,
               onDestinationTap: _selectDestinationAddress,
               onSearchPressed: _searchTaxi,
-              isLoading: _isRouteLoading,
+              isLoading: _isRouteLoading || rideController.mutating,
             ),
 
-          if (rideController.ride == null && selectedTaxi != null)
+          if (!rideController.loading &&
+              rideController.ride == null &&
+              selectedTaxi != null)
             Positioned(
               left: 16,
               right: 16,
               bottom: 110,
               child: TaxiInfoCard(
                 taxi: selectedTaxi!,
-                onRequestTaxi: rideController.mutating ? () {} : _createCanonicalRide,
+                onRequestTaxi: _searchTaxi,
               ),
             ),
 
