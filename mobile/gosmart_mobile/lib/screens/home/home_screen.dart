@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import '../../models/route_result_model.dart';
 import '../../models/taxi_model.dart';
 import '../../screens/search/search_address_screen.dart';
 import '../../screens/driver/driver_center_screen.dart';
+import '../../screens/profile/profile_screen.dart';
 import '../../services/marker_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
@@ -38,10 +40,12 @@ class HomeScreen extends StatefulWidget {
     this.rideController,
     this.routeLoader,
     this.authenticate,
+    this.profileScreenBuilder,
   });
   final PassengerRideController? rideController;
   final HomeRouteLoader? routeLoader;
   final Future<bool> Function()? authenticate;
+  final WidgetBuilder? profileScreenBuilder;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -584,6 +588,19 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push<void>(
                 context,
                 MaterialPageRoute(builder: (_) => const DriverCenterScreen()),
+              );
+            },
+            onProfileTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: widget.profileScreenBuilder ??
+                      (_) => ProfileScreen(
+                            phoneNumber: FirebaseAuth.instanceFor(
+                              app: Firebase.app(),
+                            ).currentUser?.phoneNumber,
+                          ),
+                ),
               );
             },
           ),

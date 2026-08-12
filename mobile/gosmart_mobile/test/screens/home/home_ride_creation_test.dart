@@ -10,6 +10,38 @@ import 'package:gosmart_mobile/models/route_result_model.dart';
 import 'package:gosmart_mobile/screens/home/home_screen.dart';
 
 void main() {
+  testWidgets('Profil dokunuşu gerçek hesap yüzeyini açar', (tester) async {
+    final gateway = _FakeRideGateway();
+    final controller = PassengerRideController(
+      gateway: gateway,
+      repository: gateway,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          rideController: controller,
+          authenticate: () async => true,
+          routeLoader: ({required pickup, required destination}) async =>
+              const RouteResultModel(
+                points: [],
+                distanceMeters: 0,
+                durationSeconds: 0,
+              ),
+          profileScreenBuilder: (_) => const Scaffold(
+            body: Text('Hesap yüzeyi'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Profil'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hesap yüzeyi'), findsOneWidget);
+    controller.dispose();
+  });
+
   testWidgets('Taksi Ara route sonrası tek canonical ride oluşturur', (
     tester,
   ) async {

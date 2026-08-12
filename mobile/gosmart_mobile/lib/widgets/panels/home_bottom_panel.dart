@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 class HomeBottomPanel extends StatelessWidget {
   final VoidCallback? onDriverTap;
+  final VoidCallback? onProfileTap;
 
-  const HomeBottomPanel({super.key, this.onDriverTap});
+  const HomeBottomPanel({super.key, this.onDriverTap, this.onProfileTap});
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +39,10 @@ class HomeBottomPanel extends StatelessWidget {
                   onTap: onDriverTap,
                 ),
 
-                const _BottomButton(
+                _BottomButton(
                   icon: Icons.person_rounded,
                   label: "Profil",
+                  onTap: onProfileTap,
                 ),
               ],
             ),
