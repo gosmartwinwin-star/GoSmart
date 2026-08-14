@@ -5,13 +5,16 @@ import 'package:gosmart_mobile/application/driver_access/driver_profile_reposito
 import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
 import 'package:gosmart_mobile/application/return_route/publish_return_route_gateway.dart';
 import 'package:gosmart_mobile/application/return_route/published_return_route.dart';
+import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
 import 'package:gosmart_mobile/controllers/driver_center_controller.dart';
+import 'package:gosmart_mobile/controllers/driver_ride_controller.dart';
 import 'package:gosmart_mobile/core/branding/gosmart_slogans.dart';
 import 'package:gosmart_mobile/domain/driver/driver_profile.dart';
 import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
 import 'package:gosmart_mobile/domain/driver_application/driver_application_review.dart';
 import 'package:gosmart_mobile/domain/driver/driver_profile_status.dart';
 import 'package:gosmart_mobile/domain/return_route/geo_coordinate.dart';
+import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_access_pass.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_pass_status.dart';
@@ -89,6 +92,24 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> showWithRide(
+    WidgetTester tester,
+    DriverRideController rides,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverCenterScreen(
+          controller: controller(
+            loadedProfile: profile(DriverProfileStatus.approved),
+            loadedPass: pass(),
+          ),
+          rideController: rides,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('sürücü sloganı ve profil gerekli kartı gösterilir', (
     tester,
   ) async {
@@ -160,6 +181,46 @@ void main() {
     expect(find.text('Duraklat'), findsNothing);
   });
 
+  testWidgets('fixture recovery aktif driver ride kartını öncelikli gösterir', (
+    tester,
+  ) async {
+    final gateway = _RideGateway()..activeRide = fixtureRide;
+    final rides = DriverRideController(gateway: gateway, repository: gateway);
+    addTearDown(rides.dispose);
+
+    await showWithRide(tester, rides);
+
+    expect(find.text('Yolcunun konumuna gidiliyor'), findsOneWidget);
+    expect(find.text('Teslim Alma Noktasına Ulaştım'), findsOneWidget);
+    expect(find.text('Dönüş Rotanı Oluştur'), findsNothing);
+  });
+
+  testWidgets('null active ride dönüş rotası yüzeyini gösterir', (
+    tester,
+  ) async {
+    final gateway = _RideGateway();
+    final rides = DriverRideController(gateway: gateway, repository: gateway);
+    addTearDown(rides.dispose);
+
+    await showWithRide(tester, rides);
+
+    expect(find.text('Dönüş Rotanı Oluştur'), findsOneWidget);
+    expect(find.text('Aktif yolculuk yüklenemedi'), findsNothing);
+  });
+
+  testWidgets('recovery hatası güvenli retry yüzeyi gösterir', (tester) async {
+    final gateway = _RideGateway()
+      ..recoveryError = const RideGatewayException('unavailable');
+    final rides = DriverRideController(gateway: gateway, repository: gateway);
+    addTearDown(rides.dispose);
+
+    await showWithRide(tester, rides);
+
+    expect(find.text('Aktif yolculuk yüklenemedi'), findsOneWidget);
+    expect(find.text('Tekrar Dene'), findsOneWidget);
+    expect(find.text('Dönüş Rotanı Oluştur'), findsNothing);
+  });
+
   testWidgets('awaiting state only offers document renewal', (tester) async {
     await show(
       tester,
@@ -196,6 +257,85 @@ void main() {
     expect(find.text('Başvurunuz geri çekildi'), findsOneWidget);
     expect(find.text('Yeniden Başvur'), findsNothing);
   });
+}
+
+const fixturePoint = RideLocation(
+  latitude: 41.0082,
+  longitude: 28.9784,
+  addressLabel: 'Fixture pickup',
+);
+const fixtureRide = CanonicalRide(
+  rideId: 'fixture_assigned_ride',
+  driverId: 'fixture_driver_profile',
+  status: RideStatus.driverEnRoute,
+  version: 2,
+  pickup: fixturePoint,
+  dropoff: RideLocation(
+    latitude: 41.0151,
+    longitude: 28.9795,
+    addressLabel: 'Fixture dropoff',
+  ),
+  route: RideRoute(
+    distanceMeters: 1400,
+    durationSeconds: 420,
+    encodedPolyline: 'fixture_polyline',
+  ),
+);
+
+class _RideGateway implements RideGateway, RideStreamRepository {
+  CanonicalRide? activeRide;
+  RideGatewayException? recoveryError;
+
+  @override
+  Future<CanonicalRide?> getMyActiveDriverRide() async {
+    if (recoveryError case final error?) throw error;
+    return activeRide;
+  }
+
+  @override
+  Stream<CanonicalRide> watchRide(String rideId) => const Stream.empty();
+
+  @override
+  Future<CanonicalRide> getRide(String rideId) async => activeRide!;
+
+  @override
+  Future<CanonicalRide?> getMyActiveRide() async => null;
+
+  @override
+  Future<CanonicalRide> createRide({
+    required String requestId,
+    required RideLocation pickup,
+    required RideLocation dropoff,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> cancel({
+    required String rideId,
+    required String requestId,
+    required int expectedVersion,
+    required bool driver,
+  }) async {}
+
+  @override
+  Future<void> markDriverArrived({
+    required String rideId,
+    required String requestId,
+    required int expectedVersion,
+  }) async {}
+
+  @override
+  Future<void> startRide({
+    required String rideId,
+    required String requestId,
+    required int expectedVersion,
+  }) async {}
+
+  @override
+  Future<void> completeRide({
+    required String rideId,
+    required String requestId,
+    required int expectedVersion,
+  }) async {}
 }
 
 class _Applications implements DriverApplicationRepository {

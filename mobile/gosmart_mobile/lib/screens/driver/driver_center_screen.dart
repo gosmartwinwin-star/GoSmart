@@ -68,8 +68,13 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     rideController = widget.rideController ?? (widget.controller == null ? DriverRideController(gateway: RideLifecycleService(), repository: FirestoreRideRepository(), authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid) : null);
     rideController?.addListener(_refresh);
     controller.load();
-    rideController?.recover();
-    if (_ownsRideController) { _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((user) => rideController?.authChanged(user?.uid)); }
+    if (_ownsRideController) {
+      _authSubscription = FirebaseAuth.instance.userChanges().listen(
+        (user) => rideController?.authChanged(user?.uid),
+      );
+    } else {
+      rideController?.recover();
+    }
   }
 
   void _refresh() {
@@ -128,6 +133,19 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
 
   Widget _content() {
     if (rideController?.ride != null) return _activeRide();
+    if (rideController?.loading == true) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (rideController?.errorMessage case final message?) {
+      return _StatusCard(
+        title: 'Aktif yolculuk yüklenemedi',
+        description: message,
+        action: TextButton(
+          onPressed: rideController?.recover,
+          child: const Text('Tekrar Dene'),
+        ),
+      );
+    }
     switch (controller.status) {
       case DriverCenterStatus.loading:
         return const Center(child: CircularProgressIndicator());
