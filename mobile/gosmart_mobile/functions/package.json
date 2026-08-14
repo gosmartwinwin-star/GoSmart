@@ -8,6 +8,7 @@
     "admin:claim": "npm run build && node admin-tools/manage-gosmart-admin-claim.mjs",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --project demo-gosmart --only auth,functions,firestore,storage",
+    "seed:driver": "npm run build && node lib/local-driver-fixture-cli.js",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
