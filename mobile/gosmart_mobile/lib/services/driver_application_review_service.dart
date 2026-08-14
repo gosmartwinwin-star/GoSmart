@@ -1,8 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import '../application/driver_application/driver_application_repository.dart';
+import '../core/firebase/firebase_functions_registry.dart';
 import '../application/driver_application/resubmit_driver_application_gateway.dart';
 import '../domain/driver_application/driver_application_document_type.dart';
 import '../domain/driver_application/driver_application_review.dart';
@@ -44,12 +44,7 @@ class FirebaseDriverApplicationReviewAuthSession
 class FirebaseDriverApplicationReviewCallableInvoker
     implements DriverApplicationReviewCallableInvoker {
   FirebaseDriverApplicationReviewCallableInvoker({FirebaseFunctions? functions})
-    : _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(
-            app: Firebase.app(),
-            region: 'europe-west1',
-          );
+    : _functions = functions ?? FirebaseFunctionsRegistry.client;
   final FirebaseFunctions _functions;
 
   @override

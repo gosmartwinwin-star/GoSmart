@@ -1,8 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import '../application/matching/route_deviation_gateway.dart';
+import '../core/firebase/firebase_functions_registry.dart';
 import '../domain/matching/matching_policy.dart';
 import '../domain/return_route/geo_coordinate.dart';
 import '../domain/return_route/route_anchor_result.dart';
@@ -29,12 +29,7 @@ class FirebaseRouteDeviationCallableInvoker
     FirebaseAuth? auth,
     FirebaseFunctions? functions,
   }) : _auth = auth ?? FirebaseAuth.instance,
-       _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(
-             app: Firebase.app(),
-             region: 'europe-west1',
-           );
+       _functions = functions ?? FirebaseFunctionsRegistry.client;
 
   @override
   Future<Object?> invoke(Map<String, Object?> payload) async {

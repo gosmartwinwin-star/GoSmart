@@ -1,8 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/route_result_model.dart';
+import '../core/firebase/firebase_functions_registry.dart';
 import 'polyline_service.dart';
 
 class RouteServiceException implements Exception {
@@ -19,12 +19,7 @@ class RouteService {
   final PolylineService _polylineService;
 
   RouteService({FirebaseFunctions? functions, PolylineService? polylineService})
-    : _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(
-            app: Firebase.app(),
-            region: "europe-west1",
-          ),
+    : _functions = functions ?? FirebaseFunctionsRegistry.client,
       _polylineService = polylineService ?? PolylineService();
 
   Future<RouteResultModel> getRoute({

@@ -1,8 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import '../application/driver_application/submit_driver_application_gateway.dart';
+import '../core/firebase/firebase_functions_registry.dart';
 import '../domain/driver_application/driver_work_type.dart';
 import '../domain/driver_application/registration_owner_type.dart';
 
@@ -43,12 +43,7 @@ class FirebaseSubmitDriverApplicationCallableInvoker
     implements SubmitDriverApplicationCallableInvoker {
   final FirebaseFunctions _functions;
   FirebaseSubmitDriverApplicationCallableInvoker({FirebaseFunctions? functions})
-    : _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(
-            app: Firebase.app(),
-            region: 'europe-west1',
-          );
+    : _functions = functions ?? FirebaseFunctionsRegistry.client;
   @override
   Future<Object?> call(Map<String, Object?> payload) async {
     try {

@@ -1,8 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import '../application/return_route/publish_return_route_gateway.dart';
+import '../core/firebase/firebase_functions_registry.dart';
 import '../application/return_route/published_return_route.dart';
 import '../domain/return_route/driver_return_route.dart';
 import '../domain/return_route/driver_return_route_status.dart';
@@ -50,12 +50,7 @@ class FirebasePublishReturnRouteCallableInvoker
   final FirebaseFunctions _functions;
 
   FirebasePublishReturnRouteCallableInvoker({FirebaseFunctions? functions})
-    : _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(
-            app: Firebase.app(),
-            region: 'europe-west1',
-          );
+    : _functions = functions ?? FirebaseFunctionsRegistry.client;
 
   @override
   Future<Object?> call(Map<String, Object?> payload) async {
