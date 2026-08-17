@@ -81,6 +81,9 @@ import {
   transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
 import {loadApprovedDriverId} from "./ride-driver-identity.js";
+import {
+  recoverActiveReturnRoute,
+} from "./active-return-route-recovery.js";
 import {getRideHistoryForActor} from "./ride-history-service.js";
 import {
   resolvePlace as resolvePlaceWithPlacesApi,
@@ -649,6 +652,90 @@ export const getMyActiveDriverRide = onCall(
 /* eslint-enable max-len */
 
 /* eslint-disable max-len */
+export const getMyActiveReturnRoute = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Aktif dönüş rotası için giriş yapmalısınız.",
+      );
+    }
+
+    if (
+      typeof request.data !== "object" ||
+      request.data === null ||
+      Array.isArray(request.data) ||
+      Object.keys(request.data).length !== 0
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Aktif dönüş rotası isteği geçersiz.",
+        {
+          reason: "invalid_active_return_route_payload",
+        },
+      );
+    }
+
+    try {
+      const activeReturnRoute =
+        await recoverActiveReturnRoute(
+          {
+            loadDriverId: (uid) =>
+              loadApprovedDriverId(firestore, uid),
+            readLock: (driverId) =>
+              firestore
+                .collection("driverActiveReturnRoutes")
+                .doc(driverId)
+                .get(),
+            readRoute: (routeId) =>
+              firestore
+                .collection("driverReturnRoutes")
+                .doc(routeId)
+                .get(),
+            now: () => Timestamp.now(),
+          },
+          request.auth.uid,
+        );
+
+      return {
+        activeReturnRoute,
+      };
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      logger.error(
+        "GoSmart active return route recovery failed",
+        {
+          errorType:
+            error instanceof Error ?
+              error.name :
+              "UnknownError",
+        },
+      );
+
+      throw new HttpsError(
+        "unavailable",
+        "Aktif dönüş rotası şu anda yüklenemedi.",
+        {
+          reason: "active_return_route_read_failed",
+        },
+      );
+    }
+  },
+);
+/* eslint-enable max-len */
+
+/* eslint-disable max-len */
+
 export const getMyDriverApplicationStatus = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},

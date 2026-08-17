@@ -1,19 +1,21 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../../controllers/driver_center_controller.dart';
 import '../../controllers/driver_ride_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../services/ride_lifecycle_service.dart';
+import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../core/branding/gosmart_slogans.dart';
 import '../../domain/return_route/geo_coordinate.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_pass_repository.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 import '../../models/address_model.dart';
+import '../../services/location_access_service.dart';
+import '../../services/active_return_route_recovery_service.dart';
 import '../../services/publish_return_route_service.dart';
 import '../../domain/driver_application/driver_application_review.dart';
 import '../../services/driver_application_review_service.dart';
@@ -47,6 +49,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   late final bool _ownsController;
   DriverRideController? rideController;
   late final bool _ownsRideController;
+  bool _driverRideRecoveryRequested = false;
   StreamSubscription<User?>? _authSubscription;
 
   @override
@@ -60,25 +63,43 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           profiles: FirestoreDriverProfileRepository(),
           passes: FirestoreDriverAccessPassRepository(),
           publisher: PublishReturnRouteService(),
-          location: _GeolocatorDriverLocation(),
+          returnRouteRecovery: ActiveReturnRouteRecoveryService(),
+          location: LocationAccessService(),
           applications: DriverApplicationReviewService(),
         );
     controller.addListener(_refresh);
-    _ownsRideController = widget.rideController == null && widget.controller == null;
-    rideController = widget.rideController ?? (widget.controller == null ? DriverRideController(gateway: RideLifecycleService(), repository: FirestoreRideRepository(), authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid) : null);
+    _ownsRideController =
+        widget.rideController == null && widget.controller == null;
+    rideController =
+        widget.rideController ??
+        (widget.controller == null
+            ? DriverRideController(
+                gateway: RideLifecycleService(),
+                repository: FirestoreRideRepository(),
+                authenticatedUserId: () =>
+                    FirebaseAuth.instance.currentUser?.uid,
+              )
+            : null);
     rideController?.addListener(_refresh);
     controller.load();
     if (_ownsRideController) {
-      _authSubscription = FirebaseAuth.instance.userChanges().listen(
-        (user) => rideController?.authChanged(user?.uid),
-      );
+      _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
+        _driverRideRecoveryRequested = false;
+        if (user == null) {
+          unawaited(rideController?.authChanged(null));
+          return;
+        }
+        _syncDriverRideRecovery();
+      });
     } else {
-      rideController?.recover();
+      _syncDriverRideRecovery();
     }
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _syncDriverRideRecovery();
   }
 
   @override
@@ -286,11 +307,39 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     if (result == true) await controller.load();
   }
 
+  void _syncDriverRideRecovery() {
+    final lifecycle = rideController;
+    if (lifecycle == null || _driverRideRecoveryRequested) {
+      return;
+    }
+
+    final canRecover =
+        controller.status == DriverCenterStatus.ready ||
+        (controller.status == DriverCenterStatus.restricted &&
+            controller.rejectionReason == 'subscription_required');
+
+    if (!canRecover) {
+      return;
+    }
+
+    _driverRideRecoveryRequested = true;
+
+    if (_ownsRideController) {
+      unawaited(
+        lifecycle.authChanged(FirebaseAuth.instance.currentUser?.uid),
+      );
+      return;
+    }
+
+    unawaited(lifecycle.recover());
+  }
+
   Widget _ready() {
     if (rideController?.ride != null) return _activeRide();
     final published = controller.publishedRoute;
     if (published != null) {
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ReturnRouteMapPreview(published: published),
           const SizedBox(height: 12),
@@ -315,19 +364,35 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
         const SizedBox(height: 20),
         ListTile(
           leading: const Icon(Icons.my_location),
-          title: const Text('Başlangıç: Mevcut konumunuz'),
+          title: const Text('Ba\u015flang\u0131\u00e7: Mevcut konumunuz'),
           subtitle: controller.locationLoading
               ? const LinearProgressIndicator()
-              : controller.origin == null
-              ? Text(controller.errorMessage ?? 'Konum bekleniyor')
-              : const Text('Konum hazır'),
-          trailing: controller.origin == null && !controller.locationLoading
+              : controller.origin != null
+              ? const Text('Konum haz\u0131r')
+              : controller.locationIssue != null
+              ? const Text('Konum eri\u015fimi gerekli')
+              : const Text('Konum bekleniyor'),
+          trailing:
+              controller.origin == null &&
+                  !controller.locationLoading &&
+                  controller.locationIssue == null
               ? TextButton(
                   onPressed: controller.loadLocation,
                   child: const Text('Tekrar Dene'),
                 )
               : null,
         ),
+        if (controller.locationIssue case final issue?)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: LocationAccessBanner(
+              key: const ValueKey('driver-location-access-banner'),
+              issue: issue,
+              onAction: () {
+                unawaited(controller.handleLocationIssueAction());
+              },
+            ),
+          ),
         OutlinedButton.icon(
           onPressed: _selectDestination,
           icon: const Icon(Icons.flag_outlined),
@@ -384,16 +449,15 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
       RideStatus.inProgress => () => lifecycle.act(DriverRideAction.complete),
       _ => null,
     };
-    final canCancel = activeRide.status == RideStatus.driverEnRoute ||
+    final canCancel =
+        activeRide.status == RideStatus.driverEnRoute ||
         activeRide.status == RideStatus.driverArrived;
     return CanonicalRideCard(
       ride: activeRide,
       driver: true,
       loading: lifecycle.mutating,
       onPrimary: primary,
-      onCancel: canCancel
-          ? () => lifecycle.act(DriverRideAction.cancel)
-          : null,
+      onCancel: canCancel ? () => lifecycle.act(DriverRideAction.cancel) : null,
     );
   }
 }
@@ -438,28 +502,4 @@ class _StatusCard extends StatelessWidget {
 class _FirebaseDriverCenterAuth implements DriverCenterAuthGateway {
   @override
   String? get authenticatedUserId => FirebaseAuth.instance.currentUser?.uid;
-}
-
-class _GeolocatorDriverLocation implements DriverLocationGateway {
-  @override
-  Future<GeoCoordinate> currentLocation() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      throw StateError('Konum servisi kapalı.');
-    }
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      throw StateError('Konum izni bulunmuyor.');
-    }
-    final position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
-    );
-    return GeoCoordinate(
-      latitude: position.latitude,
-      longitude: position.longitude,
-    );
-  }
 }

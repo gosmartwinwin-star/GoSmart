@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_pass_repository.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_profile_repository.dart';
 import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
@@ -47,12 +48,13 @@ void main() {
     DriverProfile? loadedProfile,
     DriverAccessPass? loadedPass,
     DriverApplicationReview? application,
+    LocationAccessGateway? location,
   }) => DriverCenterController(
     auth: _Auth(),
     profiles: _Profiles(loadedProfile),
     passes: _Passes(loadedPass),
     publisher: _Publisher(),
-    location: _Location(origin),
+    location: location ?? _Location(origin),
     now: () => now,
     applications: application == null ? null : _Applications(application),
   );
@@ -92,6 +94,37 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('driver location denied forever renders safe banner', (
+    tester,
+  ) async {
+    final location = _IssueLocation(
+      LocationAccessIssue.permissionDeniedForever,
+    );
+
+    await show(
+      tester,
+      controller(
+        loadedProfile: profile(DriverProfileStatus.approved),
+        loadedPass: pass(),
+        location: location,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('driver-location-access-banner')),
+      findsOneWidget,
+    );
+
+    expect(find.text('Uygulama Ayarlar\u0131'), findsOneWidget);
+
+    expect(find.textContaining('Exception'), findsNothing);
+
+    await tester.tap(find.text('Uygulama Ayarlar\u0131'));
+    await tester.pump();
+
+    expect(location.appSettingsCalls, 1);
+  });
+
   Future<void> showWithRide(
     WidgetTester tester,
     DriverRideController rides,
@@ -117,6 +150,33 @@ void main() {
     expect(find.text(GoSmartSlogans.driver), findsOneWidget);
     expect(find.text('Sürücü profili gerekli'), findsOneWidget);
   });
+
+  testWidgets(
+    'profil gerekli durumda aktif sürücü yolculuğu recovery çağrılmaz',
+    (tester) async {
+      final gateway = _RideGateway();
+      final rides = DriverRideController(
+        gateway: gateway,
+        repository: gateway,
+      );
+      addTearDown(rides.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DriverCenterScreen(
+            controller: controller(),
+            rideController: rides,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(gateway.activeDriverRideCalls, 0);
+      expect(find.text('Sürücü profili gerekli'), findsOneWidget);
+      expect(find.text('Aktif yolculuk yüklenemedi'), findsNothing);
+    },
+  );
+
   testWidgets('pending profil kartı gösterilir', (tester) async {
     await show(
       tester,
@@ -285,9 +345,11 @@ const fixtureRide = CanonicalRide(
 class _RideGateway implements RideGateway, RideStreamRepository {
   CanonicalRide? activeRide;
   RideGatewayException? recoveryError;
+  int activeDriverRideCalls = 0;
 
   @override
   Future<CanonicalRide?> getMyActiveDriverRide() async {
+    activeDriverRideCalls += 1;
     if (recoveryError case final error?) throw error;
     return activeRide;
   }
@@ -364,11 +426,42 @@ class _Passes implements DriverAccessPassRepository {
   Future<DriverAccessPass?> findLatestForDriver(String id) async => value;
 }
 
-class _Location implements DriverLocationGateway {
-  final GeoCoordinate value;
+class _Location implements LocationAccessGateway {
   _Location(this.value);
+
+  final GeoCoordinate value;
+
   @override
-  Future<GeoCoordinate> currentLocation() async => value;
+  Future<LocationAccessResult> currentLocation() async =>
+      LocationAccessResult.granted(
+        DeviceLocation(latitude: value.latitude, longitude: value.longitude),
+      );
+
+  @override
+  Future<bool> openAppSettings() async => true;
+
+  @override
+  Future<bool> openLocationSettings() async => true;
+}
+
+class _IssueLocation implements LocationAccessGateway {
+  _IssueLocation(this.issue);
+
+  final LocationAccessIssue issue;
+  int appSettingsCalls = 0;
+
+  @override
+  Future<LocationAccessResult> currentLocation() async =>
+      LocationAccessResult.failed(issue);
+
+  @override
+  Future<bool> openAppSettings() async {
+    appSettingsCalls++;
+    return true;
+  }
+
+  @override
+  Future<bool> openLocationSettings() async => true;
 }
 
 class _Publisher implements PublishReturnRouteGateway {
