@@ -10,6 +10,7 @@ import {
   onRequest,
 } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import {defineSecret} from "firebase-functions/params";
 import {
   CoordinateInput,
   coordinatesEqual,
@@ -81,6 +82,10 @@ import {
 } from "./ride-lifecycle-orchestration.js";
 import {loadApprovedDriverId} from "./ride-driver-identity.js";
 import {getRideHistoryForActor} from "./ride-history-service.js";
+import {
+  resolvePlace as resolvePlaceWithPlacesApi,
+  searchPlaces as searchPlacesWithPlacesApi,
+} from "./place-search-service.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -127,6 +132,10 @@ type ResubmitDriverApplicationInput = {
   expectedSubmissionVersion: number;
   requestId: string;
 };
+
+const googlePlacesApiKey = defineSecret(
+  "GOOGLE_PLACES_API_KEY",
+);
 
 const routesClient = new v2.RoutesClient();
 const routing = protos.google.maps.routing.v2;
@@ -1575,5 +1584,53 @@ export const publishReturnRoute = onCall<PublishReturnRouteInput>(
       durationSeconds: routeMeasurement.durationSeconds,
       encodedPolyline: routeMeasurement.encodedPolyline,
     };
+  },
+);
+
+export const searchPlaces = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [googlePlacesApiKey],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Oturum a\u00e7man\u0131z gerekiyor.",
+      );
+    }
+
+    return searchPlacesWithPlacesApi(
+      request.data,
+      googlePlacesApiKey.value(),
+    );
+  },
+);
+
+export const resolvePlace = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [googlePlacesApiKey],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Oturum a\u00e7man\u0131z gerekiyor.",
+      );
+    }
+
+    return resolvePlaceWithPlacesApi(
+      request.data,
+      googlePlacesApiKey.value(),
+    );
   },
 );
