@@ -5,6 +5,25 @@ import {validateProfileStatus} from "./driver-access-helpers.js";
 
 type QueryReader = (query: Query) => Promise<QuerySnapshot>;
 
+export const loadDriverProfileId = async (
+  firestore: Firestore,
+  uid: string,
+  reader?: QueryReader,
+): Promise<string | null> => {
+  const query = firestore.collection("driverProfiles")
+    .where("authUserId", "==", uid).limit(2);
+  const profiles = await (reader ?? ((value) => value.get()))(query);
+  if (profiles.empty) return null;
+  if (profiles.size > 1) {
+    throw new HttpsError(
+      "failed-precondition",
+      "SÃ¼rÃ¼cÃ¼ profili doÄŸrulanamadÄ±.",
+      {reason: "duplicate_driver_profile"},
+    );
+  }
+  return profiles.docs[0].id;
+};
+
 export const loadApprovedDriverId = async (firestore: Firestore, uid: string,
   reader?: QueryReader): Promise<string> => {
   const query = firestore.collection("driverProfiles")
