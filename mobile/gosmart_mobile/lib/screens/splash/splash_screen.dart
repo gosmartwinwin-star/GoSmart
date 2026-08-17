@@ -3,9 +3,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../application/auth/authenticated_landing_resolver.dart';
 import '../../core/branding/gosmart_slogans.dart';
+import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 
 import '../auth/login_screen.dart';
+import '../driver/driver_center_screen.dart';
 import '../home/home_screen.dart';
 
 class SplashScreen extends StatelessWidget {
@@ -55,45 +58,82 @@ class _AuthenticatedSessionGate extends StatefulWidget {
 }
 
 class _AuthenticatedSessionGateState extends State<_AuthenticatedSessionGate> {
-  late Future<void> _refreshToken;
+  late Future<AuthenticatedLanding> _landing;
 
   @override
   void initState() {
     super.initState();
-    _refreshToken = widget.user.getIdToken(true);
+    _landing = _loadLanding(widget.user);
   }
 
   @override
   void didUpdateWidget(covariant _AuthenticatedSessionGate oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.user.uid != widget.user.uid) {
-      _refreshToken = widget.user.getIdToken(true);
+      _landing = _loadLanding(widget.user);
     }
+  }
+
+  Future<AuthenticatedLanding> _loadLanding(User user) async {
+    await user.getIdToken(true);
+    return AuthenticatedLandingResolver(
+      profiles: FirestoreDriverProfileRepository(),
+    ).resolve(user.uid);
+  }
+
+  void _retry() {
+    setState(() {
+      _landing = _loadLanding(widget.user);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _refreshToken,
+    return FutureBuilder<AuthenticatedLanding>(
+      future: _landing,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const _SplashLoadingView();
         }
+
         if (snapshot.hasError) {
-          return const Scaffold(
+          if (kDebugMode) {
+            debugPrint(
+              'Oturum a\u00e7\u0131l\u0131\u015f rol\u00fc belirlenemedi.',
+            );
+          }
+
+          return Scaffold(
             body: Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Oturum doğrulanamadı. İnternet bağlantınızı kontrol edip '
-                  'uygulamayı yeniden açın.',
-                  textAlign: TextAlign.center,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Oturum bilgileri y\u00fcklenemedi. '
+                      '\u0130nternet ba\u011flant\u0131n\u0131z\u0131 '
+                      'kontrol edip tekrar deneyin.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Tekrar Dene'),
+                    ),
+                  ],
                 ),
               ),
             ),
           );
         }
-        return const HomeScreen();
+
+        return switch (snapshot.data) {
+          AuthenticatedLanding.driver => const DriverCenterScreen(),
+          AuthenticatedLanding.passenger => const HomeScreen(),
+          null => const _SplashLoadingView(),
+        };
       },
     );
   }
