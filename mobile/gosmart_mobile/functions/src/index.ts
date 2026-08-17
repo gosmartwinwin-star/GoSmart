@@ -80,6 +80,7 @@ import {
   transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
 import {loadApprovedDriverId} from "./ride-driver-identity.js";
+import {getRideHistoryForActor} from "./ride-history-service.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -511,6 +512,30 @@ export const getMyActiveRide = onCall(
         {reason: "active_ride_pointer_inconsistent"});
     }
     return {activeRide: serializeActiveRide(ride.id, data)};
+  },
+);
+
+export const getMyRideHistory = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride history requires authentication.",
+      );
+    }
+
+    return getRideHistoryForActor(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
   },
 );
 

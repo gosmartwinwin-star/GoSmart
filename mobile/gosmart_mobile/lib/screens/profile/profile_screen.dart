@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import '../ride/ride_history_screen.dart';
+
 typedef SignOutCallback = Future<void> Function();
 
 class ProfileScreen extends StatefulWidget {
@@ -9,10 +11,12 @@ class ProfileScreen extends StatefulWidget {
     super.key,
     required this.phoneNumber,
     this.signOut,
+    this.historyScreenBuilder,
   });
 
   final String? phoneNumber;
   final SignOutCallback? signOut;
+  final WidgetBuilder? historyScreenBuilder;
 
   static String maskedPhoneNumber(String? phoneNumber) {
     final value = phoneNumber?.trim() ?? '';
@@ -77,6 +81,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _openHistory() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: widget.historyScreenBuilder ??
+            (_) => const RideHistoryScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,6 +118,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
+              const SizedBox(height: 24),
+              Card(
+                child: ListTile(
+                  key: const ValueKey(
+                    'profile-ride-history',
+                  ),
+                  leading: const Icon(Icons.history_rounded),
+                  title: const Text(
+                    'Yolculuk ge\u00e7mi\u015fi',
+                  ),
+                  subtitle: const Text(
+                    'Yolcu ve s\u00fcr\u00fcc\u00fc '
+                    'yolculuklar\u0131n\u0131z\u0131 '
+                    'g\u00f6r\u00fcnt\u00fcleyin.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _signingOut ? null : _openHistory,
+                ),
+              ),
+              const SizedBox(height: 16),
               const Spacer(),
               OutlinedButton.icon(
                 onPressed: _signingOut ? null : _confirmSignOut,

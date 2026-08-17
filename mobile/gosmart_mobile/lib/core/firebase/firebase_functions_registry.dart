@@ -35,6 +35,7 @@ class FirebaseFunctionsRouting {
 
 class FirebaseFunctionsRegistry {
   static const region = 'europe-west1';
+  static const getMyRideHistory = 'getMyRideHistory';
   static FirebaseFunctions? _client;
   static FirebaseFunctionsRouting? _routing;
 

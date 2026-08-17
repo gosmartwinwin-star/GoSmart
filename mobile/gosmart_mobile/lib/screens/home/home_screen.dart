@@ -28,6 +28,7 @@ import '../../widgets/cards/taxi_info_card.dart';
 import '../../widgets/map/gosmart_map.dart';
 import '../../widgets/panels/home_bottom_panel.dart';
 import '../../widgets/panels/ride_request_panel.dart';
+import '../ride/ride_history_screen.dart';
 
 typedef HomeRouteLoader = Future<RouteResultModel> Function({
   required LatLng pickup,
@@ -584,6 +585,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ))),
 
           HomeBottomPanel(
+            onHistoryTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute(builder: (_) => const RideHistoryScreen()),
+              );
+            },
             onDriverTap: () {
               Navigator.push<void>(
                 context,

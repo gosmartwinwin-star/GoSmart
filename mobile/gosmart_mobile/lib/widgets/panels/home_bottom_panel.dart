@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
 class HomeBottomPanel extends StatelessWidget {
+  final VoidCallback? onHistoryTap;
   final VoidCallback? onDriverTap;
   final VoidCallback? onProfileTap;
 
-  const HomeBottomPanel({super.key, this.onDriverTap, this.onProfileTap});
+  const HomeBottomPanel({
+    super.key,
+    this.onHistoryTap,
+    this.onDriverTap,
+    this.onProfileTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -28,9 +34,10 @@ class HomeBottomPanel extends StatelessWidget {
                   label: "Ana Sayfa",
                 ),
 
-                const _BottomButton(
+                _BottomButton(
                   icon: Icons.history_rounded,
                   label: "Geçmiş",
+                  onTap: onHistoryTap,
                 ),
 
                 _BottomButton(
