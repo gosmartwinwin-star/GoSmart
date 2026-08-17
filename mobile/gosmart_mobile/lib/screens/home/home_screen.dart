@@ -4,11 +4,11 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../controllers/taxi_controller.dart';
+import '../../application/location/location_access_gateway.dart';
 import '../../controllers/passenger_ride_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
@@ -18,6 +18,7 @@ import '../../models/taxi_model.dart';
 import '../../screens/search/search_address_screen.dart';
 import '../../screens/driver/driver_center_screen.dart';
 import '../../screens/profile/profile_screen.dart';
+import '../../services/location_access_service.dart';
 import '../../services/marker_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
@@ -25,15 +26,18 @@ import '../../services/ride_lifecycle_service.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../widgets/cards/route_summary_card.dart';
 import '../../widgets/cards/taxi_info_card.dart';
+import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/map/gosmart_map.dart';
 import '../../widgets/panels/home_bottom_panel.dart';
 import '../../widgets/panels/ride_request_panel.dart';
+
 import '../ride/ride_history_screen.dart';
 
-typedef HomeRouteLoader = Future<RouteResultModel> Function({
-  required LatLng pickup,
-  required LatLng destination,
-});
+typedef HomeRouteLoader =
+    Future<RouteResultModel> Function({
+      required LatLng pickup,
+      required LatLng destination,
+    });
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -41,11 +45,13 @@ class HomeScreen extends StatefulWidget {
     this.rideController,
     this.routeLoader,
     this.authenticate,
+    this.locationAccess,
     this.profileScreenBuilder,
   });
   final PassengerRideController? rideController;
   final HomeRouteLoader? routeLoader;
   final Future<bool> Function()? authenticate;
+  final LocationAccessGateway? locationAccess;
   final WidgetBuilder? profileScreenBuilder;
 
   @override
@@ -66,10 +72,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   late final HomeRouteLoader routeLoader;
 
+  late final LocationAccessGateway locationAccess;
+
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
   bool _isRouteLoading = false;
+
+  bool _locationLoading = false;
+  LocationAccessIssue? _locationIssue;
 
   int? _routeDistanceMeters;
   int? _routeDurationSeconds;
@@ -90,11 +101,24 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
 
     _ownsRideController = widget.rideController == null;
-    rideController = widget.rideController ?? PassengerRideController(gateway: RideLifecycleService(), repository: FirestoreRideRepository(), authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid);
+    rideController =
+        widget.rideController ??
+        PassengerRideController(
+          gateway: RideLifecycleService(),
+          repository: FirestoreRideRepository(),
+          authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid,
+        );
     routeLoader = widget.routeLoader ?? RouteService().getRoute;
+
+    locationAccess = widget.locationAccess ?? LocationAccessService();
     rideController.addListener(_refreshRide);
     rideController.recover();
-    if (_ownsRideController) { _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((user) => rideController.authChanged(user?.uid)); }
+    if (_ownsRideController) {
+      _authSubscription = FirebaseAuth.instance
+          .userChanges()
+          .skip(1)
+          .listen((user) => rideController.authChanged(user?.uid));
+    }
 
     _initializeTaxis();
 
@@ -125,7 +149,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _refreshRide() { if (mounted) setState(() {}); }
+  void _refreshRide() {
+    if (mounted) setState(() {});
+  }
 
   Future<bool> _authenticate() async {
     if (widget.authenticate case final authenticate?) return authenticate();
@@ -207,32 +233,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    if (_locationLoading) return;
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    setState(() {
+      _locationLoading = true;
+      _locationIssue = null;
+    });
 
-    if (!serviceEnabled) return;
+    LocationAccessResult result;
 
-    permission = await Geolocator.checkPermission();
-
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-
-      if (permission == LocationPermission.denied) {
-        return;
-      }
+    try {
+      result = await locationAccess.currentLocation();
+    } catch (_) {
+      result = const LocationAccessResult.failed(
+        LocationAccessIssue.unavailable,
+      );
     }
 
-    if (permission == LocationPermission.deniedForever) {
+    if (!mounted) return;
+
+    final location = result.location;
+
+    if (!result.granted || location == null) {
+      setState(() {
+        _locationLoading = false;
+        _locationIssue = result.issue ?? LocationAccessIssue.unavailable;
+      });
       return;
     }
 
-    Position position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
-    );
-
-    final userLocation = LatLng(position.latitude, position.longitude);
+    final userLocation = LatLng(location.latitude, location.longitude);
 
     if (pickupAddress == null) {
       _reloadTaxisAround(
@@ -244,6 +274,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
 
     setState(() {
+      _locationLoading = false;
+      _locationIssue = null;
+
       _markers.removeWhere((marker) => marker.markerId.value == "me");
 
       _markers.add(
@@ -260,9 +293,36 @@ class _HomeScreenState extends State<HomeScreen> {
       _refreshMarkers();
     });
 
-    await mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(userLocation, 17),
-    );
+    try {
+      await mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(userLocation, 17),
+      );
+    } catch (_) {
+      // Konum hazir; kamera hareketi kritik degildir.
+    }
+  }
+
+  Future<void> _handleLocationIssueAction() async {
+    final issue = _locationIssue;
+
+    if (issue == null || _locationLoading) {
+      return;
+    }
+
+    switch (issue) {
+      case LocationAccessIssue.serviceDisabled:
+        await locationAccess.openLocationSettings();
+        return;
+
+      case LocationAccessIssue.permissionDeniedForever:
+        await locationAccess.openAppSettings();
+        return;
+
+      case LocationAccessIssue.permissionDenied:
+      case LocationAccessIssue.unavailable:
+        await _getCurrentLocation();
+        return;
+    }
   }
 
   void _updateRoutePreview() {
@@ -367,9 +427,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
       if (mounted && rideController.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(rideController.errorMessage!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(rideController.errorMessage!)));
       }
     } on RouteServiceException catch (error) {
       if (!mounted) return;
@@ -535,7 +595,6 @@ class _HomeScreenState extends State<HomeScreen> {
               await _getCurrentLocation();
             },
           ),
-
           if (!rideController.loading &&
               rideController.ride == null &&
               selectedTaxi == null)
@@ -578,11 +637,25 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
 
           if (rideController.ride case final ride?)
-            Positioned(left: 16, right: 16, bottom: 108, child: SafeArea(top: false, child: CanonicalRideCard(
-              ride: ride, driver: false, loading: rideController.mutating,
-              onCancel: ride.status.passengerCanCancel ? rideController.cancel : null,
-              onDismiss: ride.status.isTerminal ? rideController.dismissTerminal : null,
-            ))),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 108,
+              child: SafeArea(
+                top: false,
+                child: CanonicalRideCard(
+                  ride: ride,
+                  driver: false,
+                  loading: rideController.mutating,
+                  onCancel: ride.status.passengerCanCancel
+                      ? rideController.cancel
+                      : null,
+                  onDismiss: ride.status.isTerminal
+                      ? rideController.dismissTerminal
+                      : null,
+                ),
+              ),
+            ),
 
           HomeBottomPanel(
             onHistoryTap: () {
@@ -601,16 +674,33 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push<void>(
                 context,
                 MaterialPageRoute(
-                  builder: widget.profileScreenBuilder ??
+                  builder:
+                      widget.profileScreenBuilder ??
                       (_) => ProfileScreen(
-                            phoneNumber: FirebaseAuth.instanceFor(
-                              app: Firebase.app(),
-                            ).currentUser?.phoneNumber,
-                          ),
+                        phoneNumber: FirebaseAuth.instanceFor(
+                          app: Firebase.app(),
+                        ).currentUser?.phoneNumber,
+                      ),
                 ),
               );
             },
           ),
+          if (_locationIssue case final issue?)
+            Positioned(
+              top: 12,
+              left: 12,
+              right: 12,
+              child: SafeArea(
+                bottom: false,
+                child: LocationAccessBanner(
+                  key: const ValueKey('home-location-access-banner'),
+                  issue: issue,
+                  onAction: () {
+                    unawaited(_handleLocationIssueAction());
+                  },
+                ),
+              ),
+            ),
         ],
       ),
     );
