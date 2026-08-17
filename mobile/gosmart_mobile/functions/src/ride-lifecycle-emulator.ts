@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {after, before, test} from "node:test";
 import {App, deleteApp, initializeApp} from "firebase-admin/app";
-import {Firestore, getFirestore} from "firebase-admin/firestore";
+import {Firestore, Timestamp, getFirestore} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {
   acceptRideForDriver,
@@ -14,6 +14,10 @@ import {
   transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
 import {rideOperationId} from "./ride-lifecycle-helpers.js";
+import {
+  buildRideMatchOffer,
+  rideMatchOfferDocumentId,
+} from "./ride-match-offer-helpers.js";
 
 const projectId = "gosmart-ride-concurrency-test";
 let firestore: Firestore;
@@ -64,6 +68,172 @@ const seedDriver = async (uid: string, status = "approved") => {
     .set({authUserId: uid, status});
   return driverId;
 };
+const seedMatchAuthority = async (
+  driverUid: string,
+  rideId: string,
+  rideVersion: number,
+): Promise<void> => {
+  const profiles = await firestore
+    .collection("driverProfiles")
+    .where("authUserId", "==", driverUid)
+    .limit(2)
+    .get();
+
+  if (
+    profiles.size !== 1 ||
+    profiles.docs[0].get("status") !== "approved"
+  ) {
+    return;
+  }
+
+  const driverId = profiles.docs[0].id;
+
+  const offerRef = firestore
+    .collection("driverRideMatchOffers")
+    .doc(
+      rideMatchOfferDocumentId(
+        driverId,
+        rideId,
+      ),
+    );
+
+  if ((await offerRef.get()).exists) {
+    return;
+  }
+
+  const now = Timestamp.now();
+
+  const activatedAt =
+    Timestamp.fromMillis(
+      now.toMillis() - 60_000,
+    );
+
+  const expiresAt =
+    Timestamp.fromMillis(
+      now.toMillis() + 3_600_000,
+    );
+
+  const routeId =
+    `authority_route_${driverId}`;
+
+  const passRef = firestore
+    .collection("driverAccessPasses")
+    .doc(
+      `authority_pass_${driverId}`,
+    );
+
+  const routeRef = firestore
+    .collection("driverReturnRoutes")
+    .doc(routeId);
+
+  const lockRef = firestore
+    .collection("driverActiveReturnRoutes")
+    .doc(driverId);
+
+  const batch = firestore.batch();
+
+  batch.set(
+    passRef,
+    {
+      driverId,
+      status: "active",
+      purchasedAt: now,
+      activatedAt,
+      expiresAt,
+    },
+  );
+
+  batch.set(
+    routeRef,
+    {
+      driverId,
+      origin: {
+        latitude: 41.0,
+        longitude: 29.0,
+      },
+      destination: {
+        latitude: 41.1,
+        longitude: 29.1,
+      },
+      status: "active",
+      createdAt: activatedAt,
+      activatedAt,
+      expiresAt,
+      routeDistanceMeters: 12000,
+      routeDurationSeconds: 1800,
+      encodedPolyline:
+        "synthetic_authority_polyline",
+      pricingVersion: null,
+    },
+  );
+
+  batch.set(
+    lockRef,
+    {
+      routeId,
+      activatedAt,
+      expiresAt,
+    },
+  );
+
+  batch.create(
+    offerRef,
+    buildRideMatchOffer({
+      driverId,
+      rideId,
+      rideVersion,
+      returnRouteId: routeId,
+      routeExpiresAt: expiresAt,
+      now,
+      measurement: {
+        pickupRouteIndex: 2,
+        dropoffRouteIndex: 8,
+        pickupDetourMeters: 900,
+        pickupDetourSeconds: 180,
+        dropoffDetourMeters: 1300,
+        dropoffDetourSeconds: 260,
+      },
+    }),
+  );
+
+  try {
+    await batch.commit();
+  } catch (error: unknown) {
+    if (!(await offerRef.get()).exists) {
+      throw error;
+    }
+  }
+};
+
+const acceptForDriver = async (
+  driverUid: string,
+  rawInput: unknown,
+) => {
+  const input =
+    rawInput as {
+      rideId?: unknown;
+      expectedVersion?: unknown;
+    };
+
+  if (
+    typeof input.rideId === "string" &&
+    typeof input.expectedVersion === "number" &&
+    Number.isInteger(input.expectedVersion) &&
+    input.expectedVersion > 0
+  ) {
+    await seedMatchAuthority(
+      driverUid,
+      input.rideId,
+      input.expectedVersion,
+    );
+  }
+
+  return acceptRideForDriver(
+    {firestore},
+    driverUid,
+    rawInput,
+  );
+};
 const acceptPayload = (rideId: string, requestId: string,
   expectedVersion = 1) => ({rideId, requestId, expectedVersion});
 const createFor = async (uid: string, label: string) =>
@@ -75,7 +245,7 @@ const advanceToInProgress = async (passengerUid: string, driverUid: string) => {
   await seedDriver(driverUid);
   const created = await createFor(passengerUid, "lifecycle_create");
   const rideId = created.rideId as string;
-  const accepted = await acceptRideForDriver({firestore}, driverUid,
+  const accepted = await acceptForDriver(driverUid,
     acceptPayload(rideId, `${identity("lifecycle_accept")}_123456789`,
       created.version as number));
   const arrived = await transitionRideForDriver({firestore}, driverUid,
@@ -245,9 +415,9 @@ test("two drivers accepting one ride concurrently produce one assignment", async
   const created = await createFor(passenger, "accept_race_create");
   const rideId = created.rideId as string;
   const results = await Promise.allSettled([
-    acceptRideForDriver({firestore}, driverA, acceptPayload(rideId,
+    acceptForDriver(driverA, acceptPayload(rideId,
       `${identity("accept_race_a")}_123456789`)),
-    acceptRideForDriver({firestore}, driverB, acceptPayload(rideId,
+    acceptForDriver(driverB, acceptPayload(rideId,
       `${identity("accept_race_b")}_123456789`)),
   ]);
   assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
@@ -269,9 +439,9 @@ test("one driver accepting two rides concurrently locks only one", async () => {
   const first = await createFor(identity("two_rides_passenger_a"), "two_rides_create_a");
   const second = await createFor(identity("two_rides_passenger_b"), "two_rides_create_b");
   const results = await Promise.allSettled([
-    acceptRideForDriver({firestore}, driverUid, acceptPayload(first.rideId as string,
+    acceptForDriver(driverUid, acceptPayload(first.rideId as string,
       `${identity("two_rides_accept_a")}_123456789`)),
-    acceptRideForDriver({firestore}, driverUid, acceptPayload(second.rideId as string,
+    acceptForDriver(driverUid, acceptPayload(second.rideId as string,
       `${identity("two_rides_accept_b")}_123456789`)),
   ]);
   assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
@@ -292,8 +462,8 @@ test("same accept request replays without duplicate event", async () => {
   const created = await createFor(passenger, "accept_replay_create");
   const input = acceptPayload(created.rideId as string,
     `${identity("accept_replay_request")}_123456789`);
-  const first = await acceptRideForDriver({firestore}, driver, input);
-  const second = await acceptRideForDriver({firestore}, driver, input);
+  const first = await acceptForDriver(driver, input);
+  const second = await acceptForDriver(driver, input);
   assert.deepEqual(second, first);
   assert.equal((await eventTypes(created.rideId as string)).filter((type) =>
     type === "rideDriverAccepted").length, 1);
@@ -307,8 +477,8 @@ test("concurrent duplicate accept is exactly once", async () => {
   const input = acceptPayload(created.rideId as string,
     `${identity("accept_duplicate_request")}_123456789`);
   const results = await Promise.all([
-    acceptRideForDriver({firestore}, driver, input),
-    acceptRideForDriver({firestore}, driver, input),
+    acceptForDriver(driver, input),
+    acceptForDriver(driver, input),
   ]);
   assert.deepEqual(results[1], results[0]);
   assert.equal((await eventTypes(created.rideId as string)).filter((type) =>
@@ -323,9 +493,9 @@ test("same accept request id with different payload is rejected", async () => {
   const second = await createFor(identity("accept_mismatch_passenger_b"),
     "accept_mismatch_create_b");
   const requestId = `${identity("accept_mismatch_request")}_123456789`;
-  await acceptRideForDriver({firestore}, driver,
+  await acceptForDriver(driver,
     acceptPayload(first.rideId as string, requestId));
-  await assert.rejects(acceptRideForDriver({firestore}, driver,
+  await assert.rejects(acceptForDriver(driver,
     acceptPayload(second.rideId as string, requestId)),
   (error: HttpsError) => error.code === "failed-precondition");
   assert.equal((await firestore.collection("rides").doc(second.rideId as string).get())
@@ -339,7 +509,7 @@ test("accept and passenger cancel with same version have one winner", async () =
   const created = await createFor(passenger, "accept_cancel_create");
   const rideId = created.rideId as string;
   const results = await Promise.allSettled([
-    acceptRideForDriver({firestore}, driver, acceptPayload(rideId,
+    acceptForDriver(driver, acceptPayload(rideId,
       `${identity("accept_cancel_accept")}_123456789`)),
     cancelRideForActor({firestore}, passenger, cancelPayload(rideId,
       `${identity("accept_cancel_cancel")}_123456789`)),
@@ -358,7 +528,7 @@ test("arrived replay is exactly once and stale arrived is rejected", async () =>
   const driver = identity("arrived_driver");
   await seedDriver(driver);
   const created = await createFor(passenger, "arrived_create");
-  const accepted = await acceptRideForDriver({firestore}, driver,
+  const accepted = await acceptForDriver(driver,
     acceptPayload(created.rideId as string, `${identity("arrived_accept")}_123456789`));
   const input = acceptPayload(created.rideId as string,
     `${identity("arrived_request")}_123456789`, accepted.version as number);
@@ -378,7 +548,7 @@ test("start replay is exactly once and stale start is rejected", async () => {
   const driver = identity("start_driver");
   await seedDriver(driver);
   const created = await createFor(passenger, "start_create");
-  const accepted = await acceptRideForDriver({firestore}, driver,
+  const accepted = await acceptForDriver(driver,
     acceptPayload(created.rideId as string, `${identity("start_accept")}_123456789`));
   const arrived = await transitionRideForDriver({firestore}, driver,
     acceptPayload(created.rideId as string, `${identity("start_arrive")}_123456789`,
@@ -455,7 +625,7 @@ test("driver and passenger cancel race has one terminal transition", async () =>
   const driver = identity("cancel_actor_race_driver");
   await seedDriver(driver);
   const created = await createFor(passenger, "cancel_actor_race_create");
-  const accepted = await acceptRideForDriver({firestore}, driver,
+  const accepted = await acceptForDriver(driver,
     acceptPayload(created.rideId as string, `${identity("cancel_actor_accept")}_123456789`));
   const rideId = created.rideId as string;
   const results = await Promise.allSettled([
@@ -477,7 +647,7 @@ test("pointer mismatch rejects transition without partial writes", async () => {
   const driver = identity("pointer_mismatch_driver");
   const driverId = await seedDriver(driver);
   const created = await createFor(passenger, "pointer_mismatch_create");
-  const accepted = await acceptRideForDriver({firestore}, driver,
+  const accepted = await acceptForDriver(driver,
     acceptPayload(created.rideId as string, `${identity("pointer_mismatch_accept")}_123456789`));
   await firestore.collection("driverActiveRides").doc(driverId)
     .set({rideId: "wrong_ride", status: "driverEnRoute"});
@@ -499,11 +669,11 @@ test("non-driver, unapproved and non-assigned actors are rejected", async () => 
   await Promise.all([seedDriver(approved), seedDriver(pending, "pendingReview"),
     seedDriver(stranger)]);
   const created = await createFor(passenger, "auth_role_create");
-  await assert.rejects(acceptRideForDriver({firestore}, identity("auth_role_no_profile"),
+  await assert.rejects(acceptForDriver(identity("auth_role_no_profile"),
     acceptPayload(created.rideId as string, `${identity("auth_role_no_profile_req")}_123456789`)));
-  await assert.rejects(acceptRideForDriver({firestore}, pending,
+  await assert.rejects(acceptForDriver(pending,
     acceptPayload(created.rideId as string, `${identity("auth_role_pending_req")}_123456789`)));
-  const accepted = await acceptRideForDriver({firestore}, approved,
+  const accepted = await acceptForDriver(approved,
     acceptPayload(created.rideId as string, `${identity("auth_role_accept")}_123456789`));
   await assert.rejects(transitionRideForDriver({firestore}, stranger,
     acceptPayload(created.rideId as string, `${identity("auth_role_stranger_req")}_123456789`,

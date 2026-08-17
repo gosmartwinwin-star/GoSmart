@@ -38,7 +38,9 @@ class FirebaseFunctionsRegistry {
   static const getMyRideHistory = 'getMyRideHistory';
   static const searchPlaces = 'searchPlaces';
   static const resolvePlace = 'resolvePlace';
+  static const getMyRideMatchOffers = 'getMyRideMatchOffers';
   static const getMyActiveReturnRoute = 'getMyActiveReturnRoute';
+  static const acceptRide = 'acceptRide';
   static FirebaseFunctions? _client;
   static FirebaseFunctionsRouting? _routing;
 

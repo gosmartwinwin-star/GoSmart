@@ -19,6 +19,7 @@ import {
   loadApprovedDriverId,
   loadApprovedDriverIdInTransaction,
 } from "./ride-driver-identity.js";
+import {requireRideMatchOfferAuthority} from "./ride-match-offer-authority.js";
 
 export type RideRouteProvider = (pickup: {latitude: number; longitude: number},
   dropoff: {latitude: number; longitude: number}) => Promise<RideRoute>;
@@ -285,6 +286,15 @@ export const acceptRideForDriver = async (
         throw new HttpsError("already-exists",
           "SÃ¼rÃ¼cÃ¼nÃ¼n aktif yolculuÄŸu var.", {reason: "driver_active_ride_exists"});
       }
+      const matchAuthority =
+        await requireRideMatchOfferAuthority({
+          firestore,
+          transaction,
+          driverId,
+          rideId: ride.id,
+          rideVersion: version,
+          now,
+        });
       const passengerId = data.passengerId;
       if (typeof passengerId !== "string") {
         throw new HttpsError("internal",
@@ -296,6 +306,13 @@ export const acceptRideForDriver = async (
         throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
           {reason: "active_ride_pointer_inconsistent"});
       }
+      transaction.update(
+        matchAuthority.offerRef,
+        {
+          status: "consumed",
+          consumedAt: now,
+        },
+      );
       const nextVersion = version + 1;
       const result = {rideId: ride.id, status: "driverEnRoute",
         version: nextVersion, updatedAtMillis: now.toMillis()};

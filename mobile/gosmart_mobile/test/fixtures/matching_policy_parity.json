@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "maximumDetourMeters": 3000,
+  "maximumDetourSeconds": 600,
+  "subscriptionRequired": true,
+  "subscriptionRequiredReason": "subscription_required",
+  "cases": [
+    {
+      "name": "exact_boundary",
+      "pickupRouteIndex": 2,
+      "dropoffRouteIndex": 8,
+      "pickupDetourMeters": 3000,
+      "pickupDetourSeconds": 600,
+      "dropoffDetourMeters": 3000,
+      "dropoffDetourSeconds": 600,
+      "expectedEligible": true,
+      "expectedReason": null
+    },
+    {
+      "name": "pickup_distance_over",
+      "pickupRouteIndex": 2,
+      "dropoffRouteIndex": 8,
+      "pickupDetourMeters": 3001,
+      "pickupDetourSeconds": 600,
+      "dropoffDetourMeters": 3000,
+      "dropoffDetourSeconds": 600,
+      "expectedEligible": false,
+      "expectedReason": "pickup_distance_exceeded"
+    },
+    {
+      "name": "pickup_duration_over",
+      "pickupRouteIndex": 2,
+      "dropoffRouteIndex": 8,
+      "pickupDetourMeters": 3000,
+      "pickupDetourSeconds": 601,
+      "dropoffDetourMeters": 3000,
+      "dropoffDetourSeconds": 600,
+      "expectedEligible": false,
+      "expectedReason": "pickup_duration_exceeded"
+    },
+    {
+      "name": "dropoff_distance_over",
+      "pickupRouteIndex": 2,
+      "dropoffRouteIndex": 8,
+      "pickupDetourMeters": 3000,
+      "pickupDetourSeconds": 600,
+      "dropoffDetourMeters": 3001,
+      "dropoffDetourSeconds": 600,
+      "expectedEligible": false,
+      "expectedReason": "dropoff_distance_exceeded"
+    },
+    {
+      "name": "dropoff_duration_over",
+      "pickupRouteIndex": 2,
+      "dropoffRouteIndex": 8,
+      "pickupDetourMeters": 3000,
+      "pickupDetourSeconds": 600,
+      "dropoffDetourMeters": 3000,
+      "dropoffDetourSeconds": 601,
+      "expectedEligible": false,
+      "expectedReason": "dropoff_duration_exceeded"
+    },
+    {
+      "name": "reverse_direction",
+      "pickupRouteIndex": 8,
+      "dropoffRouteIndex": 2,
+      "pickupDetourMeters": 100,
+      "pickupDetourSeconds": 20,
+      "dropoffDetourMeters": 100,
+      "dropoffDetourSeconds": 20,
+      "expectedEligible": false,
+      "expectedReason": "incompatible_direction"
+    },
+    {
+      "name": "equal_direction",
+      "pickupRouteIndex": 4,
+      "dropoffRouteIndex": 4,
+      "pickupDetourMeters": 100,
+      "pickupDetourSeconds": 20,
+      "dropoffDetourMeters": 100,
+      "dropoffDetourSeconds": 20,
+      "expectedEligible": false,
+      "expectedReason": "incompatible_direction"
+    },
+    {
+      "name": "zero_detour_forward",
+      "pickupRouteIndex": 0,
+      "dropoffRouteIndex": 1,
+      "pickupDetourMeters": 0,
+      "pickupDetourSeconds": 0,
+      "dropoffDetourMeters": 0,
+      "dropoffDetourSeconds": 0,
+      "expectedEligible": true,
+      "expectedReason": null
+    }
+  ]
+}

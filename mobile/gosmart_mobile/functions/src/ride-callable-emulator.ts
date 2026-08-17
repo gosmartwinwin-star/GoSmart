@@ -7,6 +7,10 @@ import {
   buildInitialRide,
   rideOperationId,
 } from "./ride-lifecycle-helpers.js";
+import {
+  buildRideMatchOffer,
+  rideMatchOfferDocumentId,
+} from "./ride-match-offer-helpers.js";
 
 const projectId = "demo-gosmart";
 const region = "europe-west1";
@@ -171,11 +175,32 @@ const expectRideState = (
 const seedMatchingRide = async (
   passengerUid: string,
   driverUid: string,
-): Promise<{rideId: string; driverId: string}> => {
+): Promise<{rideId: string; driverId: string; offerId: string}> => {
   const rideId = unique("ride_callable");
   const driverId = unique("driver_profile");
   const now = Timestamp.now();
 
+  const routeActivatedAt =
+    Timestamp.fromMillis(
+      now.toMillis() - 60_000,
+    );
+
+  const routeExpiresAt =
+    Timestamp.fromMillis(
+      now.toMillis() + 3_600_000,
+    );
+
+  const returnRouteId =
+    unique("return_route");
+
+  const driverPassId =
+    unique("driver_pass");
+
+  const offerId =
+    rideMatchOfferDocumentId(
+      driverId,
+      rideId,
+    );
   const pickup = {
     latitude: 41.01,
     longitude: 29.01,
@@ -206,6 +231,77 @@ const seedMatchingRide = async (
     },
   );
 
+  batch.set(
+    firestore
+      .collection("driverAccessPasses")
+      .doc(driverPassId),
+    {
+      driverId,
+      status: "active",
+      purchasedAt: now,
+      activatedAt: routeActivatedAt,
+      expiresAt: routeExpiresAt,
+    },
+  );
+
+  batch.set(
+    firestore
+      .collection("driverReturnRoutes")
+      .doc(returnRouteId),
+    {
+      driverId,
+      origin: {
+        latitude: 41.0,
+        longitude: 29.0,
+      },
+      destination: {
+        latitude: 41.1,
+        longitude: 29.1,
+      },
+      status: "active",
+      createdAt: routeActivatedAt,
+      activatedAt: routeActivatedAt,
+      expiresAt: routeExpiresAt,
+      routeDistanceMeters: 12000,
+      routeDurationSeconds: 1800,
+      encodedPolyline:
+        "callable_authority_polyline",
+      pricingVersion: null,
+    },
+  );
+
+  batch.set(
+    firestore
+      .collection("driverActiveReturnRoutes")
+      .doc(driverId),
+    {
+      routeId: returnRouteId,
+      activatedAt: routeActivatedAt,
+      expiresAt: routeExpiresAt,
+    },
+  );
+
+  batch.set(
+    firestore
+      .collection("driverRideMatchOffers")
+      .doc(offerId),
+    buildRideMatchOffer({
+      driverId,
+      rideId,
+      rideVersion: 1,
+      returnRouteId,
+      routeExpiresAt,
+      now,
+      measurement: {
+        pickupRouteIndex: 2,
+        dropoffRouteIndex: 8,
+        pickupDetourMeters: 900,
+        pickupDetourSeconds: 180,
+        dropoffDetourMeters: 1300,
+        dropoffDetourSeconds: 260,
+      },
+    }),
+  );
   batch.set(
     rideRef,
     buildInitialRide(
@@ -242,7 +338,7 @@ const seedMatchingRide = async (
   );
 
   await batch.commit();
-  return {rideId, driverId};
+  return {rideId, driverId, offerId};
 };
 
 before(() => {
@@ -266,7 +362,7 @@ test(
     assert.notEqual(passenger.uid, driver.uid);
 
     const fixture = await seedMatchingRide(passenger.uid, driver.uid);
-    const {rideId, driverId} = fixture;
+    const {rideId, driverId, offerId} = fixture;
 
     const passengerBefore = activeRide(
       await callable(passenger, "getMyActiveRide", {}),
@@ -286,6 +382,20 @@ test(
     });
     assert.equal(accepted.status, "driverEnRoute");
     assert.equal(accepted.version, 2);
+    const consumedOffer = await firestore
+      .collection("driverRideMatchOffers")
+      .doc(offerId)
+      .get();
+
+    assert.equal(
+      consumedOffer.get("status"),
+      "consumed",
+    );
+
+    assert.ok(
+      consumedOffer.get("consumedAt") instanceof
+        Timestamp,
+    );
 
     const passengerAccepted = activeRide(
       await callable(passenger, "getMyActiveRide", {}),

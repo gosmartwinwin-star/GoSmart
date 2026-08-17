@@ -50,6 +50,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /driverRideMatchOffers/{offerId} {
+      allow read, write: if false;
+    }
+
     match /rides/{rideId} {
       function isRideParticipant(rideData) {
         return isSignedIn()

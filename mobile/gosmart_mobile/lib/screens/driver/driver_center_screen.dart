@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/driver_center_controller.dart';
 import '../../controllers/driver_ride_controller.dart';
+import '../../controllers/driver_ride_match_offer_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
+import '../../domain/ride/ride_match_offer.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../services/ride_lifecycle_service.dart';
+import '../../services/ride_match_offer_service.dart';
 import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../core/branding/gosmart_slogans.dart';
@@ -22,6 +25,7 @@ import '../../services/driver_application_review_service.dart';
 import 'driver_application_screen.dart';
 import 'driver_application_document_resubmission_screen.dart';
 import '../../widgets/driver/active_return_route_card.dart';
+import '../../widgets/driver/ride_match_offer_panel.dart';
 import '../../widgets/driver/return_route_map_preview.dart';
 import '../search/search_address_screen.dart';
 
@@ -31,6 +35,7 @@ class DriverCenterScreen extends StatefulWidget {
   final Widget Function(DriverApplicationReview review)?
   resubmissionScreenBuilder;
   final DriverRideController? rideController;
+  final DriverRideMatchOfferController? rideMatchOfferController;
 
   const DriverCenterScreen({
     super.key,
@@ -38,6 +43,7 @@ class DriverCenterScreen extends StatefulWidget {
     this.applicationScreenBuilder,
     this.resubmissionScreenBuilder,
     this.rideController,
+    this.rideMatchOfferController,
   });
 
   @override
@@ -49,6 +55,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   late final bool _ownsController;
   DriverRideController? rideController;
   late final bool _ownsRideController;
+  DriverRideMatchOfferController? matchOfferController;
+  late final bool _ownsMatchOfferController;
+  String? _matchOfferRouteId;
   bool _driverRideRecoveryRequested = false;
   StreamSubscription<User?>? _authSubscription;
 
@@ -81,6 +90,14 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
               )
             : null);
     rideController?.addListener(_refresh);
+    _ownsMatchOfferController =
+        widget.rideMatchOfferController == null && widget.controller == null;
+    matchOfferController =
+        widget.rideMatchOfferController ??
+        (widget.controller == null
+            ? DriverRideMatchOfferController(gateway: RideMatchOfferService())
+            : null);
+    matchOfferController?.addListener(_refresh);
     controller.load();
     if (_ownsRideController) {
       _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
@@ -100,14 +117,17 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     if (!mounted) return;
     setState(() {});
     _syncDriverRideRecovery();
+    _syncMatchOffers();
   }
 
   @override
   void dispose() {
     controller.removeListener(_refresh);
     rideController?.removeListener(_refresh);
+    matchOfferController?.removeListener(_refresh);
     _authSubscription?.cancel();
     if (_ownsRideController) rideController?.dispose();
+    if (_ownsMatchOfferController) matchOfferController?.dispose();
     if (_ownsController) controller.dispose();
     super.dispose();
   }
@@ -334,6 +354,52 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     unawaited(lifecycle.recover());
   }
 
+  void _syncMatchOffers() {
+    final matches = matchOfferController;
+    final lifecycle = rideController;
+    final published = controller.publishedRoute;
+
+    if (published == null) {
+      _matchOfferRouteId = null;
+      return;
+    }
+
+    if (matches == null ||
+        lifecycle == null ||
+        controller.status != DriverCenterStatus.ready ||
+        lifecycle.loading ||
+        lifecycle.errorMessage != null ||
+        lifecycle.ride != null) {
+      return;
+    }
+
+    if (matches.busy ||
+        (matches.hasLoaded && _matchOfferRouteId == published.routeId)) {
+      return;
+    }
+
+    _matchOfferRouteId = published.routeId;
+    unawaited(matches.load());
+  }
+
+  Future<void> _acceptMatchOffer(RideMatchOffer offer) async {
+    final matches = matchOfferController;
+    final lifecycle = rideController;
+
+    if (matches == null || lifecycle == null) {
+      return;
+    }
+
+    final accepted = await matches.accept(offer);
+
+    if (!accepted) {
+      return;
+    }
+
+    await lifecycle.recover();
+    matches.clearAcceptedRide();
+  }
+
   Widget _ready() {
     if (rideController?.ride != null) return _activeRide();
     final published = controller.publishedRoute;
@@ -347,6 +413,14 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             published: published,
             destinationLabel: controller.destinationLabel ?? 'Dönüş hedefi',
           ),
+          if (matchOfferController != null && rideController != null) ...[
+            const SizedBox(height: 12),
+            RideMatchOfferPanel(
+              controller: matchOfferController!,
+              onAccept: _acceptMatchOffer,
+              onRefresh: matchOfferController!.load,
+            ),
+          ],
         ],
       );
     }

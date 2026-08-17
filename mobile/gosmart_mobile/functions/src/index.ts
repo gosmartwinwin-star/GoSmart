@@ -89,6 +89,13 @@ import {
   resolvePlace as resolvePlaceWithPlacesApi,
   searchPlaces as searchPlacesWithPlacesApi,
 } from "./place-search-service.js";
+import {
+  discoverRideMatchOffersForDriver,
+} from "./ride-match-offer-discovery.js";
+import type {
+  RideMatchDeviationInput,
+  RideMatchDeviationMeasurement,
+} from "./ride-match-offer-discovery.js";
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -195,6 +202,35 @@ const computeDrivingMeasurement = async (
   }
 
   return {distanceMeters, durationSeconds};
+};
+
+const computeRideMatchDeviation = async (
+  input: RideMatchDeviationInput,
+): Promise<RideMatchDeviationMeasurement> => {
+  const [
+    pickupMeasurement,
+    dropoffMeasurement,
+  ] = await Promise.all([
+    computeDrivingMeasurement(
+      input.pickupAnchor,
+      input.pickup,
+    ),
+    computeDrivingMeasurement(
+      input.dropoff,
+      input.dropoffAnchor,
+    ),
+  ]);
+
+  return {
+    pickupDetourMeters:
+      pickupMeasurement.distanceMeters,
+    pickupDetourSeconds:
+      pickupMeasurement.durationSeconds,
+    dropoffDetourMeters:
+      dropoffMeasurement.distanceMeters,
+    dropoffDetourSeconds:
+      dropoffMeasurement.durationSeconds,
+  };
 };
 
 const safePrecondition = (reason: string) => new HttpsError(
@@ -474,6 +510,70 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
 );
 
 /* eslint-disable max-len */
+export const getMyRideMatchOffers = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride match offers require authentication.",
+      );
+    }
+
+    if (
+      typeof request.data !== "object" ||
+      request.data === null ||
+      Array.isArray(request.data) ||
+      Object.keys(request.data).length !== 0
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Ride match offer request is invalid.",
+        {
+          reason:
+            "invalid_ride_match_offer_payload",
+        },
+      );
+    }
+
+    try {
+      return await discoverRideMatchOffersForDriver(
+        {
+          firestore,
+          measureDeviation:
+            computeRideMatchDeviation,
+        },
+        request.auth.uid,
+      );
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      logger.error(
+        "GoSmart ride match offer discovery failed",
+        {
+          errorType:
+            error instanceof Error ?
+              error.name :
+              "UnknownError",
+        },
+      );
+
+      throw new HttpsError(
+        "unavailable",
+        "Ride match offers are temporarily unavailable.",
+      );
+    }
+  },
+);
+
 export const createRideRequest = onCall(
   {
     region: "europe-west1",
