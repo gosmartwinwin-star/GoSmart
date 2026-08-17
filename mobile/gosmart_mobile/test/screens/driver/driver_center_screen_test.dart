@@ -177,6 +177,10 @@ void main() {
     },
   );
 
+  testWidgets('root driver surface keeps profile access', (tester) async {
+    await show(tester, controller());
+    expect(find.byTooltip('Profil'), findsOneWidget);
+  });
   testWidgets('pending profil kartı gösterilir', (tester) async {
     await show(
       tester,

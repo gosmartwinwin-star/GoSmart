@@ -27,6 +27,7 @@ import 'driver_application_document_resubmission_screen.dart';
 import '../../widgets/driver/active_return_route_card.dart';
 import '../../widgets/driver/ride_match_offer_panel.dart';
 import '../../widgets/driver/return_route_map_preview.dart';
+import '../profile/profile_screen.dart';
 import '../search/search_address_screen.dart';
 
 class DriverCenterScreen extends StatefulWidget {
@@ -147,7 +148,25 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sürücü Merkezi')),
+      appBar: AppBar(
+        title: const Text('Sürücü Merkezi'),
+        actions: [
+          IconButton(
+            tooltip: 'Profil',
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ProfileScreen(
+                    phoneNumber: FirebaseAuth.instance.currentUser?.phoneNumber,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
