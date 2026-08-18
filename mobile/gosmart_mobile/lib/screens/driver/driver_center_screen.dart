@@ -7,6 +7,7 @@ import '../../controllers/driver_ride_controller.dart';
 import '../../controllers/driver_ride_match_offer_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../domain/ride/ride_match_offer.dart';
+import '../../domain/subscription/driver_access_mode.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../services/ride_lifecycle_service.dart';
 import '../../services/ride_match_offer_service.dart';
@@ -420,6 +421,27 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   }
 
   Widget _ready() {
+    final content = _readyContent();
+    if (controller.accessMode != DriverAccessMode.launchFree) {
+      return content;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _StatusCard(
+          title: 'Lansman d\u00f6neminde \u00fccretsiz',
+          description:
+              'GoSmart, lansman d\u00f6neminde s\u00fcr\u00fcc\u00fcler i\u00e7in \u00fccretsizdir. '
+              'S\u00fcr\u00fcc\u00fc eri\u015fimi i\u00e7in abonelik veya paket \u00fccreti al\u0131nmaz.',
+        ),
+        const SizedBox(height: 12),
+        content,
+      ],
+    );
+  }
+
+  Widget _readyContent() {
     if (rideController?.ride != null) return _activeRide();
     final published = controller.publishedRoute;
     if (published != null) {

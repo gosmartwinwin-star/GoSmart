@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_pass_repository.dart';
+import 'package:gosmart_mobile/application/driver_access/driver_access_mode_repository.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_profile_repository.dart';
 import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
 import 'package:gosmart_mobile/application/return_route/publish_return_route_gateway.dart';
@@ -17,6 +18,7 @@ import 'package:gosmart_mobile/domain/driver/driver_profile_status.dart';
 import 'package:gosmart_mobile/domain/return_route/geo_coordinate.dart';
 import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_access_pass.dart';
+import 'package:gosmart_mobile/domain/subscription/driver_access_mode.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_pass_status.dart';
 import 'package:gosmart_mobile/screens/driver/driver_center_screen.dart';
@@ -47,12 +49,14 @@ void main() {
   DriverCenterController controller({
     DriverProfile? loadedProfile,
     DriverAccessPass? loadedPass,
+    DriverAccessMode accessMode = DriverAccessMode.paid,
     DriverApplicationReview? application,
     LocationAccessGateway? location,
   }) => DriverCenterController(
     auth: _Auth(),
     profiles: _Profiles(loadedProfile),
     passes: _Passes(loadedPass),
+    accessModes: _AccessModes(accessMode),
     publisher: _Publisher(),
     location: location ?? _Location(origin),
     now: () => now,
@@ -155,10 +159,7 @@ void main() {
     'profil gerekli durumda aktif sürücü yolculuğu recovery çağrılmaz',
     (tester) async {
       final gateway = _RideGateway();
-      final rides = DriverRideController(
-        gateway: gateway,
-        repository: gateway,
-      );
+      final rides = DriverRideController(gateway: gateway, repository: gateway);
       addTearDown(rides.dispose);
 
       await tester.pumpWidget(
@@ -194,6 +195,31 @@ void main() {
       controller(loadedProfile: profile(DriverProfileStatus.approved)),
     );
     expect(find.text('Aktif kontör paketi gerekli'), findsOneWidget);
+  });
+  testWidgets('launchFree ready surface shows free launch card', (
+    tester,
+  ) async {
+    await show(
+      tester,
+      controller(
+        loadedProfile: profile(DriverProfileStatus.approved),
+        accessMode: DriverAccessMode.launchFree,
+      ),
+    );
+
+    expect(find.text('Lansman d\u00f6neminde \u00fccretsiz'), findsOneWidget);
+    expect(
+      find.text(
+        'GoSmart, lansman d\u00f6neminde s\u00fcr\u00fcc\u00fcler i\u00e7in \u00fccretsizdir. '
+        'S\u00fcr\u00fcc\u00fc eri\u015fimi i\u00e7in abonelik veya paket \u00fccreti al\u0131nmaz.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('D\u00f6n\u00fc\u015f Rotan\u0131 Olu\u015ftur'),
+      findsOneWidget,
+    );
+    expect(find.text('Aktif kont\u00f6r paketi gerekli'), findsNothing);
   });
   testWidgets('ready durumda form ve süre seçenekleri gösterilir', (
     tester,
@@ -428,6 +454,15 @@ class _Passes implements DriverAccessPassRepository {
   _Passes(this.value);
   @override
   Future<DriverAccessPass?> findLatestForDriver(String id) async => value;
+}
+
+class _AccessModes implements DriverAccessModeRepository {
+  const _AccessModes(this.value);
+
+  final DriverAccessMode value;
+
+  @override
+  Future<DriverAccessMode> load() async => value;
 }
 
 class _Location implements LocationAccessGateway {
