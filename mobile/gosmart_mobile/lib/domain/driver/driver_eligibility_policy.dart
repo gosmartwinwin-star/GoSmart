@@ -1,3 +1,4 @@
+import '../subscription/driver_access_mode.dart';
 import '../subscription/driver_access_pass.dart';
 import '../subscription/driver_access_policy.dart';
 import 'driver_eligibility_rejection_codes.dart';
@@ -16,6 +17,7 @@ class DriverEligibilityPolicy {
     required String? authenticatedUserId,
     required DriverProfile? profile,
     required DriverAccessPass? pass,
+    DriverAccessMode accessMode = DriverAccessMode.paid,
     required String requiredDriverId,
     required DateTime now,
   }) {
@@ -65,10 +67,9 @@ class DriverEligibilityPolicy {
       );
     }
 
-    final subscriptionActive = _accessPolicy.canStartNewMatch(
-      pass: pass,
-      now: now,
-    );
+    final subscriptionActive =
+        accessMode == DriverAccessMode.launchFree ||
+        _accessPolicy.canStartNewMatch(pass: pass, now: now);
     return DriverEligibilityResult(
       authenticated: true,
       driverProfilePresent: true,
@@ -85,12 +86,14 @@ class DriverEligibilityPolicy {
     required String? authenticatedUserId,
     required DriverProfile? profile,
     required DriverAccessPass? pass,
+    DriverAccessMode accessMode = DriverAccessMode.paid,
     required String requiredDriverId,
     required DateTime now,
   }) => evaluate(
     authenticatedUserId: authenticatedUserId,
     profile: profile,
     pass: pass,
+    accessMode: accessMode,
     requiredDriverId: requiredDriverId,
     now: now,
   ).canUseDriverPlatform;
@@ -99,12 +102,14 @@ class DriverEligibilityPolicy {
     required String? authenticatedUserId,
     required DriverProfile? profile,
     required DriverAccessPass? pass,
+    DriverAccessMode accessMode = DriverAccessMode.paid,
     required String requiredDriverId,
     required DateTime now,
   }) => canPublishReturnRoute(
     authenticatedUserId: authenticatedUserId,
     profile: profile,
     pass: pass,
+    accessMode: accessMode,
     requiredDriverId: requiredDriverId,
     now: now,
   );
@@ -113,12 +118,14 @@ class DriverEligibilityPolicy {
     required String? authenticatedUserId,
     required DriverProfile? profile,
     required DriverAccessPass? pass,
+    DriverAccessMode accessMode = DriverAccessMode.paid,
     required String requiredDriverId,
     required DateTime now,
   }) => canPublishReturnRoute(
     authenticatedUserId: authenticatedUserId,
     profile: profile,
     pass: pass,
+    accessMode: accessMode,
     requiredDriverId: requiredDriverId,
     now: now,
   );

@@ -5,7 +5,9 @@ import {
   Transaction,
 } from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
-import {isActivePass} from "./driver-access-helpers.js";
+import {
+  requireDriverAccessInTransaction,
+} from "./driver-access-authority.js";
 import {
   requireRideMatchOfferForAcceptance,
   rideMatchOfferDocumentId,
@@ -57,11 +59,13 @@ export const requireRideMatchOfferAuthority = async (
     now,
   } = input;
 
-  const passQuery = firestore
-    .collection("driverAccessPasses")
-    .where("driverId", "==", driverId)
-    .orderBy("purchasedAt", "desc")
-    .limit(1);
+  await requireDriverAccessInTransaction({
+    firestore,
+    transaction,
+    driverId,
+    now,
+    failure,
+  });
 
   const returnRouteLockRef = firestore
     .collection("driverActiveReturnRoutes")
@@ -77,24 +81,12 @@ export const requireRideMatchOfferAuthority = async (
     );
 
   const [
-    passes,
     returnRouteLock,
     offer,
   ] = await Promise.all([
-    transaction.get(passQuery),
     transaction.get(returnRouteLockRef),
     transaction.get(offerRef),
   ]);
-
-  if (
-    passes.empty ||
-    !isActivePass(
-      passes.docs[0].data(),
-      now,
-    )
-  ) {
-    throw failure("subscription_required");
-  }
 
   if (!returnRouteLock.exists) {
     throw failure(

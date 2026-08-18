@@ -21,11 +21,11 @@ import {
   validateRouteIndex,
 } from "./route-helpers.js";
 import {
-  isActivePass,
   requireExactKeys,
   validateProfileStatus,
   validateRouteValidity,
 } from "./driver-access-helpers.js";
+import {requireDriverAccess} from "./driver-access-authority.js";
 import {
   buildStagingDocumentPath,
   buildSubmissionDocumentPath,
@@ -255,14 +255,13 @@ const loadDriverAccess = async (
   const profile = profiles.docs[0];
   validateProfileStatus(profile.get("status"));
 
-  const passQuery = firestore.collection("driverAccessPasses")
-    .where("driverId", "==", profile.id)
-    .orderBy("purchasedAt", "desc")
-    .limit(1);
-  const passes = await getDocuments(passQuery);
-  if (passes.empty || !isActivePass(passes.docs[0].data(), now)) {
-    throw safePrecondition("subscription_required");
-  }
+  await requireDriverAccess({
+    firestore,
+    driverId: profile.id,
+    now,
+    failure: safePrecondition,
+    getDocuments,
+  });
   return profile.id;
 };
 

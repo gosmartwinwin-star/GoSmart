@@ -1,6 +1,6 @@
 /* eslint-disable max-len */
 import assert from "node:assert/strict";
-import test, {after} from "node:test";
+import test, {after, beforeEach} from "node:test";
 import {
   deleteApp,
   initializeApp,
@@ -70,6 +70,13 @@ after(async () => {
   await deleteApp(app);
 });
 
+beforeEach(async () => {
+  await firestore
+    .collection("platformConfig")
+    .doc("driverAccess")
+    .delete();
+});
+
 let sequence = 0;
 
 const unique = (label: string): string => {
@@ -113,6 +120,8 @@ const seedScenario = async (
   options: {
     withOffer?: boolean;
     expiredPass?: boolean;
+    withPass?: boolean;
+    accessMode?: "launchFree" | "paid";
   } = {},
 ): Promise<Scenario> => {
   const driverUid =
@@ -161,6 +170,17 @@ const seedScenario = async (
   const batch =
     firestore.batch();
 
+  if (options.accessMode) {
+    batch.set(
+      firestore
+        .collection("platformConfig")
+        .doc("driverAccess"),
+      {
+        mode: options.accessMode,
+      },
+    );
+  }
+
   batch.set(
     firestore
       .collection("driverProfiles")
@@ -171,21 +191,23 @@ const seedScenario = async (
     },
   );
 
-  batch.set(
-    firestore
-      .collection("driverAccessPasses")
-      .doc(passId),
-    {
-      driverId,
-      status: "active",
-      purchasedAt:
-        Timestamp.fromMillis(
-          now.toMillis() - 120_000,
-        ),
-      activatedAt,
-      expiresAt: passExpiresAt,
-    },
-  );
+  if (options.withPass ?? true) {
+    batch.set(
+      firestore
+        .collection("driverAccessPasses")
+        .doc(passId),
+      {
+        driverId,
+        status: "active",
+        purchasedAt:
+          Timestamp.fromMillis(
+            now.toMillis() - 120_000,
+          ),
+        activatedAt,
+        expiresAt: passExpiresAt,
+      },
+    );
+  }
 
   batch.set(
     firestore
@@ -372,6 +394,62 @@ test(
           .get()
       ).exists,
       false,
+    );
+  },
+);
+
+test(
+  "launchFree permits offer acceptance without driver pass",
+  async () => {
+    const scenario =
+      await seedScenario({
+        withPass: false,
+        accessMode: "launchFree",
+      });
+
+    const accepted =
+      await acceptRideForDriver(
+        {firestore},
+        scenario.driverUid,
+        mutation(
+          scenario.rideId,
+          "launch_free_accept",
+        ),
+      );
+
+    assert.equal(
+      accepted.status,
+      "driverEnRoute",
+    );
+
+    assert.equal(
+      accepted.version,
+      2,
+    );
+
+    assert.equal(
+      (
+        await firestore
+          .collection("driverAccessPasses")
+          .where(
+            "driverId",
+            "==",
+            scenario.driverId,
+          )
+          .get()
+      ).empty,
+      true,
+    );
+
+    const offer =
+      await firestore
+        .collection("driverRideMatchOffers")
+        .doc(scenario.offerId)
+        .get();
+
+    assert.equal(
+      offer.get("status"),
+      "consumed",
     );
   },
 );

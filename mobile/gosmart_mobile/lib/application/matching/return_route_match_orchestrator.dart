@@ -5,6 +5,7 @@ import '../../domain/return_route/driver_return_route.dart';
 import '../../domain/return_route/driver_return_route_policy.dart';
 import '../../domain/return_route/geo_coordinate.dart';
 import '../../domain/return_route/route_anchor_locator.dart';
+import '../../domain/subscription/driver_access_mode.dart';
 import '../../domain/subscription/driver_access_pass.dart';
 import 'match_orchestration_rejection_codes.dart';
 import 'return_route_match_result.dart';
@@ -34,6 +35,7 @@ class ReturnRouteMatchOrchestrator {
     required String? authenticatedUserId,
     required DriverProfile? driverProfile,
     required DriverAccessPass? pass,
+    DriverAccessMode accessMode = DriverAccessMode.paid,
     required DriverReturnRoute returnRoute,
     required GeoCoordinate pickup,
     required GeoCoordinate dropoff,
@@ -43,6 +45,7 @@ class ReturnRouteMatchOrchestrator {
       authenticatedUserId: authenticatedUserId,
       profile: driverProfile,
       pass: pass,
+      accessMode: accessMode,
       requiredDriverId: returnRoute.driverId,
       now: now,
     );

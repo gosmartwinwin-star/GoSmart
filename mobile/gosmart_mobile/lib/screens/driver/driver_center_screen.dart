@@ -14,6 +14,7 @@ import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../core/branding/gosmart_slogans.dart';
 import '../../domain/return_route/geo_coordinate.dart';
+import '../../infrastructure/firestore/repositories/firestore_driver_access_mode_repository.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_pass_repository.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 import '../../models/address_model.dart';
@@ -72,6 +73,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           auth: _FirebaseDriverCenterAuth(),
           profiles: FirestoreDriverProfileRepository(),
           passes: FirestoreDriverAccessPassRepository(),
+          accessModes: FirestoreDriverAccessModeRepository(),
           publisher: PublishReturnRouteService(),
           returnRouteRecovery: ActiveReturnRouteRecoveryService(),
           location: LocationAccessService(),
@@ -364,9 +366,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     _driverRideRecoveryRequested = true;
 
     if (_ownsRideController) {
-      unawaited(
-        lifecycle.authChanged(FirebaseAuth.instance.currentUser?.uid),
-      );
+      unawaited(lifecycle.authChanged(FirebaseAuth.instance.currentUser?.uid));
       return;
     }
 

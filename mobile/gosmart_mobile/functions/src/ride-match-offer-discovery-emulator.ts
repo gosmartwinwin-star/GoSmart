@@ -84,6 +84,7 @@ after(async () => {
 const COLLECTIONS = [
   "driverProfiles",
   "driverAccessPasses",
+  "platformConfig",
   "driverActiveRides",
   "driverReturnRoutes",
   "driverActiveReturnRoutes",
@@ -158,6 +159,8 @@ const seedDriverContext = async (
   options: {
     expiredPass?: boolean;
     activeRide?: boolean;
+    withPass?: boolean;
+    accessMode?: "launchFree" | "paid";
   } = {},
 ): Promise<Fixture> => {
   const driverUid =
@@ -193,6 +196,17 @@ const seedDriverContext = async (
   const batch =
     firestore.batch();
 
+  if (options.accessMode) {
+    batch.set(
+      firestore
+        .collection("platformConfig")
+        .doc("driverAccess"),
+      {
+        mode: options.accessMode,
+      },
+    );
+  }
+
   batch.set(
     firestore
       .collection("driverProfiles")
@@ -203,18 +217,20 @@ const seedDriverContext = async (
     },
   );
 
-  batch.set(
-    firestore
-      .collection("driverAccessPasses")
-      .doc(passId),
-    {
-      driverId,
-      status: "active",
-      purchasedAt: now,
-      activatedAt,
-      expiresAt: passExpiresAt,
-    },
-  );
+  if (options.withPass ?? true) {
+    batch.set(
+      firestore
+        .collection("driverAccessPasses")
+        .doc(passId),
+      {
+        driverId,
+        status: "active",
+        purchasedAt: now,
+        activatedAt,
+        expiresAt: passExpiresAt,
+      },
+    );
+  }
 
   batch.set(
     firestore
@@ -582,6 +598,65 @@ test(
 
     assert.equal(
       reversedOffer.exists,
+      false,
+    );
+  },
+);
+
+test(
+  "launchFree permits discovery without driver pass",
+  async () => {
+    const fixture =
+      await seedDriverContext({
+        withPass: false,
+        accessMode: "launchFree",
+      });
+
+    await seedMatchingRide();
+
+    let measurementCalls = 0;
+
+    await discoverRideMatchOffersForDriver(
+      {
+        firestore,
+        measureDeviation: async () => {
+          measurementCalls += 1;
+
+          return {
+            pickupDetourMeters: 0,
+            pickupDetourSeconds: 0,
+            dropoffDetourMeters: 0,
+            dropoffDetourSeconds: 0,
+          };
+        },
+      },
+      fixture.driverUid,
+    );
+
+    assert.ok(
+      measurementCalls > 0,
+    );
+
+    assert.equal(
+      (
+        await firestore
+          .collection("driverAccessPasses")
+          .where(
+            "driverId",
+            "==",
+            fixture.driverId,
+          )
+          .get()
+      ).empty,
+      true,
+    );
+
+    assert.equal(
+      (
+        await firestore
+          .collection("driverRideMatchOffers")
+          .get()
+      ).empty,
       false,
     );
   },

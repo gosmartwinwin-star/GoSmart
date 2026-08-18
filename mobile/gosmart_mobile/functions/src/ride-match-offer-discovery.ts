@@ -7,7 +7,10 @@ import {
   Transaction,
 } from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
-import {isActivePass} from "./driver-access-helpers.js";
+import {
+  requireDriverAccess,
+  requireDriverAccessInTransaction,
+} from "./driver-access-authority.js";
 import {
   loadApprovedDriverId,
   loadApprovedDriverIdInTransaction,
@@ -388,24 +391,12 @@ const requireActivePass = async (
   driverId: string,
   now: Timestamp,
 ): Promise<void> => {
-  const passes = await firestore
-    .collection("driverAccessPasses")
-    .where("driverId", "==", driverId)
-    .orderBy("purchasedAt", "desc")
-    .limit(1)
-    .get();
-
-  if (
-    passes.empty ||
-    !isActivePass(
-      passes.docs[0].data(),
-      now,
-    )
-  ) {
-    throw failure(
-      "subscription_required",
-    );
-  }
+  await requireDriverAccess({
+    firestore,
+    driverId,
+    now,
+    failure,
+  });
 };
 
 const loadInitialContext = async (
@@ -493,26 +484,13 @@ const revalidateContextInTransaction = async (
     );
   }
 
-  const passQuery = firestore
-    .collection("driverAccessPasses")
-    .where("driverId", "==", driverId)
-    .orderBy("purchasedAt", "desc")
-    .limit(1);
-
-  const passes =
-    await transaction.get(passQuery);
-
-  if (
-    passes.empty ||
-    !isActivePass(
-      passes.docs[0].data(),
-      now,
-    )
-  ) {
-    throw failure(
-      "subscription_required",
-    );
-  }
+  await requireDriverAccessInTransaction({
+    firestore,
+    transaction,
+    driverId,
+    now,
+    failure,
+  });
 
   const driverActiveRide =
     await transaction.get(

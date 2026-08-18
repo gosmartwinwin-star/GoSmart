@@ -30,6 +30,12 @@ service cloud.firestore {
       }
     }
 
+    match /platformConfig/{configId} {
+      allow get: if isSignedIn() && configId == "driverAccess";
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
     match /driverAccessPasses/{passId} {
       allow get, list: if isSignedIn()
         && resource.data.driverId is string

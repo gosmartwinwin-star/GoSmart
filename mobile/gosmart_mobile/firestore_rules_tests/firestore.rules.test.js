@@ -169,6 +169,9 @@ beforeEach(async () => {
       documentType: 'driverLicenseFront', reviewStatus: 'pendingReview',
       storagePath: 'driverApplicationSubmissions/user-mismatch/set-c/driverLicenseFront',
     });
+    batch.set(doc(db, 'platformConfig/driverAccess'), {
+      mode: 'launchFree',
+    });
     await batch.commit();
   });
 });
@@ -548,4 +551,53 @@ test('84 custom-claim admin client cannot list applications or metadata', async 
   await assertFails(getDoc(doc(db, 'driverApplications/user-a')));
   await assertFails(getDocs(collection(db, 'driverApplications/user-a/documents')));
   await assertFails(getDocs(collection(db, 'driverApplicationReviewEvents')));
+});
+test('85 unauthenticated user cannot get driver access config', async () => {
+  await assertFails(
+    getDoc(doc(dbFor(), 'platformConfig/driverAccess')),
+  );
+});
+
+test('86 authenticated user can get driver access config', async () => {
+  await assertSucceeds(
+    getDoc(doc(dbFor('user-a'), 'platformConfig/driverAccess')),
+  );
+});
+
+test('87 authenticated user cannot get another platform config', async () => {
+  await assertFails(
+    getDoc(doc(dbFor('user-a'), 'platformConfig/other')),
+  );
+});
+
+test('88 authenticated user cannot list platform config', async () => {
+  await assertFails(
+    getDocs(collection(dbFor('user-a'), 'platformConfig')),
+  );
+});
+
+test('89 client cannot create platform config', async () => {
+  await assertFails(
+    setDoc(
+      doc(dbFor('user-a'), 'platformConfig/client-created'),
+      {mode: 'launchFree'},
+    ),
+  );
+});
+
+test('90 client cannot update driver access config', async () => {
+  await assertFails(
+    updateDoc(
+      doc(dbFor('user-a'), 'platformConfig/driverAccess'),
+      {mode: 'paid'},
+    ),
+  );
+});
+
+test('91 client cannot delete driver access config', async () => {
+  await assertFails(
+    deleteDoc(
+      doc(dbFor('user-a'), 'platformConfig/driverAccess'),
+    ),
+  );
 });

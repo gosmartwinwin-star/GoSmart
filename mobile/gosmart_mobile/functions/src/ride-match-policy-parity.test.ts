@@ -103,8 +103,17 @@ test(
 );
 
 test(
-  "backend discovery keeps shared subscription reason",
+  "backend driver access authority keeps shared subscription reason",
   () => {
+    const authoritySource =
+      readFileSync(
+        resolve(
+          __dirname,
+          "../src/driver-access-authority.ts",
+        ),
+        "utf8",
+      );
+
     const discoverySource =
       readFileSync(
         resolve(
@@ -115,8 +124,14 @@ test(
       );
 
     assert.ok(
-      discoverySource.includes(
+      authoritySource.includes(
         contract.subscriptionRequiredReason,
+      ),
+    );
+
+    assert.ok(
+      discoverySource.includes(
+        "requireDriverAccess",
       ),
     );
   },

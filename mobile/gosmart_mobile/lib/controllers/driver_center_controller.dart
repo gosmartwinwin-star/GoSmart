@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../application/location/location_access_gateway.dart';
+import '../application/driver_access/driver_access_mode_repository.dart';
 import '../application/driver_access/driver_access_pass_repository.dart';
 import '../application/driver_access/driver_profile_repository.dart';
 import '../application/return_route/publish_return_route_gateway.dart';
@@ -12,6 +13,7 @@ import '../application/driver_application/driver_application_repository.dart';
 import '../domain/driver_application/driver_application_review.dart';
 import '../domain/driver/driver_eligibility_policy.dart';
 import '../domain/driver/driver_eligibility_result.dart';
+import '../domain/subscription/driver_access_mode.dart';
 import '../domain/return_route/geo_coordinate.dart';
 import '../services/publish_return_route_service.dart';
 
@@ -25,6 +27,7 @@ class DriverCenterController extends ChangeNotifier {
   final DriverCenterAuthGateway _auth;
   final DriverProfileRepository _profiles;
   final DriverAccessPassRepository _passes;
+  final DriverAccessModeRepository _accessModes;
   final PublishReturnRouteGateway _publisher;
   final ActiveReturnRouteRecoveryGateway? _returnRouteRecovery;
   final Timer Function(Duration, void Function()) _expiryTimerFactory;
@@ -36,6 +39,7 @@ class DriverCenterController extends ChangeNotifier {
 
   DriverCenterStatus status = DriverCenterStatus.loading;
   DriverEligibilityResult? eligibility;
+  DriverAccessMode accessMode = DriverAccessMode.paid;
   GeoCoordinate? origin;
   GeoCoordinate? destination;
   String? destinationLabel;
@@ -53,6 +57,8 @@ class DriverCenterController extends ChangeNotifier {
     required DriverCenterAuthGateway auth,
     required DriverProfileRepository profiles,
     required DriverAccessPassRepository passes,
+    DriverAccessModeRepository accessModes =
+        const PaidDriverAccessModeRepository(),
     required PublishReturnRouteGateway publisher,
     ActiveReturnRouteRecoveryGateway? returnRouteRecovery,
     Timer Function(Duration, void Function())? expiryTimerFactory,
@@ -63,6 +69,7 @@ class DriverCenterController extends ChangeNotifier {
   }) : _auth = auth,
        _profiles = profiles,
        _passes = passes,
+       _accessModes = accessModes,
        _publisher = publisher,
        _returnRouteRecovery = returnRouteRecovery,
        _expiryTimerFactory =
@@ -86,6 +93,7 @@ class DriverCenterController extends ChangeNotifier {
   Future<void> load() async {
     status = DriverCenterStatus.loading;
     errorMessage = null;
+    accessMode = DriverAccessMode.paid;
     _cancelPublishedRouteExpiryTimer();
     if (_returnRouteRecovery != null) {
       publishedRoute = null;
@@ -118,13 +126,18 @@ class DriverCenterController extends ChangeNotifier {
         application = null;
         applicationLoadFailed = false;
       }
-      final pass = profile == null
+      if (profile != null) {
+        accessMode = await _loadAccessModeFailClosed();
+      }
+
+      final pass = profile == null || !accessMode.requiresPass
           ? null
           : await _passes.findLatestForDriver(profile.id);
       eligibility = _eligibilityPolicy.evaluate(
         authenticatedUserId: userId,
         profile: profile,
         pass: pass,
+        accessMode: accessMode,
         requiredDriverId: profile?.id ?? 'unavailable',
         now: _now(),
       );
@@ -154,6 +167,14 @@ class DriverCenterController extends ChangeNotifier {
       status = DriverCenterStatus.error;
       errorMessage = 'Bilgiler yüklenemedi';
       _notify();
+    }
+  }
+
+  Future<DriverAccessMode> _loadAccessModeFailClosed() async {
+    try {
+      return await _accessModes.load();
+    } catch (_) {
+      return DriverAccessMode.paid;
     }
   }
 
