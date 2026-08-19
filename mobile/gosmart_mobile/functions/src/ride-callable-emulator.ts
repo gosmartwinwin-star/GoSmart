@@ -581,6 +581,86 @@ test(
   },
 );
 test(
+  "approved driver reads authoritative driver plan catalog through real callable",
+  async () => {
+    const driver = await signUp("catalog_driver");
+    const fixture = await seedDriverPlanPurchaseFixture(driver.uid);
+
+    const result = await callable(
+      driver,
+      "getDriverPlanCatalog",
+      {},
+    );
+
+    assert.deepEqual(
+      Object.keys(result).sort(),
+      ["catalogVersion", "plans"],
+    );
+
+    assert.equal(
+      result.catalogVersion,
+      fixture.catalogVersion,
+    );
+
+    const plans = result.plans;
+
+    assert.equal(
+      Array.isArray(plans),
+      true,
+    );
+
+    assert.deepEqual(
+      plans,
+      [
+        {
+          planId: "daily",
+          enabled: true,
+          amountMinor: fixture.amountMinor,
+          currency: fixture.currency,
+        },
+        {
+          planId: "weekly",
+          enabled: true,
+          amountMinor: 2345,
+          currency: fixture.currency,
+        },
+        {
+          planId: "monthly",
+          enabled: true,
+          amountMinor: 3456,
+          currency: fixture.currency,
+        },
+        {
+          planId: "quarterly",
+          enabled: true,
+          amountMinor: 4567,
+          currency: fixture.currency,
+        },
+      ],
+    );
+
+    const operations = await firestore
+      .collection("driverPlanPurchaseOperations")
+      .where("driverId", "==", fixture.driverId)
+      .get();
+
+    assert.equal(
+      operations.empty,
+      true,
+    );
+
+    const passes = await firestore
+      .collection("driverAccessPasses")
+      .where("driverId", "==", fixture.driverId)
+      .get();
+
+    assert.equal(
+      passes.empty,
+      true,
+    );
+  },
+);
+test(
   "approved driver prepares driver plan purchase through real callable",
   async () => {
     const driver = await signUp("purchase_driver");
