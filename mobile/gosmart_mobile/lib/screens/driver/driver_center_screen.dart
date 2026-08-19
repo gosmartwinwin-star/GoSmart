@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../controllers/driver_center_controller.dart';
+import '../../controllers/driver_plan_purchase_controller.dart';
 import '../../controllers/driver_ride_controller.dart';
 import '../../controllers/driver_ride_match_offer_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
@@ -24,9 +25,11 @@ import '../../services/active_return_route_recovery_service.dart';
 import '../../services/publish_return_route_service.dart';
 import '../../domain/driver_application/driver_application_review.dart';
 import '../../services/driver_application_review_service.dart';
+import '../../services/driver_plan_purchase_service.dart';
 import 'driver_application_screen.dart';
 import 'driver_application_document_resubmission_screen.dart';
 import '../../widgets/driver/active_return_route_card.dart';
+import '../../widgets/driver/driver_plan_purchase_panel.dart';
 import '../../widgets/driver/ride_match_offer_panel.dart';
 import '../../widgets/driver/return_route_map_preview.dart';
 import '../profile/profile_screen.dart';
@@ -39,6 +42,7 @@ class DriverCenterScreen extends StatefulWidget {
   resubmissionScreenBuilder;
   final DriverRideController? rideController;
   final DriverRideMatchOfferController? rideMatchOfferController;
+  final DriverPlanPurchaseController? driverPlanPurchaseController;
 
   const DriverCenterScreen({
     super.key,
@@ -47,6 +51,7 @@ class DriverCenterScreen extends StatefulWidget {
     this.resubmissionScreenBuilder,
     this.rideController,
     this.rideMatchOfferController,
+    this.driverPlanPurchaseController,
   });
 
   @override
@@ -60,6 +65,8 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   late final bool _ownsRideController;
   DriverRideMatchOfferController? matchOfferController;
   late final bool _ownsMatchOfferController;
+  DriverPlanPurchaseController? planPurchaseController;
+  late final bool _ownsPlanPurchaseController;
   String? _matchOfferRouteId;
   bool _driverRideRecoveryRequested = false;
   StreamSubscription<User?>? _authSubscription;
@@ -102,6 +109,15 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             ? DriverRideMatchOfferController(gateway: RideMatchOfferService())
             : null);
     matchOfferController?.addListener(_refresh);
+    _ownsPlanPurchaseController =
+        widget.driverPlanPurchaseController == null &&
+        widget.controller == null;
+    planPurchaseController =
+        widget.driverPlanPurchaseController ??
+        (widget.controller == null
+            ? DriverPlanPurchaseController(gateway: DriverPlanPurchaseService())
+            : null);
+    planPurchaseController?.addListener(_refresh);
     controller.load();
     if (_ownsRideController) {
       _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
@@ -129,9 +145,11 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     controller.removeListener(_refresh);
     rideController?.removeListener(_refresh);
     matchOfferController?.removeListener(_refresh);
+    planPurchaseController?.removeListener(_refresh);
     _authSubscription?.cancel();
     if (_ownsRideController) rideController?.dispose();
     if (_ownsMatchOfferController) matchOfferController?.dispose();
+    if (_ownsPlanPurchaseController) planPurchaseController?.dispose();
     if (_ownsController) controller.dispose();
     super.dispose();
   }
@@ -229,6 +247,24 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   }
 
   Widget _restricted() {
+    final purchase = planPurchaseController;
+
+    if (controller.rejectionReason == 'subscription_required' &&
+        purchase != null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _StatusCard(
+            title: 'Aktif kontör paketi gerekli',
+            description:
+                'Dönüş rotası yayımlamak için aktif bir GoSmart kontör '
+                'paketiniz olmalıdır.',
+          ),
+          const SizedBox(height: 12),
+          DriverPlanPurchasePanel(controller: purchase),
+        ],
+      );
+    }
     if (controller.rejectionReason == 'driver_profile_required') {
       return _applicationStatus();
     }

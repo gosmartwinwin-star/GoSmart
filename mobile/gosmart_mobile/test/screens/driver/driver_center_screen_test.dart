@@ -3,12 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_pass_repository.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_mode_repository.dart';
+import 'package:gosmart_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_profile_repository.dart';
 import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
 import 'package:gosmart_mobile/application/return_route/publish_return_route_gateway.dart';
 import 'package:gosmart_mobile/application/return_route/published_return_route.dart';
 import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
 import 'package:gosmart_mobile/controllers/driver_center_controller.dart';
+import 'package:gosmart_mobile/controllers/driver_plan_purchase_controller.dart';
 import 'package:gosmart_mobile/controllers/driver_ride_controller.dart';
 import 'package:gosmart_mobile/core/branding/gosmart_slogans.dart';
 import 'package:gosmart_mobile/domain/driver/driver_profile.dart';
@@ -36,6 +38,9 @@ void main() {
     approvedAt: status == DriverProfileStatus.pendingReview
         ? null
         : now.subtract(const Duration(days: 1)),
+    suspendedAt: status == DriverProfileStatus.suspended
+        ? now.subtract(const Duration(hours: 1))
+        : null,
   );
   DriverAccessPass pass() => DriverAccessPass(
     id: 'pass-1',
@@ -91,9 +96,18 @@ void main() {
             ),
         ],
       );
-  Future<void> show(WidgetTester tester, DriverCenterController value) async {
+  Future<void> show(
+    WidgetTester tester,
+    DriverCenterController value, {
+    DriverPlanPurchaseController? purchaseController,
+  }) async {
     await tester.pumpWidget(
-      MaterialApp(home: DriverCenterScreen(controller: value)),
+      MaterialApp(
+        home: DriverCenterScreen(
+          controller: value,
+          driverPlanPurchaseController: purchaseController,
+        ),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -195,6 +209,101 @@ void main() {
       controller(loadedProfile: profile(DriverProfileStatus.approved)),
     );
     expect(find.text('Aktif kontör paketi gerekli'), findsOneWidget);
+  });
+  testWidgets('paid approved driver without pass shows purchase panel', (
+    tester,
+  ) async {
+    final purchase = DriverPlanPurchaseController(
+      gateway: _PurchaseGateway(),
+      requestIdFactory: () => 'screen-request',
+    );
+    addTearDown(purchase.dispose);
+
+    await show(
+      tester,
+      controller(loadedProfile: profile(DriverProfileStatus.approved)),
+      purchaseController: purchase,
+    );
+
+    expect(find.text('Aktif kontör paketi gerekli'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('driver-plan-purchase-panel')),
+      findsOneWidget,
+    );
+    expect(find.text('Günlük'), findsOneWidget);
+    expect(find.text('Haftalık'), findsOneWidget);
+    expect(find.text('Aylık'), findsOneWidget);
+    expect(find.text('3 Aylık'), findsOneWidget);
+  });
+
+  testWidgets('launchFree driver never sees purchase panel', (tester) async {
+    final purchase = DriverPlanPurchaseController(
+      gateway: _PurchaseGateway(),
+      requestIdFactory: () => 'screen-request',
+    );
+    addTearDown(purchase.dispose);
+
+    await show(
+      tester,
+      controller(
+        loadedProfile: profile(DriverProfileStatus.approved),
+        accessMode: DriverAccessMode.launchFree,
+      ),
+      purchaseController: purchase,
+    );
+
+    expect(
+      find.byKey(const ValueKey('driver-plan-purchase-panel')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('active pass ready driver never sees purchase panel', (
+    tester,
+  ) async {
+    final purchase = DriverPlanPurchaseController(
+      gateway: _PurchaseGateway(),
+      requestIdFactory: () => 'screen-request',
+    );
+    addTearDown(purchase.dispose);
+
+    await show(
+      tester,
+      controller(
+        loadedProfile: profile(DriverProfileStatus.approved),
+        loadedPass: pass(),
+      ),
+      purchaseController: purchase,
+    );
+
+    expect(
+      find.byKey(const ValueKey('driver-plan-purchase-panel')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('non-subscription restriction never shows purchase panel', (
+    tester,
+  ) async {
+    final purchase = DriverPlanPurchaseController(
+      gateway: _PurchaseGateway(),
+      requestIdFactory: () => 'screen-request',
+    );
+    addTearDown(purchase.dispose);
+
+    await show(
+      tester,
+      controller(
+        loadedProfile: profile(DriverProfileStatus.suspended),
+        accessMode: DriverAccessMode.launchFree,
+      ),
+      purchaseController: purchase,
+    );
+
+    expect(
+      find.byKey(const ValueKey('driver-plan-purchase-panel')),
+      findsNothing,
+    );
   });
   testWidgets('launchFree ready surface shows free launch card', (
     tester,
@@ -463,6 +572,23 @@ class _AccessModes implements DriverAccessModeRepository {
 
   @override
   Future<DriverAccessMode> load() async => value;
+}
+
+class _PurchaseGateway implements DriverPlanPurchaseGateway {
+  @override
+  Future<PreparedDriverPlanPurchase> prepare({
+    required DriverPassPlan plan,
+    required String requestId,
+  }) async {
+    return PreparedDriverPlanPurchase(
+      purchaseOperationId: List<String>.filled(64, 'a').join(),
+      status: 'pending',
+      catalogVersion: 'catalog_v1',
+      plan: plan,
+      amountMinor: 1234,
+      currency: 'EUR',
+    );
+  }
 }
 
 class _Location implements LocationAccessGateway {
