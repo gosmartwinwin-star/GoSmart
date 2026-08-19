@@ -341,6 +341,71 @@ const seedMatchingRide = async (
   return {rideId, driverId, offerId};
 };
 
+const seedDriverPlanPurchaseFixture = async (
+  driverUid: string,
+): Promise<{
+  driverId: string;
+  catalogVersion: string;
+  amountMinor: number;
+  currency: string;
+}> => {
+  const driverId = unique("purchase_driver_profile");
+  const catalogVersion = unique("driver_plan_catalog");
+  const amountMinor = 1234;
+  const currency = "EUR";
+  const now = Timestamp.now();
+
+  const batch = firestore.batch();
+
+  batch.set(
+    firestore.collection("driverProfiles").doc(driverId),
+    {
+      authUserId: driverUid,
+      status: "approved",
+      createdAt: now,
+      approvedAt: now,
+      suspendedAt: null,
+    },
+  );
+
+  batch.set(
+    firestore.collection("platformConfig").doc("driverPlanCatalog"),
+    {
+      catalogVersion,
+      plans: {
+        daily: {
+          enabled: true,
+          amountMinor,
+          currency,
+        },
+        weekly: {
+          enabled: true,
+          amountMinor: 2345,
+          currency,
+        },
+        monthly: {
+          enabled: true,
+          amountMinor: 3456,
+          currency,
+        },
+        quarterly: {
+          enabled: true,
+          amountMinor: 4567,
+          currency,
+        },
+      },
+    },
+  );
+
+  await batch.commit();
+
+  return {
+    driverId,
+    catalogVersion,
+    amountMinor,
+    currency,
+  };
+};
 before(() => {
   app = initializeApp(
     {projectId},
@@ -513,6 +578,84 @@ test(
       assert.equal(operation.get("callableName"), callableName);
       assert.equal(operation.get("status"), "completed");
     }
+  },
+);
+test(
+  "approved driver prepares driver plan purchase through real callable",
+  async () => {
+    const driver = await signUp("purchase_driver");
+    const fixture = await seedDriverPlanPurchaseFixture(driver.uid);
+    const purchaseRequestId = requestId("driver_plan_purchase");
+
+    const input = {
+      planId: "daily",
+      requestId: purchaseRequestId,
+    };
+
+    const first = await callable(
+      driver,
+      "prepareDriverPlanPurchase",
+      input,
+    );
+
+    assert.equal(first.status, "pending");
+    assert.equal(first.planId, "daily");
+    assert.equal(first.catalogVersion, fixture.catalogVersion);
+    assert.equal(first.amountMinor, fixture.amountMinor);
+    assert.equal(first.currency, fixture.currency);
+
+    const operationId = requireString(
+      first,
+      "purchaseOperationId",
+      "prepareDriverPlanPurchase result",
+    );
+
+    assert.match(operationId, /^[a-f0-9]{64}$/u);
+
+    const replay = await callable(
+      driver,
+      "prepareDriverPlanPurchase",
+      input,
+    );
+
+    assert.deepEqual(replay, first);
+
+    const operation = await firestore
+      .collection("driverPlanPurchaseOperations")
+      .doc(operationId)
+      .get();
+
+    assert.equal(operation.exists, true);
+    assert.equal(operation.get("actorUid"), driver.uid);
+    assert.equal(operation.get("driverId"), fixture.driverId);
+    assert.equal(operation.get("status"), "pending");
+    assert.equal(operation.get("catalogVersion"), fixture.catalogVersion);
+    assert.equal(operation.get("planId"), "daily");
+    assert.equal(operation.get("amountMinor"), fixture.amountMinor);
+    assert.equal(operation.get("currency"), fixture.currency);
+    assert.equal(operation.get("passId"), undefined);
+    assert.equal(operation.get("paymentSettlementId"), undefined);
+
+    const operations = await firestore
+      .collection("driverPlanPurchaseOperations")
+      .where("driverId", "==", fixture.driverId)
+      .get();
+
+    assert.equal(operations.size, 1);
+
+    const passes = await firestore
+      .collection("driverAccessPasses")
+      .where("driverId", "==", fixture.driverId)
+      .get();
+
+    assert.equal(passes.empty, true);
+
+    const settlements = await firestore
+      .collection("driverPlanPaymentSettlements")
+      .where("purchaseOperationId", "==", operationId)
+      .get();
+
+    assert.equal(settlements.empty, true);
   },
 );
 /* eslint-enable max-len */

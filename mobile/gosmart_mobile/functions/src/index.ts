@@ -82,6 +82,9 @@ import {
 } from "./ride-lifecycle-orchestration.js";
 import {loadApprovedDriverId} from "./ride-driver-identity.js";
 import {
+  prepareDriverPlanPurchase as prepareDriverPlanPurchaseAuthority,
+} from "./driver-plan-purchase-authority.js";
+import {
   recoverActiveReturnRoute,
 } from "./active-return-route-recovery.js";
 import {getRideHistoryForActor} from "./ride-history-service.js";
@@ -665,6 +668,24 @@ export const cancelRide = onCall(
   },
 );
 
+export const prepareDriverPlanPurchase = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Driver plan purchase requires authentication.",
+      );
+    }
+
+    return prepareDriverPlanPurchaseAuthority(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
 export const acceptRide = onCall(
   {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
