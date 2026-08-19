@@ -1,67 +1,107 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gosmart_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
 import 'package:gosmart_mobile/controllers/driver_plan_purchase_controller.dart';
 import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
 
 void main() {
-  test('plan selection resets prepared state and request identity', () async {
-    var requestCounter = 0;
+  test('catalog load exposes canonical server availability', () async {
     final gateway = _Gateway();
     final controller = DriverPlanPurchaseController(
       gateway: gateway,
-      requestIdFactory: () => 'request-${++requestCounter}',
+      requestIdFactory: () => 'request-1',
     );
     addTearDown(controller.dispose);
 
-    controller.selectPlan(DriverPassPlan.daily);
-    await controller.prepare();
+    await controller.loadCatalog();
 
-    expect(controller.prepared?.plan, DriverPassPlan.daily);
-    expect(gateway.calls.single.requestId, 'request-1');
+    expect(controller.catalogLoading, isFalse);
+    expect(controller.catalogErrorMessage, isNull);
+    expect(
+      controller.catalog!.plans.map((entry) => entry.plan).toList(),
+      DriverPassPlan.values,
+    );
+    expect(controller.isPlanEnabled(DriverPassPlan.daily), isTrue);
+    expect(controller.isPlanEnabled(DriverPassPlan.weekly), isFalse);
+  });
+
+  test('concurrent catalog loads are suppressed', () async {
+    final gateway = _Gateway();
+    final completer = Completer<DriverPlanCatalogSnapshot>();
+    gateway.catalogCompleter = completer;
+
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    final first = controller.loadCatalog();
+    final second = controller.loadCatalog();
+
+    expect(gateway.catalogCalls, 1);
+
+    completer.complete(catalog());
+    await Future.wait([first, second]);
+
+    expect(controller.catalog, isNotNull);
+  });
+
+  test('catalog failure is safe and retryable', () async {
+    final gateway = _Gateway()..catalogFailures = 1;
+
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+
+    expect(controller.catalog, isNull);
+    expect(
+      controller.catalogErrorMessage,
+      'Plan seçenekleri yüklenemedi. Lütfen tekrar deneyin.',
+    );
+
+    await controller.loadCatalog();
+
+    expect(gateway.catalogCalls, 2);
+    expect(controller.catalog, isNotNull);
+    expect(controller.catalogErrorMessage, isNull);
+  });
+
+  test('disabled plan cannot be selected while enabled plan can', () async {
+    final gateway = _Gateway();
+
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
 
     controller.selectPlan(DriverPassPlan.weekly);
+    expect(controller.selectedPlan, isNull);
 
-    expect(controller.selectedPlan, DriverPassPlan.weekly);
-    expect(controller.prepared, isNull);
-    expect(controller.errorMessage, isNull);
-
-    await controller.prepare();
-
-    expect(gateway.calls, hasLength(2));
-    expect(gateway.calls.last.requestId, 'request-2');
+    controller.selectPlan(DriverPassPlan.daily);
+    expect(controller.selectedPlan, DriverPassPlan.daily);
   });
 
-  test('failed retry reuses the same idempotency requestId', () async {
-    var requestCounter = 0;
-    final gateway = _Gateway()
-      ..error = const DriverPlanPurchaseException(code: 'unavailable');
+  test('catalog reload clears selection when plan becomes disabled', () async {
+    final gateway = _Gateway();
 
-    final controller = DriverPlanPurchaseController(
-      gateway: gateway,
-      requestIdFactory: () => 'request-${++requestCounter}',
-    );
+    final controller = DriverPlanPurchaseController(gateway: gateway);
     addTearDown(controller.dispose);
 
-    controller.selectPlan(DriverPassPlan.monthly);
-    await controller.prepare();
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
 
-    expect(controller.errorMessage, isNotNull);
-    expect(gateway.calls.single.requestId, 'request-1');
+    gateway.catalogValue = catalog(version: 'catalog_v2', dailyEnabled: false);
 
-    gateway.error = null;
-    await controller.prepare();
+    await controller.loadCatalog();
 
-    expect(gateway.calls, hasLength(2));
-    expect(gateway.calls[1].requestId, 'request-1');
-    expect(requestCounter, 1);
-    expect(controller.prepared?.plan, DriverPassPlan.monthly);
+    expect(controller.selectedPlan, isNull);
+    expect(controller.requestId, isNull);
+    expect(controller.catalog!.catalogVersion, 'catalog_v2');
   });
 
-  test('concurrent second prepare is suppressed', () async {
-    final gateway = _Gateway()
-      ..deferred = Completer<PreparedDriverPlanPurchase>();
+  test('plan selection resets prepared state and request identity', () async {
+    final gateway = _Gateway();
 
     final controller = DriverPlanPurchaseController(
       gateway: gateway,
@@ -69,26 +109,44 @@ void main() {
     );
     addTearDown(controller.dispose);
 
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+
+    expect(controller.prepared, isNotNull);
+    expect(controller.requestId, 'request-1');
+
+    controller.selectPlan(DriverPassPlan.monthly);
+
+    expect(controller.selectedPlan, DriverPassPlan.monthly);
+    expect(controller.prepared, isNull);
+    expect(controller.requestId, isNull);
+  });
+
+  test('failed retry reuses the same idempotency requestId', () async {
+    final gateway = _Gateway()..prepareFailures = 1;
+    var generated = 0;
+
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      requestIdFactory: () => 'request-${++generated}',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
     controller.selectPlan(DriverPassPlan.daily);
 
-    final first = controller.prepare();
-    final second = controller.prepare();
+    await controller.prepare();
+    await controller.prepare();
 
-    expect(controller.preparing, isTrue);
-    expect(gateway.calls, hasLength(1));
-
-    gateway.deferred!.complete(resultFor(DriverPassPlan.daily));
-
-    await first;
-    await second;
-
-    expect(gateway.calls, hasLength(1));
+    expect(gateway.prepareRequestIds, ['request-1', 'request-1']);
     expect(controller.prepared, isNotNull);
   });
 
   test('selection cannot change while prepare is in flight', () async {
-    final gateway = _Gateway()
-      ..deferred = Completer<PreparedDriverPlanPurchase>();
+    final gateway = _Gateway();
+    final completer = Completer<PreparedDriverPlanPurchase>();
+    gateway.prepareCompleter = completer;
 
     final controller = DriverPlanPurchaseController(
       gateway: gateway,
@@ -96,82 +154,120 @@ void main() {
     );
     addTearDown(controller.dispose);
 
+    await controller.loadCatalog();
     controller.selectPlan(DriverPassPlan.daily);
-    final operation = controller.prepare();
 
-    controller.selectPlan(DriverPassPlan.quarterly);
+    final future = controller.prepare();
+
+    controller.selectPlan(DriverPassPlan.monthly);
 
     expect(controller.selectedPlan, DriverPassPlan.daily);
+    expect(gateway.prepareCalls, 1);
 
-    gateway.deferred!.complete(resultFor(DriverPassPlan.daily));
-    await operation;
+    completer.complete(prepared(DriverPassPlan.daily));
+    await future;
   });
 
   test('controlled auth errors become safe user messages', () async {
     final gateway = _Gateway()
-      ..error = const DriverPlanPurchaseException(
+      ..catalogError = const DriverPlanCatalogException(
         code: 'unauthenticated',
-        reason: 'raw_reason_not_displayed',
+        reason: 'raw_secret_reason',
       );
 
-    final controller = DriverPlanPurchaseController(
-      gateway: gateway,
-      requestIdFactory: () => 'request-1',
-    );
+    final controller = DriverPlanPurchaseController(gateway: gateway);
     addTearDown(controller.dispose);
 
-    controller.selectPlan(DriverPassPlan.daily);
-    await controller.prepare();
-
-    expect(controller.errorMessage, 'Oturumunuzu kontrol edip tekrar deneyin.');
-    expect(
-      controller.errorMessage,
-      isNot(contains('raw_reason_not_displayed')),
-    );
-  });
-
-  test('unknown gateway errors receive generic safe message', () async {
-    final gateway = _Gateway()..error = StateError('RAW_SECRET');
-
-    final controller = DriverPlanPurchaseController(
-      gateway: gateway,
-      requestIdFactory: () => 'request-1',
-    );
-    addTearDown(controller.dispose);
-
-    controller.selectPlan(DriverPassPlan.weekly);
-    await controller.prepare();
+    await controller.loadCatalog();
 
     expect(
-      controller.errorMessage,
-      'Plan talebi hazırlanamadı. Lütfen tekrar deneyin.',
+      controller.catalogErrorMessage,
+      'Oturumunuzu kontrol edip tekrar deneyin.',
+    );
+    expect(
+      controller.catalogErrorMessage,
+      isNot(contains('raw_secret_reason')),
     );
   });
 
   test(
-    'dispose during async completion does not notify after dispose',
+    'unknown purchase gateway errors receive generic safe message',
     () async {
-      final gateway = _Gateway()
-        ..deferred = Completer<PreparedDriverPlanPurchase>();
+      final gateway = _Gateway()..unexpectedPrepareFailure = true;
 
       final controller = DriverPlanPurchaseController(
         gateway: gateway,
         requestIdFactory: () => 'request-1',
       );
+      addTearDown(controller.dispose);
 
+      await controller.loadCatalog();
       controller.selectPlan(DriverPassPlan.daily);
-      final operation = controller.prepare();
+      await controller.prepare();
 
+      expect(
+        controller.errorMessage,
+        'Plan talebi hazırlanamadı. Lütfen tekrar deneyin.',
+      );
+      expect(controller.errorMessage, isNot(contains('socket secret')));
+    },
+  );
+
+  test(
+    'dispose during async catalog completion does not notify after dispose',
+    () async {
+      final gateway = _Gateway();
+      final completer = Completer<DriverPlanCatalogSnapshot>();
+      gateway.catalogCompleter = completer;
+
+      final controller = DriverPlanPurchaseController(gateway: gateway);
+
+      final future = controller.loadCatalog();
       controller.dispose();
 
-      gateway.deferred!.complete(resultFor(DriverPassPlan.daily));
+      completer.complete(catalog());
 
-      await expectLater(operation, completes);
+      await future;
     },
   );
 }
 
-PreparedDriverPlanPurchase resultFor(DriverPassPlan plan) {
+DriverPlanCatalogSnapshot catalog({
+  String version = 'catalog_v1',
+  bool dailyEnabled = true,
+}) {
+  return DriverPlanCatalogSnapshot(
+    catalogVersion: version,
+    plans: [
+      DriverPlanCatalogEntry(
+        plan: DriverPassPlan.daily,
+        enabled: dailyEnabled,
+        amountMinor: 0,
+        currency: 'TRY',
+      ),
+      const DriverPlanCatalogEntry(
+        plan: DriverPassPlan.weekly,
+        enabled: false,
+        amountMinor: 200,
+        currency: 'TRY',
+      ),
+      const DriverPlanCatalogEntry(
+        plan: DriverPassPlan.monthly,
+        enabled: true,
+        amountMinor: 300,
+        currency: 'TRY',
+      ),
+      const DriverPlanCatalogEntry(
+        plan: DriverPassPlan.quarterly,
+        enabled: true,
+        amountMinor: 400,
+        currency: 'TRY',
+      ),
+    ],
+  );
+}
+
+PreparedDriverPlanPurchase prepared(DriverPassPlan plan) {
   return PreparedDriverPlanPurchase(
     purchaseOperationId: List<String>.filled(64, 'a').join(),
     status: 'pending',
@@ -182,29 +278,60 @@ PreparedDriverPlanPurchase resultFor(DriverPassPlan plan) {
   );
 }
 
-class _Gateway implements DriverPlanPurchaseGateway {
-  final List<({DriverPassPlan plan, String requestId})> calls = [];
+class _Gateway implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
+  DriverPlanCatalogSnapshot catalogValue = catalog();
+  int catalogFailures = 0;
+  DriverPlanCatalogException? catalogError;
+  Completer<DriverPlanCatalogSnapshot>? catalogCompleter;
+  int catalogCalls = 0;
 
-  Object? error;
-  Completer<PreparedDriverPlanPurchase>? deferred;
+  int prepareFailures = 0;
+  bool unexpectedPrepareFailure = false;
+  Completer<PreparedDriverPlanPurchase>? prepareCompleter;
+  int prepareCalls = 0;
+  final List<String> prepareRequestIds = [];
+
+  @override
+  Future<DriverPlanCatalogSnapshot> load() async {
+    catalogCalls++;
+
+    if (catalogError case final error?) {
+      throw error;
+    }
+
+    if (catalogFailures > 0) {
+      catalogFailures--;
+      throw const DriverPlanCatalogException(code: 'unavailable');
+    }
+
+    if (catalogCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return catalogValue;
+  }
 
   @override
   Future<PreparedDriverPlanPurchase> prepare({
     required DriverPassPlan plan,
     required String requestId,
   }) async {
-    calls.add((plan: plan, requestId: requestId));
+    prepareCalls++;
+    prepareRequestIds.add(requestId);
 
-    final failure = error;
-    if (failure != null) {
-      throw failure;
+    if (unexpectedPrepareFailure) {
+      throw StateError('socket secret');
     }
 
-    final pending = deferred;
-    if (pending != null) {
-      return pending.future;
+    if (prepareFailures > 0) {
+      prepareFailures--;
+      throw const DriverPlanPurchaseException(code: 'unavailable');
     }
 
-    return resultFor(plan);
+    if (prepareCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return prepared(plan);
   }
 }

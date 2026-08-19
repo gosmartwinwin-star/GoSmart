@@ -25,6 +25,7 @@ import '../../services/active_return_route_recovery_service.dart';
 import '../../services/publish_return_route_service.dart';
 import '../../domain/driver_application/driver_application_review.dart';
 import '../../services/driver_application_review_service.dart';
+import '../../services/driver_plan_catalog_service.dart';
 import '../../services/driver_plan_purchase_service.dart';
 import 'driver_application_screen.dart';
 import 'driver_application_document_resubmission_screen.dart';
@@ -115,9 +116,11 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     planPurchaseController =
         widget.driverPlanPurchaseController ??
         (widget.controller == null
-            ? DriverPlanPurchaseController(gateway: DriverPlanPurchaseService())
+            ? DriverPlanPurchaseController(
+                gateway: DriverPlanPurchaseService(),
+                catalogGateway: DriverPlanCatalogService(),
+              )
             : null);
-    planPurchaseController?.addListener(_refresh);
     controller.load();
     if (_ownsRideController) {
       _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {

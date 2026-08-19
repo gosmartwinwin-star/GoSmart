@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_pass_repository.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_access_mode_repository.dart';
+import 'package:gosmart_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
 import 'package:gosmart_mobile/application/driver_access/driver_profile_repository.dart';
 import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
@@ -456,6 +457,76 @@ void main() {
     expect(find.text('Başvurunuz geri çekildi'), findsOneWidget);
     expect(find.text('Yeniden Başvur'), findsNothing);
   });
+  testWidgets(
+    'catalog loads only when subscription-required purchase panel is mounted',
+    (tester) async {
+      final paidGateway = _PurchaseGateway();
+      final paidPurchase = DriverPlanPurchaseController(
+        gateway: paidGateway,
+        requestIdFactory: () => 'paid-request',
+      );
+      addTearDown(paidPurchase.dispose);
+
+      await show(
+        tester,
+        controller(loadedProfile: profile(DriverProfileStatus.approved)),
+        purchaseController: paidPurchase,
+      );
+
+      expect(paidGateway.catalogCalls, 1);
+
+      final launchGateway = _PurchaseGateway();
+      final launchPurchase = DriverPlanPurchaseController(
+        gateway: launchGateway,
+        requestIdFactory: () => 'launch-request',
+      );
+      addTearDown(launchPurchase.dispose);
+
+      await show(
+        tester,
+        controller(
+          loadedProfile: profile(DriverProfileStatus.approved),
+          accessMode: DriverAccessMode.launchFree,
+        ),
+        purchaseController: launchPurchase,
+      );
+
+      expect(launchGateway.catalogCalls, 0);
+
+      final activeGateway = _PurchaseGateway();
+      final activePurchase = DriverPlanPurchaseController(
+        gateway: activeGateway,
+        requestIdFactory: () => 'active-request',
+      );
+      addTearDown(activePurchase.dispose);
+
+      await show(
+        tester,
+        controller(
+          loadedProfile: profile(DriverProfileStatus.approved),
+          loadedPass: pass(),
+        ),
+        purchaseController: activePurchase,
+      );
+
+      expect(activeGateway.catalogCalls, 0);
+
+      final restrictedGateway = _PurchaseGateway();
+      final restrictedPurchase = DriverPlanPurchaseController(
+        gateway: restrictedGateway,
+        requestIdFactory: () => 'restricted-request',
+      );
+      addTearDown(restrictedPurchase.dispose);
+
+      await show(
+        tester,
+        controller(loadedProfile: profile(DriverProfileStatus.pendingReview)),
+        purchaseController: restrictedPurchase,
+      );
+
+      expect(restrictedGateway.catalogCalls, 0);
+    },
+  );
 }
 
 const fixturePoint = RideLocation(
@@ -574,7 +645,45 @@ class _AccessModes implements DriverAccessModeRepository {
   Future<DriverAccessMode> load() async => value;
 }
 
-class _PurchaseGateway implements DriverPlanPurchaseGateway {
+class _PurchaseGateway
+    implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
+  int catalogCalls = 0;
+
+  @override
+  Future<DriverPlanCatalogSnapshot> load() async {
+    catalogCalls++;
+
+    return const DriverPlanCatalogSnapshot(
+      catalogVersion: 'catalog_v1',
+      plans: [
+        DriverPlanCatalogEntry(
+          plan: DriverPassPlan.daily,
+          enabled: true,
+          amountMinor: 1234,
+          currency: 'EUR',
+        ),
+        DriverPlanCatalogEntry(
+          plan: DriverPassPlan.weekly,
+          enabled: true,
+          amountMinor: 2345,
+          currency: 'EUR',
+        ),
+        DriverPlanCatalogEntry(
+          plan: DriverPassPlan.monthly,
+          enabled: true,
+          amountMinor: 3456,
+          currency: 'EUR',
+        ),
+        DriverPlanCatalogEntry(
+          plan: DriverPassPlan.quarterly,
+          enabled: true,
+          amountMinor: 4567,
+          currency: 'EUR',
+        ),
+      ],
+    );
+  }
+
   @override
   Future<PreparedDriverPlanPurchase> prepare({
     required DriverPassPlan plan,
