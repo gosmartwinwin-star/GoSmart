@@ -10,7 +10,7 @@ import {
   onRequest,
 } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import {defineSecret} from "firebase-functions/params";
+import {defineSecret, defineString} from "firebase-functions/params";
 import {
   CoordinateInput,
   coordinatesEqual,
@@ -85,6 +85,12 @@ import {
   prepareDriverPlanPurchase as prepareDriverPlanPurchaseAuthority,
 } from "./driver-plan-purchase-authority.js";
 import {
+  initializeDriverPlanCheckout as initializeDriverPlanCheckoutAuthority,
+} from "./driver-plan-checkout-authority.js";
+import {
+  IyzicoCheckoutFormDriverPlanPaymentProvider,
+} from "./iyzico-driver-plan-payment-provider.js";
+import {
   getDriverPlanCatalogForActor as getDriverPlanCatalogAuthority,
 } from "./driver-plan-catalog-read-authority.js";
 import {
@@ -151,6 +157,22 @@ type ResubmitDriverApplicationInput = {
 
 const googlePlacesApiKey = defineSecret(
   "GOOGLE_PLACES_API_KEY",
+);
+
+const iyzicoApiKey = defineSecret(
+  "IYZICO_API_KEY",
+);
+
+const iyzicoSecretKey = defineSecret(
+  "IYZICO_SECRET_KEY",
+);
+
+const iyzicoApiBaseUrl = defineString(
+  "IYZICO_API_BASE_URL",
+);
+
+const iyzicoCheckoutCallbackUrl = defineString(
+  "IYZICO_CHECKOUT_CALLBACK_URL",
 );
 
 const routesClient = new v2.RoutesClient();
@@ -686,6 +708,127 @@ export const getDriverPlanCatalog = onCall(
       {firestore},
       request.auth.uid,
       request.data,
+    );
+  },
+);
+export const initializeDriverPlanCheckout = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [
+      iyzicoApiKey,
+      iyzicoSecretKey,
+    ],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Driver plan checkout requires authentication.",
+      );
+    }
+
+    let phoneNumber:
+      string | undefined;
+
+    try {
+      phoneNumber = (
+        await auth.getUser(
+          request.auth.uid,
+        )
+      ).phoneNumber;
+    } catch {
+      throw new HttpsError(
+        "unavailable",
+        "Driver identity could not be verified.",
+        {
+          reason:
+            "driver_checkout_identity_unavailable",
+        },
+      );
+    }
+
+    if (
+      typeof phoneNumber !== "string" ||
+      phoneNumber.trim().length === 0
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Verified phone number is required.",
+        {
+          reason:
+            "driver_verified_phone_required",
+        },
+      );
+    }
+
+    const ipAddress =
+      request.rawRequest.ip;
+
+    if (
+      typeof ipAddress !== "string" ||
+      ipAddress.trim().length === 0
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Checkout request address is unavailable.",
+        {
+          reason:
+            "driver_checkout_ip_unavailable",
+        },
+      );
+    }
+
+    const provider =
+      new IyzicoCheckoutFormDriverPlanPaymentProvider({
+        apiKey:
+          iyzicoApiKey.value(),
+        secretKey:
+          iyzicoSecretKey.value(),
+        baseUrl:
+          iyzicoApiBaseUrl.value(),
+        randomKey:
+          () => randomUUID(),
+        postJson:
+          async (providerRequest) => {
+            const response =
+              await fetch(
+                providerRequest.url,
+                {
+                  method: "POST",
+                  headers:
+                    providerRequest.headers,
+                  body:
+                    providerRequest.body,
+                },
+              );
+
+            return {
+              statusCode:
+                response.status,
+              body:
+                await response.text(),
+            };
+          },
+      });
+
+    return initializeDriverPlanCheckoutAuthority(
+      {
+        firestore,
+        provider,
+      },
+      request.auth.uid,
+      request.data,
+      {
+        gsmNumber:
+          phoneNumber,
+        ipAddress,
+        callbackUrl:
+          iyzicoCheckoutCallbackUrl.value(),
+      },
     );
   },
 );

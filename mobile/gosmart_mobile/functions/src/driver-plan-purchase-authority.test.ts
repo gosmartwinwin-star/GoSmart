@@ -411,6 +411,87 @@ test("prepare cannot fabricate settlement or entitlement", async () => {
   assert.equal(context.fake.count("driverPlanPaymentSettlements"), 0);
 });
 
+test("settlement preserves non-PII checkout metadata", async () => {
+  const context = setup();
+  const prepared = await prepare(context);
+  const purchaseOperationId =
+    prepared.purchaseOperationId as string;
+
+  const path =
+    `driverPlanPurchaseOperations/${purchaseOperationId}`;
+
+  const current =
+    context.fake.get(path);
+
+  assert.ok(current);
+
+  const checkoutAt =
+    Timestamp.fromDate(
+      new Date(
+        "2026-01-15T10:00:00.000Z",
+      ),
+    );
+
+  const paymentCheckout = {
+    status: "initialized",
+    provider: "iyzico_checkout_form",
+    attemptId:
+      "attempt_1234567890",
+    conversationId:
+      "conversation_1234567890",
+    basketId:
+      purchaseOperationId,
+    token:
+      "provider-token",
+    paymentPageUrl:
+      "https://sandbox-cpp.iyzipay.com/checkoutform/payment/mock",
+    startedAt:
+      checkoutAt,
+    initializedAt:
+      checkoutAt,
+    updatedAt:
+      checkoutAt,
+  };
+
+  context.fake.set(
+    path,
+    {
+      ...current,
+      paymentCheckout,
+    },
+  );
+
+  const result =
+    await settle(
+      context,
+      purchaseOperationId,
+    );
+
+  assert.equal(
+    result.status,
+    "settled",
+  );
+
+  assert.equal(
+    context.fake.count(
+      "driverAccessPasses",
+    ),
+    1,
+  );
+
+  assert.equal(
+    context.fake.count(
+      "driverPlanPaymentSettlements",
+    ),
+    1,
+  );
+
+  assert.deepEqual(
+    context.fake.get(path)
+      ?.paymentCheckout,
+    paymentCheckout,
+  );
+});
 test("controlled errors sanitize internal catalog failure", async () => {
   const context = setup();
   context.fake.set("platformConfig/driverPlanCatalog", {});
