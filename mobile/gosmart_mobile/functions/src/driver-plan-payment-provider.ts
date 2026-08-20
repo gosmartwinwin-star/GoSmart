@@ -58,6 +58,30 @@ export class DriverPlanPaymentProviderException extends Error {
   }
 }
 
+export interface DriverPlanPaymentRetrieveInput {
+  conversationId: string;
+  token: string;
+}
+
+export interface DriverPlanPaymentRetrieveResult {
+  provider: string;
+  conversationId: string;
+  token: string;
+  paymentStatus: "SUCCESS" | "FAILURE";
+  paymentId: string;
+  fraudStatus: -1 | 0 | 1;
+  basketId: string;
+  currency: string;
+  priceDecimal: string;
+  paidPriceDecimal: string;
+}
+
+export interface DriverPlanPaymentRetriever {
+  retrieve(
+    input: DriverPlanPaymentRetrieveInput,
+  ): Promise<DriverPlanPaymentRetrieveResult>;
+}
+
 export interface DriverPlanPaymentProvider {
   initialize(
     input: DriverPlanPaymentInitializeInput,

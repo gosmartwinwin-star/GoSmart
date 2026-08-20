@@ -146,7 +146,7 @@ test("checkout transport follows Commit 18 statusCode contract", () => {
   );
 });
 
-test("settlement and callback remain server-only or absent", () => {
+test("settlement stays server-only and callback is explicit HTTP entrypoint", () => {
   assert.equal(
     (
       source.match(
@@ -156,8 +156,17 @@ test("settlement and callback remain server-only or absent", () => {
     0,
   );
 
+  assert.equal(
+    (
+      source.match(
+        /export const driverPlanCheckoutCallback\s*=\s*onRequest/gu,
+      ) ?? []
+    ).length,
+    1,
+  );
+
   assert.doesNotMatch(
     source,
-    /export const \w*iyzico\w*\s*=\s*onRequest/iu,
+    /X-IYZ-SIGNATURE-V3|CHECKOUT_FORM_AUTH|iyziEventType/gu,
   );
 });

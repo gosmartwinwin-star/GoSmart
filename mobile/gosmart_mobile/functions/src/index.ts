@@ -88,6 +88,9 @@ import {
   initializeDriverPlanCheckout as initializeDriverPlanCheckoutAuthority,
 } from "./driver-plan-checkout-authority.js";
 import {
+  handleDriverPlanCheckoutCallback as driverPlanCheckoutCallbackAuthority,
+} from "./driver-plan-checkout-callback-authority.js";
+import {
   IyzicoCheckoutFormDriverPlanPaymentProvider,
 } from "./iyzico-driver-plan-payment-provider.js";
 import {
@@ -2003,5 +2006,100 @@ export const resolvePlace = onCall(
       request.data,
       googlePlacesApiKey.value(),
     );
+  },
+);
+export const driverPlanCheckoutCallback = onRequest(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [
+      iyzicoApiKey,
+      iyzicoSecretKey,
+    ],
+  },
+  async (request, response) => {
+    if (request.method !== "POST") {
+      response.status(405).json({
+        success: false,
+      });
+      return;
+    }
+
+    const retriever =
+      new IyzicoCheckoutFormDriverPlanPaymentProvider({
+        apiKey:
+          iyzicoApiKey.value(),
+        secretKey:
+          iyzicoSecretKey.value(),
+        baseUrl:
+          iyzicoApiBaseUrl.value(),
+        randomKey:
+          () => randomUUID(),
+        postJson:
+          async (providerRequest) => {
+            const providerResponse =
+              await fetch(
+                providerRequest.url,
+                {
+                  method: "POST",
+                  headers:
+                    providerRequest.headers,
+                  body:
+                    providerRequest.body,
+                },
+              );
+
+            return {
+              statusCode:
+                providerResponse.status,
+              body:
+                await providerResponse.text(),
+            };
+          },
+      });
+
+    try {
+      await driverPlanCheckoutCallbackAuthority(
+        {
+          firestore,
+          retriever,
+        },
+        request.body,
+      );
+
+      response.status(200).json({
+        success: true,
+      });
+      return;
+    } catch (error: unknown) {
+      let statusCode = 500;
+
+      if (error instanceof HttpsError) {
+        switch (error.code) {
+        case "invalid-argument":
+          statusCode = 400;
+          break;
+        case "not-found":
+          statusCode = 404;
+          break;
+        case "failed-precondition":
+          statusCode = 409;
+          break;
+        case "unavailable":
+          statusCode = 503;
+          break;
+        default:
+          statusCode = 500;
+        }
+      }
+
+      response.status(statusCode).json({
+        success: false,
+      });
+      return;
+    }
   },
 );

@@ -6,6 +6,9 @@ import {
   DriverPlanPaymentProvider,
   DriverPlanPaymentProviderException,
   DriverPlanPaymentSession,
+  DriverPlanPaymentRetrieveInput,
+  DriverPlanPaymentRetrieveResult,
+  DriverPlanPaymentRetriever,
 } from "./driver-plan-payment-provider.js";
 
 const CHECKOUT_FORM_PATH =
@@ -458,8 +461,171 @@ const validateInput = (
   };
 };
 
+
+const CHECKOUT_FORM_RETRIEVE_PATH =
+  "/payment/iyzipos/checkoutform/auth/ecom/detail";
+
+const validateRetrieveInput = (
+  value: unknown,
+): DriverPlanPaymentRetrieveInput => {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    throw failure(
+      "invalid-input",
+      "iyzico_checkout_retrieve_input_invalid",
+    );
+  }
+
+  const input =
+    value as Record<string, unknown>;
+
+  const keys =
+    Object.keys(input).sort();
+
+  if (
+    keys.length !== 2 ||
+    keys[0] !== "conversationId" ||
+    keys[1] !== "token"
+  ) {
+    throw failure(
+      "invalid-input",
+      "iyzico_checkout_retrieve_input_invalid",
+    );
+  }
+
+  return {
+    conversationId: requireText(
+      input.conversationId,
+      "conversation_id",
+      256,
+    ),
+    token: requireText(
+      input.token,
+      "token",
+      2048,
+    ),
+  };
+};
+
+const canonicalizeRetrievePrice = (
+  value: unknown,
+): string => {
+  let text: string;
+
+  if (typeof value === "number") {
+    if (
+      !Number.isFinite(value) ||
+      value < 0
+    ) {
+      throw failure(
+        "provider-invalid-response",
+        "iyzico_checkout_retrieve_price_invalid",
+      );
+    }
+
+    text = String(value);
+  } else if (typeof value === "string") {
+    text = value;
+  } else {
+    throw failure(
+      "provider-invalid-response",
+      "iyzico_checkout_retrieve_price_invalid",
+    );
+  }
+
+  if (
+    text.trim() !== text ||
+    !/^(0|[1-9]\d*)(?:\.\d+)?$/u.test(text)
+  ) {
+    throw failure(
+      "provider-invalid-response",
+      "iyzico_checkout_retrieve_price_invalid",
+    );
+  }
+
+  const parts =
+    text.split(".");
+
+  const whole =
+    parts[0];
+
+  const fraction =
+    (parts[1] ?? "").replace(/0+$/u, "");
+
+  return fraction.length === 0 ?
+    whole :
+    `${whole}.${fraction}`;
+};
+
+const retrieveSignature = (
+  secretKey: string,
+  input: {
+    paymentStatus: string;
+    paymentId: string;
+    currency: string;
+    basketId: string;
+    conversationId: string;
+    paidPriceDecimal: string;
+    priceDecimal: string;
+    token: string;
+  },
+): string => {
+  const source = [
+    input.paymentStatus,
+    input.paymentId,
+    input.currency,
+    input.basketId,
+    input.conversationId,
+    input.paidPriceDecimal,
+    input.priceDecimal,
+    input.token,
+  ].join(":");
+
+  return createHmac(
+    "sha256",
+    secretKey,
+  )
+    .update(source, "utf8")
+    .digest("hex");
+};
+
+const requireRetrievePaymentStatus = (
+  value: unknown,
+): "SUCCESS" | "FAILURE" => {
+  if (
+    value !== "SUCCESS" &&
+    value !== "FAILURE"
+  ) {
+    throw failure(
+      "provider-invalid-response",
+      "iyzico_checkout_retrieve_payment_status_invalid",
+    );
+  }
+
+  return value;
+};
+
+const requireRetrieveFraudStatus = (
+  value: unknown,
+): -1 | 0 | 1 => {
+  if (
+    value !== -1 &&
+    value !== 0 &&
+    value !== 1
+  ) {
+    throw failure(
+      "provider-invalid-response",
+      "iyzico_checkout_retrieve_fraud_status_invalid",
+    );
+  }
+
+  return value;
+};
 export class IyzicoCheckoutFormDriverPlanPaymentProvider
-implements DriverPlanPaymentProvider {
+implements DriverPlanPaymentProvider, DriverPlanPaymentRetriever {
   constructor(
     private readonly dependencies: IyzicoCheckoutFormDependencies,
   ) {}
@@ -624,6 +790,235 @@ implements DriverPlanPaymentProvider {
         input.conversationId,
       token,
       paymentPageUrl,
+    };
+  }
+  async retrieve(
+    rawInput: DriverPlanPaymentRetrieveInput,
+  ): Promise<DriverPlanPaymentRetrieveResult> {
+    const apiKey = requireCredential(
+      this.dependencies.apiKey,
+      "iyzico_api_key_unavailable",
+    );
+
+    const secretKey = requireCredential(
+      this.dependencies.secretKey,
+      "iyzico_secret_key_unavailable",
+    );
+
+    const baseUrl = requireProviderBaseUrl(
+      this.dependencies.baseUrl,
+    );
+
+    const randomKey = requireCredential(
+      this.dependencies.randomKey(),
+      "iyzico_random_key_invalid",
+    );
+
+    const input =
+      validateRetrieveInput(rawInput);
+
+    const requestBody = {
+      locale: "tr",
+      conversationId:
+        input.conversationId,
+      token:
+        input.token,
+    };
+
+    const rawBody =
+      JSON.stringify(requestBody);
+
+    const authorization =
+      buildIyzicoAuthorization({
+        apiKey,
+        secretKey,
+        randomKey,
+        uriPath:
+          CHECKOUT_FORM_RETRIEVE_PATH,
+        rawBody,
+      });
+
+    const endpoint =
+      new URL(
+        CHECKOUT_FORM_RETRIEVE_PATH,
+        baseUrl,
+      ).toString();
+
+    let response: IyzicoHttpResponse;
+
+    try {
+      response =
+        await this.dependencies.postJson({
+          method: "POST",
+          url: endpoint,
+          headers: {
+            "Authorization":
+              authorization,
+            "Content-Type":
+              "application/json",
+            "x-iyzi-rnd":
+              randomKey,
+          },
+          body: rawBody,
+        });
+    } catch {
+      throw failure(
+        "unavailable",
+        "iyzico_checkout_retrieve_transport_failure",
+      );
+    }
+
+    if (
+      !Number.isInteger(
+        response.statusCode,
+      ) ||
+      typeof response.body !==
+        "string"
+    ) {
+      throw failure(
+        "provider-invalid-response",
+        "iyzico_checkout_retrieve_http_response_invalid",
+      );
+    }
+
+    if (response.statusCode >= 500) {
+      throw failure(
+        "unavailable",
+        "iyzico_checkout_retrieve_provider_unavailable",
+      );
+    }
+
+    if (response.statusCode !== 200) {
+      throw failure(
+        "provider-rejected",
+        "iyzico_checkout_retrieve_rejected",
+      );
+    }
+
+    const decoded =
+      responseRecord(response.body);
+
+    if (decoded.status !== "success") {
+      throw failure(
+        "provider-rejected",
+        "iyzico_checkout_retrieve_rejected",
+      );
+    }
+
+    const conversationId =
+      requireResponseText(
+        decoded.conversationId,
+        "iyzico_checkout_retrieve_conversation_id_invalid",
+        256,
+      );
+
+    const token =
+      requireResponseText(
+        decoded.token,
+        "iyzico_checkout_retrieve_token_invalid",
+        2048,
+      );
+
+    const paymentStatus =
+      requireRetrievePaymentStatus(
+        decoded.paymentStatus,
+      );
+
+    const paymentId =
+      requireResponseText(
+        decoded.paymentId,
+        "iyzico_checkout_retrieve_payment_id_invalid",
+        256,
+      );
+
+    const fraudStatus =
+      requireRetrieveFraudStatus(
+        decoded.fraudStatus,
+      );
+
+    const basketId =
+      requireResponseText(
+        decoded.basketId,
+        "iyzico_checkout_retrieve_basket_id_invalid",
+        256,
+      );
+
+    const currency =
+      requireResponseText(
+        decoded.currency,
+        "iyzico_checkout_retrieve_currency_invalid",
+        3,
+      );
+
+    if (!/^[A-Z]{3}$/u.test(currency)) {
+      throw failure(
+        "provider-invalid-response",
+        "iyzico_checkout_retrieve_currency_invalid",
+      );
+    }
+
+    const priceDecimal =
+      canonicalizeRetrievePrice(
+        decoded.price,
+      );
+
+    const paidPriceDecimal =
+      canonicalizeRetrievePrice(
+        decoded.paidPrice,
+      );
+
+    const signature =
+      requireResponseText(
+        decoded.signature,
+        "iyzico_checkout_retrieve_signature_invalid",
+        128,
+      ).toLowerCase();
+
+    if (
+      !/^[a-f0-9]{64}$/u.test(
+        signature,
+      )
+    ) {
+      throw failure(
+        "provider-invalid-response",
+        "iyzico_checkout_retrieve_signature_invalid",
+      );
+    }
+
+    const expectedSignature =
+      retrieveSignature(
+        secretKey,
+        {
+          paymentStatus,
+          paymentId,
+          currency,
+          basketId,
+          conversationId,
+          paidPriceDecimal,
+          priceDecimal,
+          token,
+        },
+      );
+
+    if (signature !== expectedSignature) {
+      throw failure(
+        "provider-invalid-response",
+        "iyzico_checkout_retrieve_signature_invalid",
+      );
+    }
+
+    return {
+      provider:
+        "iyzico_checkout_form",
+      conversationId,
+      token,
+      paymentStatus,
+      paymentId,
+      fraudStatus,
+      basketId,
+      currency,
+      priceDecimal,
+      paidPriceDecimal,
     };
   }
 }

@@ -480,3 +480,194 @@ test("server-only adapter contains no settlement or entitlement wiring", () => {
     false,
   );
 });
+const retrieveOperationId =
+  "a".repeat(64);
+
+const retrieveResponseSignature =
+  "b40df2ec04458f9e9cd3388bc2b960f39caf30c345b2235d37debf6d7507e0d6";
+
+test("checkout form retrieve verifies signed response and canonical prices", async () => {
+  let captured:
+    IyzicoHttpRequest | undefined;
+
+  const provider =
+    new IyzicoCheckoutFormDriverPlanPaymentProvider({
+      apiKey: "api-key",
+      secretKey: "secret-key",
+      baseUrl:
+        "https://sandbox-api.iyzipay.com",
+      randomKey: () =>
+        "retrieve-random-key",
+      postJson: async (request) => {
+        captured = request;
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            status: "success",
+            paymentStatus: "SUCCESS",
+            paymentId: "payment-123",
+            fraudStatus: 1,
+            currency: "TRY",
+            basketId:
+              retrieveOperationId,
+            conversationId:
+              "conversation-123",
+            paidPrice: 123.45,
+            price: "123.450",
+            token:
+              "checkout-token-123",
+            signature:
+              retrieveResponseSignature,
+          }),
+        };
+      },
+    });
+
+  const result =
+    await provider.retrieve({
+      conversationId:
+        "conversation-123",
+      token:
+        "checkout-token-123",
+    });
+
+  assert.ok(captured);
+
+  assert.equal(
+    captured.url,
+    "https://sandbox-api.iyzipay.com/payment/iyzipos/checkoutform/auth/ecom/detail",
+  );
+
+  assert.equal(
+    captured.method,
+    "POST",
+  );
+
+  assert.equal(
+    captured.headers[
+      "x-iyzi-rnd"
+    ],
+    "retrieve-random-key",
+  );
+
+  assert.match(
+    captured.headers.Authorization,
+    /^IYZWSv2 /u,
+  );
+
+  assert.deepEqual(
+    JSON.parse(captured.body),
+    {
+      locale: "tr",
+      conversationId:
+        "conversation-123",
+      token:
+        "checkout-token-123",
+    },
+  );
+
+  assert.deepEqual(
+    result,
+    {
+      provider:
+        "iyzico_checkout_form",
+      conversationId:
+        "conversation-123",
+      token:
+        "checkout-token-123",
+      paymentStatus: "SUCCESS",
+      paymentId:
+        "payment-123",
+      fraudStatus: 1,
+      basketId:
+        retrieveOperationId,
+      currency: "TRY",
+      priceDecimal:
+        "123.45",
+      paidPriceDecimal:
+        "123.45",
+    },
+  );
+});
+
+test("checkout form retrieve rejects invalid response signature", async () => {
+  const provider =
+    new IyzicoCheckoutFormDriverPlanPaymentProvider({
+      apiKey: "api-key",
+      secretKey: "secret-key",
+      baseUrl:
+        "https://sandbox-api.iyzipay.com",
+      randomKey: () =>
+        "retrieve-random-key",
+      postJson: async () => ({
+        statusCode: 200,
+        body: JSON.stringify({
+          status: "success",
+          paymentStatus: "SUCCESS",
+          paymentId: "payment-123",
+          fraudStatus: 1,
+          currency: "TRY",
+          basketId:
+            retrieveOperationId,
+          conversationId:
+            "conversation-123",
+          paidPrice: "123.45",
+          price: "123.45",
+          token:
+            "checkout-token-123",
+          signature:
+            "0".repeat(64),
+        }),
+      }),
+    });
+
+  await assert.rejects(
+    () =>
+      provider.retrieve({
+        conversationId:
+          "conversation-123",
+        token:
+          "checkout-token-123",
+      }),
+    (error: unknown) =>
+      error instanceof
+        DriverPlanPaymentProviderException &&
+      error.reason ===
+        "iyzico_checkout_retrieve_signature_invalid",
+  );
+});
+
+test("checkout form retrieve transport failure remains unavailable", async () => {
+  const provider =
+    new IyzicoCheckoutFormDriverPlanPaymentProvider({
+      apiKey: "api-key",
+      secretKey: "secret-key",
+      baseUrl:
+        "https://sandbox-api.iyzipay.com",
+      randomKey: () =>
+        "retrieve-random-key",
+      postJson: async () => {
+        throw new Error(
+          "simulated transport failure",
+        );
+      },
+    });
+
+  await assert.rejects(
+    () =>
+      provider.retrieve({
+        conversationId:
+          "conversation-123",
+        token:
+          "checkout-token-123",
+      }),
+    (error: unknown) =>
+      error instanceof
+        DriverPlanPaymentProviderException &&
+      error.code ===
+        "unavailable" &&
+      error.reason ===
+        "iyzico_checkout_retrieve_transport_failure",
+  );
+});
