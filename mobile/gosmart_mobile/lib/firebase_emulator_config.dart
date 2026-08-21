@@ -5,6 +5,10 @@ const bool firebaseEmulatorsRequested = bool.fromEnvironment(
   'GOSMART_USE_FIREBASE_EMULATORS',
 );
 
+const bool firebaseSandboxRequested = bool.fromEnvironment(
+  'GOSMART_USE_FIREBASE_SANDBOX',
+);
+
 enum EmulatorPlatform { android, local }
 
 class FirebaseEmulatorConfig {
@@ -15,6 +19,7 @@ class FirebaseEmulatorConfig {
   static const storagePort = 9199;
 
   const FirebaseEmulatorConfig._({required this.host});
+
   final String host;
 
   static FirebaseEmulatorConfig? resolve({
@@ -23,11 +28,13 @@ class FirebaseEmulatorConfig {
     required EmulatorPlatform platform,
   }) {
     if (!requested) return null;
+
     if (!debugMode) {
       throw StateError(
-        'Firebase Emulator modu yalnızca debug build içinde kullanılabilir.',
+        'Firebase Emulator mode is allowed only in debug builds.',
       );
     }
+
     return FirebaseEmulatorConfig._(
       host: platform == EmulatorPlatform.android ? '10.0.2.2' : '127.0.0.1',
     );
@@ -50,22 +57,43 @@ class FirebaseBootstrapPlan {
   final FirebaseEmulatorConfig? emulator;
 
   static FirebaseBootstrapPlan resolve({
-    required bool requested,
+    required bool emulatorRequested,
+    required bool sandboxRequested,
     required bool debugMode,
     required EmulatorPlatform platform,
     required FirebaseOptions productionOptions,
+    FirebaseOptions? sandboxOptions,
   }) {
+    if (emulatorRequested && sandboxRequested) {
+      throw StateError(
+        'Firebase emulator and sandbox modes cannot be requested together.',
+      );
+    }
+
+    if (sandboxRequested && sandboxOptions == null) {
+      throw StateError(
+        'Firebase sandbox mode requires explicit sandbox options.',
+      );
+    }
+
     final emulator = FirebaseEmulatorConfig.resolve(
-      requested: requested,
+      requested: emulatorRequested,
       debugMode: debugMode,
       platform: platform,
     );
-    return FirebaseBootstrapPlan(
-      options: emulator == null
-          ? productionOptions
-          : FirebaseEmulatorConfig.demoOptions,
-      emulator: emulator,
-    );
+
+    if (emulator != null) {
+      return FirebaseBootstrapPlan(
+        options: FirebaseEmulatorConfig.demoOptions,
+        emulator: emulator,
+      );
+    }
+
+    if (sandboxRequested) {
+      return FirebaseBootstrapPlan(options: sandboxOptions!);
+    }
+
+    return FirebaseBootstrapPlan(options: productionOptions);
   }
 }
 

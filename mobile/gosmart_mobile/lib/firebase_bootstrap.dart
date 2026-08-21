@@ -7,23 +7,30 @@ import 'package:flutter/foundation.dart';
 import 'core/firebase/firebase_functions_registry.dart';
 import 'firebase_emulator_config.dart';
 import 'firebase_options.dart';
+import 'firebase_sandbox_options.dart';
 
 Future<void> initializeFirebase() async {
+  final sandboxOptions = firebaseSandboxRequested && !firebaseEmulatorsRequested
+      ? FirebaseSandboxOptions.currentPlatform
+      : null;
+
   final plan = FirebaseBootstrapPlan.resolve(
-    requested: firebaseEmulatorsRequested,
+    emulatorRequested: firebaseEmulatorsRequested,
+    sandboxRequested: firebaseSandboxRequested,
     debugMode: kDebugMode,
     platform: currentEmulatorPlatform,
     productionOptions: DefaultFirebaseOptions.currentPlatform,
+    sandboxOptions: sandboxOptions,
   );
+
   await Firebase.initializeApp(options: plan.options);
+
   if (kDebugMode) {
-    debugPrint('Firebase çalışma projesi: ${Firebase.app().options.projectId}');
-    debugPrint(
-      'Firebase seçenek projesi: '
-      '${Firebase.app().options.projectId}',
-    );
+    debugPrint('Firebase runtime project: ${Firebase.app().options.projectId}');
   }
+
   final emulator = plan.emulator;
+
   FirebaseFunctionsRegistry.configure(
     app: Firebase.app(),
     emulatorHost: emulator?.host,
@@ -31,19 +38,23 @@ Future<void> initializeFirebase() async {
         ? null
         : FirebaseEmulatorConfig.functionsPort,
   );
+
   if (emulator == null) return;
 
   await FirebaseAuth.instance.useAuthEmulator(
     emulator.host,
     FirebaseEmulatorConfig.authPort,
   );
+
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: false,
   );
+
   FirebaseFirestore.instance.useFirestoreEmulator(
     emulator.host,
     FirebaseEmulatorConfig.firestorePort,
   );
+
   await FirebaseStorage.instance.useStorageEmulator(
     emulator.host,
     FirebaseEmulatorConfig.storagePort,
