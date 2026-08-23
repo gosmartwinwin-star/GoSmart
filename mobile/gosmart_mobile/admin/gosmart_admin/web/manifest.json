@@ -1,6 +1,6 @@
 {
-    "name": "gosmart_admin",
-    "short_name": "gosmart_admin",
+    "name": "YoldaAl Yönetim",
+    "short_name": "YoldaAl Yönetim",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

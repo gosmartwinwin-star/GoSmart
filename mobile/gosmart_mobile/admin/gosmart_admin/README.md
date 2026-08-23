@@ -1,4 +1,4 @@
-# GoSmart Yönetim
+# YoldaAl Yönetim
 
 Mobil müşteri/sürücü uygulamasından ayrı Flutter Web yönetim panelidir.
 Yalnız ID token'ında gerçek boolean `gosmartAdmin: true` claim'i bulunan

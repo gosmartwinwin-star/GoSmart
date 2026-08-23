@@ -1,10 +1,10 @@
-# GoSmart 🚖
+# YoldaAl 🚖
 
 ## Akıllı Taksi Eşleştirme Platformu
 
-GoSmart yalnızca bir taksi çağırma uygulaması değildir.
+YoldaAl yalnızca bir taksi çağırma uygulaması değildir.
 
-GoSmart;
+YoldaAl;
 
 - ticari taksilerin boş dönüşlerini azaltmayı,
 - yolcuların daha ekonomik ulaşım sağlamasını,
@@ -17,7 +17,7 @@ amaçlayan akıllı bir eşleştirme platformudur.
 
 ## Projenin Vizyonu
 
-GoSmart, aynı yöne giden yolcular ile uygun taksileri akıllı algoritmalar kullanarak eşleştirir.
+YoldaAl, aynı yöne giden yolcular ile uygun taksileri akıllı algoritmalar kullanarak eşleştirir.
 
 Bu sayede:
 
