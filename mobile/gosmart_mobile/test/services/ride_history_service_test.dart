@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
-import 'package:gosmart_mobile/domain/ride/ride_history.dart';
-import 'package:gosmart_mobile/services/ride_history_service.dart';
-import 'package:gosmart_mobile/services/ride_lifecycle_service.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/domain/ride/ride_history.dart';
+import 'package:yoldaal_mobile/services/ride_history_service.dart';
+import 'package:yoldaal_mobile/services/ride_lifecycle_service.dart';
 
 void main() {
   test('passenger history exact payload ve response parse edilir', () async {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/core/firebase/firebase_functions_registry.dart';
-import 'package:gosmart_mobile/domain/return_route/driver_return_route_status.dart';
-import 'package:gosmart_mobile/services/active_return_route_recovery_service.dart';
+import 'package:yoldaal_mobile/core/firebase/firebase_functions_registry.dart';
+import 'package:yoldaal_mobile/domain/return_route/driver_return_route_status.dart';
+import 'package:yoldaal_mobile/services/active_return_route_recovery_service.dart';
 
 void main() {
   const encoded = '_p~iF~ps|U_ulLnnqC_mqNvxq`@';

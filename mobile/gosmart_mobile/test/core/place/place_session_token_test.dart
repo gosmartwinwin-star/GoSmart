@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/core/place/place_session_token.dart';
+import 'package:yoldaal_mobile/core/place/place_session_token.dart';
 
 void main() {
   test('session token UUIDv4 biciminde uretilir', () {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/return_route/driver_return_route_status.dart';
-import 'package:gosmart_mobile/domain/return_route/geo_coordinate.dart';
-import 'package:gosmart_mobile/services/publish_return_route_service.dart';
+import 'package:yoldaal_mobile/domain/return_route/driver_return_route_status.dart';
+import 'package:yoldaal_mobile/domain/return_route/geo_coordinate.dart';
+import 'package:yoldaal_mobile/services/publish_return_route_service.dart';
 
 void main() {
   final origin = GeoCoordinate(latitude: 41.0, longitude: 29.0);

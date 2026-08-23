@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/firebase_sandbox_options.dart';
+import 'package:yoldaal_mobile/firebase_sandbox_options.dart';
 
 void main() {
   test('all sandbox options use only the sandbox project', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
-import 'package:gosmart_mobile/widgets/location/location_access_banner.dart';
+import 'package:yoldaal_mobile/application/location/location_access_gateway.dart';
+import 'package:yoldaal_mobile/widgets/location/location_access_banner.dart';
 
 void main() {
   Future<void> show(

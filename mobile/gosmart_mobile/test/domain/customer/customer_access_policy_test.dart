@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/customer/customer_access_policy.dart';
+import 'package:yoldaal_mobile/domain/customer/customer_access_policy.dart';
 
 void main() {
   const policy = CustomerAccessPolicy();

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/driver_application/vehicle_catalog.dart';
+import 'package:yoldaal_mobile/domain/driver_application/vehicle_catalog.dart';
 
 void main() {
   test('geçerli katalog immutable oluşturulur', () {

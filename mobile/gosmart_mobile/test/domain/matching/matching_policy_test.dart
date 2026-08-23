@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/matching/matching_policy.dart';
+import 'package:yoldaal_mobile/domain/matching/matching_policy.dart';
 
 void main() {
   const policy = MatchingPolicy();

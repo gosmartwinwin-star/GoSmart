@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/widgets/panels/home_bottom_panel.dart';
+import 'package:yoldaal_mobile/widgets/panels/home_bottom_panel.dart';
 
 void main() {
   testWidgets('Profil dokunuşu callbacki tam bir kez çağırır', (tester) async {

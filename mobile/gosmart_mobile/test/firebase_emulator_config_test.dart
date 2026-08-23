@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/core/firebase/firebase_functions_registry.dart';
-import 'package:gosmart_mobile/firebase_emulator_config.dart';
+import 'package:yoldaal_mobile/core/firebase/firebase_functions_registry.dart';
+import 'package:yoldaal_mobile/firebase_emulator_config.dart';
 
 void main() {
   test('emulator mode is off when not requested', () {

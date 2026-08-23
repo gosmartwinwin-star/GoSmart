@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_ride_controller.dart';
-import 'package:gosmart_mobile/controllers/passenger_ride_controller.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_ride_controller.dart';
+import 'package:yoldaal_mobile/controllers/passenger_ride_controller.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 
 void main() {
   test('signed-out passenger create ve cancel callable üretmez', () async { String? uid; final api=Api()..passenger=ride('one'); final controller=PassengerRideController(gateway:api,repository:api,authenticatedUserId:()=>uid); expect(await controller.create(pickup:point,dropoff:point),isFalse); await controller.recover(); await controller.cancel(); expect(api.createIds,isEmpty); expect(api.cancelIds,isEmpty); controller.dispose(); });

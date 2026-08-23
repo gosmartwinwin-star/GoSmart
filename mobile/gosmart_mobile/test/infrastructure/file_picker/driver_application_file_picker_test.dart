@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_file_picker.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_file_picker.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
 
 void main() {
   final jpeg = Uint8List.fromList([0xff, 0xd8, 0xff, 1]);

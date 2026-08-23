@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_ride_controller.dart';
-import 'package:gosmart_mobile/controllers/passenger_ride_controller.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_ride_controller.dart';
+import 'package:yoldaal_mobile/controllers/passenger_ride_controller.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 
 void main() {
   test('passenger no-active ve active recovery yapar', () async { final fake = FakeRideApi(); final controller = PassengerRideController(gateway: fake, repository: fake); await controller.recover(); expect(controller.ride, isNull); fake.passengerRide = ride(); await controller.recover(); expect(controller.ride?.rideId, 'ride-1'); controller.dispose(); });

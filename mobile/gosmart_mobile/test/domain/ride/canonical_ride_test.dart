@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 
 void main() {
   Map<String, dynamic> data({String status = 'matching', Object version = 1}) => {

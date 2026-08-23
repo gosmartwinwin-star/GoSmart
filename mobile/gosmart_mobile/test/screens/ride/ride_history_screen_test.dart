@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/application/ride/ride_history_gateway.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
-import 'package:gosmart_mobile/domain/ride/ride_history.dart';
-import 'package:gosmart_mobile/screens/ride/ride_history_screen.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/application/ride/ride_history_gateway.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/domain/ride/ride_history.dart';
+import 'package:yoldaal_mobile/screens/ride/ride_history_screen.dart';
 
 void main() {
   testWidgets('passenger history listelenir ve driver scope secilebilir', (

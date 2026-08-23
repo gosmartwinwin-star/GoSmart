@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
-import 'package:gosmart_mobile/services/driver_plan_purchase_service.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
+import 'package:yoldaal_mobile/services/driver_plan_purchase_service.dart';
 
 void main() {
   test('canonical four plans use exact callable and minimal payload', () async {

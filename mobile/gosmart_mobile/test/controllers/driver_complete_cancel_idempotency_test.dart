@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_ride_controller.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_ride_controller.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 
 void main() {
   test('complete retry reuses exact logical mutation identity', () async {

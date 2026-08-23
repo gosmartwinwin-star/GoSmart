@@ -1,12 +1,12 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_ride_controller.dart';
-import 'package:gosmart_mobile/controllers/passenger_ride_controller.dart';
-import 'package:gosmart_mobile/core/firebase/firebase_functions_registry.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
-import 'package:gosmart_mobile/services/ride_lifecycle_service.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_ride_controller.dart';
+import 'package:yoldaal_mobile/controllers/passenger_ride_controller.dart';
+import 'package:yoldaal_mobile/core/firebase/firebase_functions_registry.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/services/ride_lifecycle_service.dart';
 
 void main() {
   const point = RideLocation(

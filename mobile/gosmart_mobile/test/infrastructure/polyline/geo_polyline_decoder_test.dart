@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/infrastructure/polyline/geo_polyline_decoder.dart';
+import 'package:yoldaal_mobile/infrastructure/polyline/geo_polyline_decoder.dart';
 
 void main() {
   const encoded = '_p~iF~ps|U_ulLnnqC_mqNvxq`@';

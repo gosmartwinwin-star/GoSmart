@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_work_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/registration_owner_type.dart';
-import 'package:gosmart_mobile/services/submit_driver_application_service.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_work_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/registration_owner_type.dart';
+import 'package:yoldaal_mobile/services/submit_driver_application_service.dart';
 
 class Auth implements SubmitDriverApplicationAuthSession {
   final bool valid;

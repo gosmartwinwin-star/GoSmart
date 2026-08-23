@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
+import 'package:yoldaal_mobile/application/location/location_access_gateway.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/controllers/passenger_ride_controller.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
-import 'package:gosmart_mobile/models/route_result_model.dart';
-import 'package:gosmart_mobile/screens/home/home_screen.dart';
-import 'package:gosmart_mobile/widgets/map/gosmart_map.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/controllers/passenger_ride_controller.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/models/route_result_model.dart';
+import 'package:yoldaal_mobile/screens/home/home_screen.dart';
+import 'package:yoldaal_mobile/widgets/map/gosmart_map.dart';
 
 void main() {
   testWidgets('home denied forever shows app settings', (tester) async {

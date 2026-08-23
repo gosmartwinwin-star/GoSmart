@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
-import 'package:gosmart_mobile/services/driver_application_document_upload_service.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:yoldaal_mobile/services/driver_application_document_upload_service.dart';
 
 class FakeAuth implements DriverApplicationAuthUidProvider {
   @override

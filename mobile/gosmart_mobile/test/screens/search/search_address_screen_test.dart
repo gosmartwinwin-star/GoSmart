@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/place/place_search_gateway.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/models/address_model.dart';
-import 'package:gosmart_mobile/screens/search/search_address_screen.dart';
+import 'package:yoldaal_mobile/application/place/place_search_gateway.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/models/address_model.dart';
+import 'package:yoldaal_mobile/screens/search/search_address_screen.dart';
 
 void main() {
   const token = '123e4567-e89b-42d3-a456-426614174000';

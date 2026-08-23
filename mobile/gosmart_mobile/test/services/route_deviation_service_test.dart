@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/matching/matching_policy.dart';
-import 'package:gosmart_mobile/domain/return_route/geo_coordinate.dart';
-import 'package:gosmart_mobile/domain/return_route/route_anchor_result.dart';
-import 'package:gosmart_mobile/services/route_deviation_service.dart';
+import 'package:yoldaal_mobile/domain/matching/matching_policy.dart';
+import 'package:yoldaal_mobile/domain/return_route/geo_coordinate.dart';
+import 'package:yoldaal_mobile/domain/return_route/route_anchor_result.dart';
+import 'package:yoldaal_mobile/services/route_deviation_service.dart';
 
 void main() {
   final pickupAnchor = GeoCoordinate(latitude: 41.0, longitude: 29.0);

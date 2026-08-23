@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/matching/matching_policy.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_access_pass.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_access_policy.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_status.dart';
+import 'package:yoldaal_mobile/domain/matching/matching_policy.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_access_pass.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_access_policy.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_status.dart';
 
 void main() {
   final now = DateTime.utc(2026, 8, 1, 12);

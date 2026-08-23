@@ -2,15 +2,15 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_document_upload_gateway.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_document_upload_result.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_file_picker.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_repository.dart';
-import 'package:gosmart_mobile/application/driver_application/resubmit_driver_application_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_application_document_resubmission_controller.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_application_review.dart';
-import 'package:gosmart_mobile/screens/driver/driver_application_document_resubmission_screen.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_document_upload_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_document_upload_result.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_file_picker.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_repository.dart';
+import 'package:yoldaal_mobile/application/driver_application/resubmit_driver_application_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_application_document_resubmission_controller.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_application_review.dart';
+import 'package:yoldaal_mobile/screens/driver/driver_application_document_resubmission_screen.dart';
 
 void main() {
   final review = DriverApplicationReview(

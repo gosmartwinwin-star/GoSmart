@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_match_offer_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_ride_match_offer_controller.dart';
-import 'package:gosmart_mobile/domain/ride/canonical_ride.dart';
-import 'package:gosmart_mobile/domain/ride/ride_match_offer.dart';
-import 'package:gosmart_mobile/services/ride_match_offer_service.dart';
+import 'package:yoldaal_mobile/application/ride/ride_match_offer_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_ride_match_offer_controller.dart';
+import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
+import 'package:yoldaal_mobile/domain/ride/ride_match_offer.dart';
+import 'package:yoldaal_mobile/services/ride_match_offer_service.dart';
 
 void main() {
   final now = DateTime.utc(2026, 8, 15, 16);

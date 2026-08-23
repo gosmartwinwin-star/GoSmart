@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/core/firebase/firebase_functions_registry.dart';
-import 'package:gosmart_mobile/domain/ride/ride_match_offer.dart';
-import 'package:gosmart_mobile/services/ride_lifecycle_service.dart';
-import 'package:gosmart_mobile/services/ride_match_offer_service.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/core/firebase/firebase_functions_registry.dart';
+import 'package:yoldaal_mobile/domain/ride/ride_match_offer.dart';
+import 'package:yoldaal_mobile/services/ride_lifecycle_service.dart';
+import 'package:yoldaal_mobile/services/ride_match_offer_service.dart';
 
 void main() {
   test(

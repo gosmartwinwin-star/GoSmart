@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/ride/ride_gateway.dart';
-import 'package:gosmart_mobile/services/place_search_service.dart';
-import 'package:gosmart_mobile/services/ride_lifecycle_service.dart';
+import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
+import 'package:yoldaal_mobile/services/place_search_service.dart';
+import 'package:yoldaal_mobile/services/ride_lifecycle_service.dart';
 
 void main() {
   test('service olusturmak Functions registry gerektirmez', () {

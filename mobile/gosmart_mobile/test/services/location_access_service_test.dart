@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:gosmart_mobile/application/location/location_access_gateway.dart';
-import 'package:gosmart_mobile/services/location_access_service.dart';
+import 'package:yoldaal_mobile/application/location/location_access_gateway.dart';
+import 'package:yoldaal_mobile/services/location_access_service.dart';
 
 void main() {
   const validLocation = DeviceLocation(latitude: 41.0082, longitude: 28.9784);

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/screens/profile/profile_screen.dart';
+import 'package:yoldaal_mobile/screens/profile/profile_screen.dart';
 
 void main() {
   test('telefon numarası maskelenir ve boş değer güvenli fallback üretir', () {

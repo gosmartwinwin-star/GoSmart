@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
-import 'package:gosmart_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_plan_purchase_controller.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_plan_purchase_controller.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
 
 void main() {
   test('catalog load exposes canonical server availability', () async {

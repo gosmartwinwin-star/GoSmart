@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/driver/driver_profile_status.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_status.dart';
-import 'package:gosmart_mobile/infrastructure/firestore/mappers/driver_access_pass_firestore_mapper.dart';
-import 'package:gosmart_mobile/infrastructure/firestore/mappers/driver_profile_firestore_mapper.dart';
+import 'package:yoldaal_mobile/domain/driver/driver_profile_status.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_status.dart';
+import 'package:yoldaal_mobile/infrastructure/firestore/mappers/driver_access_pass_firestore_mapper.dart';
+import 'package:yoldaal_mobile/infrastructure/firestore/mappers/driver_profile_firestore_mapper.dart';
 
 void main() {
   final created = DateTime.utc(2026, 1, 1);

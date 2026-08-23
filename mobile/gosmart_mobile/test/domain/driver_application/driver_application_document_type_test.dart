@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_work_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/registration_owner_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_work_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/registration_owner_type.dart';
 
 void main() {
   test('üç çalışma ve üç ruhsat sahibi tipi tanımlıdır', () {

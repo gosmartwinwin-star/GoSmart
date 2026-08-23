@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
-import 'package:gosmart_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
-import 'package:gosmart_mobile/controllers/driver_plan_purchase_controller.dart';
-import 'package:gosmart_mobile/domain/subscription/driver_pass_plan.dart';
-import 'package:gosmart_mobile/widgets/driver/driver_plan_purchase_panel.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
+import 'package:yoldaal_mobile/controllers/driver_plan_purchase_controller.dart';
+import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
+import 'package:yoldaal_mobile/widgets/driver/driver_plan_purchase_panel.dart';
 
 void main() {
   testWidgets('catalog loads before plan selection is enabled', (tester) async {

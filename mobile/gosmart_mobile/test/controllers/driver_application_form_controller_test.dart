@@ -2,16 +2,16 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_document_upload_gateway.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_document_upload_result.dart';
-import 'package:gosmart_mobile/application/driver_application/driver_application_file_picker.dart';
-import 'package:gosmart_mobile/application/driver_application/submit_driver_application_gateway.dart';
-import 'package:gosmart_mobile/application/driver_application/vehicle_catalog_repository.dart';
-import 'package:gosmart_mobile/controllers/driver_application_form_controller.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_application_document_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/driver_work_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/registration_owner_type.dart';
-import 'package:gosmart_mobile/domain/driver_application/vehicle_catalog.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_document_upload_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_document_upload_result.dart';
+import 'package:yoldaal_mobile/application/driver_application/driver_application_file_picker.dart';
+import 'package:yoldaal_mobile/application/driver_application/submit_driver_application_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_application/vehicle_catalog_repository.dart';
+import 'package:yoldaal_mobile/controllers/driver_application_form_controller.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/driver_work_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/registration_owner_type.dart';
+import 'package:yoldaal_mobile/domain/driver_application/vehicle_catalog.dart';
 
 class UserInfo implements DriverApplicationUserInfoProvider {
   @override
