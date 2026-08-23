@@ -17,13 +17,19 @@ const argument = (name: string): string | undefined => {
 };
 
 const projectId = argument("project") ?? process.env.GCLOUD_PROJECT ?? "demo-gosmart";
-const phoneNumber = argument("phone") ?? process.env.GOSMART_FIXTURE_PHONE;
+const phoneNumber =
+  argument("phone") ??
+  process.env.YOLDAAL_FIXTURE_PHONE ??
+  process.env.GOSMART_FIXTURE_PHONE;
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9099";
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
 
 assertLocalFixtureTarget({projectId, authHost, firestoreHost});
 if (!phoneNumber || !/^\+[1-9]\d{7,14}$/u.test(phoneNumber)) {
-  throw new Error("Provide a synthetic E.164 phone via --phone or GOSMART_FIXTURE_PHONE.");
+  throw new Error(
+    "Provide a synthetic E.164 phone via --phone, YOLDAAL_FIXTURE_PHONE, " +
+      "or legacy GOSMART_FIXTURE_PHONE.",
+  );
 }
 process.env.FIREBASE_AUTH_EMULATOR_HOST = authHost;
 process.env.FIRESTORE_EMULATOR_HOST = firestoreHost;
