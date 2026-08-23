@@ -1,13 +1,15 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
-const bool firebaseEmulatorsRequested = bool.fromEnvironment(
-  'GOSMART_USE_FIREBASE_EMULATORS',
-);
+const bool firebaseEmulatorsRequested =
+    bool.hasEnvironment('YOLDAAL_USE_FIREBASE_EMULATORS')
+    ? bool.fromEnvironment('YOLDAAL_USE_FIREBASE_EMULATORS')
+    : bool.fromEnvironment('GOSMART_USE_FIREBASE_EMULATORS');
 
-const bool firebaseSandboxRequested = bool.fromEnvironment(
-  'GOSMART_USE_FIREBASE_SANDBOX',
-);
+const bool firebaseSandboxRequested =
+    bool.hasEnvironment('YOLDAAL_USE_FIREBASE_SANDBOX')
+    ? bool.fromEnvironment('YOLDAAL_USE_FIREBASE_SANDBOX')
+    : bool.fromEnvironment('GOSMART_USE_FIREBASE_SANDBOX');
 
 enum EmulatorPlatform { android, local }
 
