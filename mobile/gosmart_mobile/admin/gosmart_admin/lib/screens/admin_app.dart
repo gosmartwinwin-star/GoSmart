@@ -5,8 +5,8 @@ import '../controllers/driver_applications_controller.dart';
 import 'admin_login_screen.dart';
 import 'driver_applications_screen.dart';
 
-final class GoSmartAdminApp extends StatelessWidget {
-  const GoSmartAdminApp({
+final class YoldaAlAdminApp extends StatelessWidget {
+  const YoldaAlAdminApp({
     required this.auth,
     required this.applications,
     required this.reviews,

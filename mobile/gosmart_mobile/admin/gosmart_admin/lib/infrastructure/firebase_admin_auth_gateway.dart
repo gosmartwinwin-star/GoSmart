@@ -40,7 +40,7 @@ final class FirebaseAdminAuthGateway implements AdminAuthGateway {
         throw const AdminAuthenticationException('authentication_unavailable');
       }
       final session = await _sessionFor(user);
-      if (!session.hasGoSmartAdminClaim) {
+      if (!session.hasYoldaAlAdminClaim) {
         await _auth.signOut();
         throw const AdminAuthenticationException('admin_access_required');
       }
@@ -69,7 +69,7 @@ final class FirebaseAdminAuthGateway implements AdminAuthGateway {
       final user = _auth.currentUser;
       if (user == null) return null;
       final session = await _sessionFor(user);
-      if (!session.hasGoSmartAdminClaim) {
+      if (!session.hasYoldaAlAdminClaim) {
         await _auth.signOut();
         throw const AdminAuthenticationException('admin_access_required');
       }
@@ -89,7 +89,7 @@ final class FirebaseAdminAuthGateway implements AdminAuthGateway {
     return AdminSession(
       userId: user.uid,
       email: user.email,
-      hasGoSmartAdminClaim: hasClaim,
+      hasYoldaAlAdminClaim: hasClaim,
     );
   }
 

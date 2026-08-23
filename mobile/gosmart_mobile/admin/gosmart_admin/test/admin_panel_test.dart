@@ -21,7 +21,7 @@ void main() {
     test('empty UID is rejected', () {
       expect(
         () =>
-            AdminSession(userId: ' ', email: null, hasGoSmartAdminClaim: true),
+            AdminSession(userId: ' ', email: null, hasYoldaAlAdminClaim: true),
         throwsArgumentError,
       );
     });
@@ -33,7 +33,7 @@ void main() {
         isTrue,
       );
       expect(gateway.signInCalls, 1);
-      expect(controller.session?.hasGoSmartAdminClaim, isTrue);
+      expect(controller.session?.hasYoldaAlAdminClaim, isTrue);
       expect(controller.toString(), isNot(contains('temporary')));
     });
     test('false claim signs out and returns safe message', () async {
@@ -1559,7 +1559,7 @@ final class FakeAuthGateway implements AdminAuthGateway {
     return AdminSession(
       userId: 'admin-1',
       email: email,
-      hasGoSmartAdminClaim: claim,
+      hasYoldaAlAdminClaim: claim,
     );
   }
 

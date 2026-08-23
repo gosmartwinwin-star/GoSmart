@@ -23,7 +23,7 @@ Future<void> main() async {
       DriverApplicationReviewEventsService(invoker);
   await auth.initialize();
   runApp(
-    GoSmartAdminApp(
+    YoldaAlAdminApp(
       auth: auth,
       applications: applications,
       reviews: reviews,

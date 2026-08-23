@@ -18,7 +18,7 @@ final class AdminAuthController extends ChangeNotifier {
     if (_disposed) return;
     try {
       session = await _gateway.refreshAndGetSession();
-      if (session != null && session!.hasGoSmartAdminClaim != true) {
+      if (session != null && session!.hasYoldaAlAdminClaim != true) {
         await _gateway.signOut();
         session = null;
       }
@@ -46,7 +46,7 @@ final class AdminAuthController extends ChangeNotifier {
     _notify();
     try {
       final next = await _gateway.signIn(email: email, password: password);
-      if (next.hasGoSmartAdminClaim != true) {
+      if (next.hasYoldaAlAdminClaim != true) {
         await _gateway.signOut();
         throw const AdminAuthenticationException('admin_access_required');
       }
@@ -65,7 +65,7 @@ final class AdminAuthController extends ChangeNotifier {
   Future<void> refreshSession() async {
     try {
       final next = await _gateway.refreshAndGetSession();
-      if (next == null || next.hasGoSmartAdminClaim != true) {
+      if (next == null || next.hasYoldaAlAdminClaim != true) {
         await _gateway.signOut();
         session = null;
       } else {
