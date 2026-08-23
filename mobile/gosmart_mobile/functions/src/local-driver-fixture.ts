@@ -16,7 +16,7 @@ export const assertLocalFixtureTarget = (input: {
   firestoreHost: string;
 }): void => {
   if (input.projectId === PRODUCTION_PROJECT_ID) {
-    throw new Error("Production GoSmart project ID is forbidden.");
+    throw new Error("Production project ID is forbidden.");
   }
   if (!input.projectId.startsWith("demo-")) {
     throw new Error("Fixture project ID must start with demo-.");
