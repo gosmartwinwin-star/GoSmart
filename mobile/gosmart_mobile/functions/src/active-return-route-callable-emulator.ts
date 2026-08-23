@@ -169,7 +169,7 @@ const signUp = async (
           email:
             `${unique(label)}@example.test`,
           password:
-            `GoSmart_${unique("password")}_A1`,
+            `YoldaAl_${unique("password")}_A1`,
           returnSecureToken: true,
         }),
       },

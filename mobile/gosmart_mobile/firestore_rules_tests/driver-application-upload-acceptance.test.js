@@ -325,7 +325,7 @@ test(
       `${unique("driver_application")}@example.test`;
 
     const password =
-      `GoSmart_${unique("password")}_A1`;
+      `YoldaAl_${unique("password")}_A1`;
 
     const phoneSuffix =
       String(

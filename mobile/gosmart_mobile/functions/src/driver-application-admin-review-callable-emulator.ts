@@ -217,7 +217,7 @@ const signUp = async (
     `${unique(label)}@example.test`;
 
   const password =
-    `GoSmart_${unique("password")}_A1`;
+    `YoldaAl_${unique("password")}_A1`;
 
   const payload =
     await authRequest(

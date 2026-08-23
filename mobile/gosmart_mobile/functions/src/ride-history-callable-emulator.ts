@@ -130,7 +130,7 @@ const signUp = async (
       },
       body: JSON.stringify({
         email: `${unique(label)}@example.test`,
-        password: `GoSmart_${unique("password")}_A1`,
+        password: `YoldaAl_${unique("password")}_A1`,
         returnSecureToken: true,
       }),
     },

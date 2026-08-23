@@ -89,7 +89,7 @@ const signUp = async (label: string): Promise<AuthSession> => {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         email: `${unique(label)}@example.test`,
-        password: `GoSmart_${unique("password")}_A1`,
+        password: `YoldaAl_${unique("password")}_A1`,
         returnSecureToken: true,
       }),
     },
