@@ -1353,7 +1353,7 @@ export const initializeDriverPlanCheckout = async (
       id:
         begin.prepared.purchaseOperationId,
       name:
-        `GoSmart driver plan ${begin.prepared.planId}`,
+        `YoldaAl driver plan ${begin.prepared.planId}`,
       category1:
         "Driver Plan",
     },
