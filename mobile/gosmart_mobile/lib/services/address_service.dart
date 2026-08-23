@@ -8,7 +8,7 @@ class AddressService {
 
       AddressModel(
         id: "1",
-        title: "GoSmart Merkez",
+        title: "YoldaAl Merkez",
         description: "İstanbul",
         latitude: 41.0105,
         longitude: 28.9717,

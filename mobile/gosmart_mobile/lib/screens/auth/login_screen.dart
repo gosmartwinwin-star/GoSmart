@@ -216,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'GoSmart',
+                  'YoldaAl',
                   style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
@@ -290,7 +290,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 40),
                 const Text(
-                  '© 2026 GoSmart',
+                  '© 2026 YoldaAl',
                   style: TextStyle(color: AppColors.grey),
                 ),
                 if (kDebugMode) ...[

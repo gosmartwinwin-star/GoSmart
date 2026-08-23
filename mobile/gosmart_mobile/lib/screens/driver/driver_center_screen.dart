@@ -198,7 +198,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             const Icon(Icons.local_taxi_rounded, size: 48),
             const SizedBox(height: 8),
             const Text(
-              'GoSmart',
+              'YoldaAl',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
@@ -260,7 +260,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           const _StatusCard(
             title: 'Aktif kontör paketi gerekli',
             description:
-                'Dönüş rotası yayımlamak için aktif bir GoSmart kontör '
+                'Dönüş rotası yayımlamak için aktif bir YoldaAl kontör '
                 'paketiniz olmalıdır.',
           ),
           const SizedBox(height: 12),
@@ -292,7 +292,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
       'driver_deactivated' => ('Sürücü profili devre dışı', '', null),
       'subscription_required' => (
         'Aktif kontör paketi gerekli',
-        'Dönüş rotası yayımlamak için aktif bir GoSmart kontör paketiniz olmalıdır.',
+        'Dönüş rotası yayımlamak için aktif bir YoldaAl kontör paketiniz olmalıdır.',
         'Kontör paketleri yakında',
       ),
       _ => ('Bilgiler yüklenemedi', 'Lütfen tekrar deneyin.', null),
@@ -471,7 +471,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
         const _StatusCard(
           title: 'Lansman d\u00f6neminde \u00fccretsiz',
           description:
-              'GoSmart, lansman d\u00f6neminde s\u00fcr\u00fcc\u00fcler i\u00e7in \u00fccretsizdir. '
+              'YoldaAl, lansman d\u00f6neminde s\u00fcr\u00fcc\u00fcler i\u00e7in \u00fccretsizdir. '
               'S\u00fcr\u00fcc\u00fc eri\u015fimi i\u00e7in abonelik veya paket \u00fccreti al\u0131nmaz.',
         ),
         const SizedBox(height: 12),

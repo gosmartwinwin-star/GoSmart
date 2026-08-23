@@ -320,7 +320,7 @@ void main() {
     expect(find.text('Lansman d\u00f6neminde \u00fccretsiz'), findsOneWidget);
     expect(
       find.text(
-        'GoSmart, lansman d\u00f6neminde s\u00fcr\u00fcc\u00fcler i\u00e7in \u00fccretsizdir. '
+        'YoldaAl, lansman d\u00f6neminde s\u00fcr\u00fcc\u00fcler i\u00e7in \u00fccretsizdir. '
         'S\u00fcr\u00fcc\u00fc eri\u015fimi i\u00e7in abonelik veya paket \u00fccreti al\u0131nmaz.',
       ),
       findsOneWidget,

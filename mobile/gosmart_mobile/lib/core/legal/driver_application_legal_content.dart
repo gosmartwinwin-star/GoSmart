@@ -10,7 +10,7 @@ class DriverApplicationLegalContent {
     this.kvkkTitle = 'KVKK Aydınlatma Metni',
     this.kvkkDraftNotice =
         'Taslak metin — production kullanımı için hukuk onayı gereklidir.',
-    this.termsTitle = 'GoSmart Kullanım Koşulları',
+    this.termsTitle = 'YoldaAl Kullanım Koşulları',
     this.termsDraftNotice =
         'Taslak metin — production kullanımı için hukuk onayı gereklidir.',
   });

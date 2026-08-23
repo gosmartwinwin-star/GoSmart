@@ -152,7 +152,7 @@ class _SplashLoadingView extends StatelessWidget {
             Icon(Icons.local_taxi, size: 90, color: Colors.amber),
             SizedBox(height: 20),
             Text(
-              'GoSmart',
+              'YoldaAl',
               style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 10),

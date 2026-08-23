@@ -18,9 +18,9 @@ class YoldaAlApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'GoSmart',
+      title: 'YoldaAl',
 
-      // GoSmart Design System Theme
+      // YoldaAl Design System Theme
       theme: YoldaAlTheme.light(),
 
       home: const SplashScreen(),

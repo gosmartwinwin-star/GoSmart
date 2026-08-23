@@ -52,7 +52,7 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Kullanılabilir planlar GoSmart sunucusundan alınır.',
+                  'Kullanılabilir planlar YoldaAl sunucusundan alınır.',
                 ),
                 const SizedBox(height: 12),
                 if (controller.catalogLoading && catalog == null)

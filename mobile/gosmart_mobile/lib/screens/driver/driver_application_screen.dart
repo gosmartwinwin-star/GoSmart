@@ -432,7 +432,7 @@ class _DriverApplicationScreenState extends State<DriverApplicationScreen> {
         (v) => controller.informationAccuracyAccepted = v,
       ),
       _check(
-        'Geçerliliğini kaybeden belgeyi GoSmart’a bildireceğimi kabul ediyorum.',
+        'Geçerliliğini kaybeden belgeyi YoldaAl’a bildireceğimi kabul ediyorum.',
         controller.documentValidityNotificationAccepted,
         (v) => controller.documentValidityNotificationAccepted = v,
       ),

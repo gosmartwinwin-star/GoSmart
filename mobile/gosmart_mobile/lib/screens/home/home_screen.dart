@@ -578,7 +578,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("GoSmart Taksi"), centerTitle: true),
+      appBar: AppBar(title: const Text("YoldaAl Taksi"), centerTitle: true),
       body: Stack(
         children: [
           YoldaAlMap(

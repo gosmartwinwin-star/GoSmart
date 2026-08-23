@@ -281,7 +281,7 @@ class DriverCenterController extends ChangeNotifier {
     'driver_suspended' => 'Sürücü erişiminiz askıya alınmış.',
     'driver_rejected' => 'Sürücü başvurunuz onaylanmadı.',
     'driver_deactivated' => 'Sürücü profiliniz devre dışı.',
-    'subscription_required' => 'Aktif GoSmart kontör paketiniz bulunmuyor.',
+    'subscription_required' => 'Aktif YoldaAl kontör paketiniz bulunmuyor.',
     'active_return_route_exists' => 'Zaten aktif bir dönüş rotanız bulunuyor.',
     'invalid_route_coordinates' => 'Başlangıç veya hedef konumu geçerli değil.',
     'invalid_route_validity' => 'Dönüş rotası süresi geçerli değil.',

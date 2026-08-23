@@ -207,7 +207,7 @@ void main() {
 
     await tester.tap(find.text('Nereden alınacaksınız?'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('GoSmart Merkez'));
+    await tester.tap(find.text('YoldaAl Merkez'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Nereye gidiyorsunuz?'));
     await tester.pumpAndSettle();
@@ -240,7 +240,7 @@ void main() {
     expect(gateway.createCalls, 1);
     expect(gateway.pickup?.latitude, 41.0105);
     expect(gateway.pickup?.longitude, 28.9717);
-    expect(gateway.pickup?.addressLabel, 'GoSmart Merkez');
+    expect(gateway.pickup?.addressLabel, 'YoldaAl Merkez');
     expect(gateway.dropoff?.latitude, 41.0256);
     expect(gateway.dropoff?.longitude, 28.9744);
     expect(gateway.dropoff?.addressLabel, 'Galata Kulesi');
