@@ -882,7 +882,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: AdminLoginScreen(controller: controller)),
     );
-    expect(find.text('GoSmart Yönetim'), findsOneWidget);
+    expect(find.text('YoldaAl Yönetim'), findsOneWidget);
     expect(find.text('Sürücü Başvuru İnceleme Paneli'), findsOneWidget);
     expect(find.text('Beni hatırla'), findsNothing);
     expect(find.text('Kayıt ol'), findsNothing);

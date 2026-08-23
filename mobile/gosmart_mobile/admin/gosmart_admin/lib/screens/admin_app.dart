@@ -20,7 +20,7 @@ final class GoSmartAdminApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'GoSmart Yönetim',
+    title: 'YoldaAl Yönetim',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(
@@ -104,7 +104,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
       title: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('GoSmart Yönetim'),
+          Text('YoldaAl Yönetim'),
           Text(
             'Sürücü Başvuru İnceleme Paneli',
             style: TextStyle(fontSize: 12),

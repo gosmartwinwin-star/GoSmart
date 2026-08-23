@@ -49,7 +49,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       const Icon(Icons.admin_panel_settings_outlined, size: 52),
                       const SizedBox(height: 16),
                       Text(
-                        'GoSmart Yönetim',
+                        'YoldaAl Yönetim',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineMedium,
                       ),
