@@ -121,7 +121,7 @@ test("callable query is admin-only, deterministic, bounded and read-only", () =>
   const end = source.indexOf("export const getDriverApplicationReviewDetails", start);
   assert.ok(start >= 0 && end > start);
   const callable = source.slice(start, end);
-  assert.match(callable, /requireGoSmartAdmin\(request\.auth\)/u);
+  assert.match(callable, /requireYoldaAlAdmin\(request\.auth\)/u);
   assert.match(callable, /where\("applicationId", "==", input\.applicationId\)/u);
   assert.match(callable, /orderBy\("createdAt", "desc"\)/u);
   assert.match(callable, /orderBy\(FieldPath\.documentId\(\), "desc"\)/u);

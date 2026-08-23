@@ -35,7 +35,7 @@ import {
   validateDocumentMetadata,
   validateVerifiedPhone,
 } from "./driver-application-helpers.js";
-import {requireGoSmartAdmin} from "./admin-authorization-helpers.js";
+import {requireYoldaAlAdmin} from "./admin-authorization-helpers.js";
 import {
   buildReviewAuditEvent,
   determineDocumentReviewTransition,
@@ -1499,7 +1499,7 @@ export const reviewDriverApplicationDocument = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
   async (request) => {
-    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const reviewerUid = requireYoldaAlAdmin(request.auth);
     const input = validateDocumentReviewPayload(request.data);
     const now = Timestamp.now();
     const applicationRef = firestore.collection("driverApplications")
@@ -1576,7 +1576,7 @@ export const reviewDriverApplication = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
   async (request) => {
-    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const reviewerUid = requireYoldaAlAdmin(request.auth);
     const input = validateApplicationReviewPayload(request.data);
     const now = Timestamp.now();
     const applicationRef = firestore.collection("driverApplications")
@@ -1645,7 +1645,7 @@ export const listDriverApplicationsForReview = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
   async (request) => {
-    requireGoSmartAdmin(request.auth);
+    requireYoldaAlAdmin(request.auth);
     const input = validateApplicationListPayload(request.data);
     try {
       const filter = input.status === null ? reviewStateQuery(input.reviewState) :
@@ -1681,7 +1681,7 @@ export const listDriverApplicationReviewEvents = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
   async (request) => {
-    requireGoSmartAdmin(request.auth);
+    requireYoldaAlAdmin(request.auth);
     const input = validateReviewEventsPayload(request.data);
     const applicationRef = firestore.collection("driverApplications")
       .doc(input.applicationId);
@@ -1715,7 +1715,7 @@ export const getDriverApplicationReviewDetails = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
   async (request) => {
-    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const reviewerUid = requireYoldaAlAdmin(request.auth);
     const input = validateApplicationDetailsPayload(request.data);
     const applicationRef = firestore.collection("driverApplications")
       .doc(input.applicationId);
@@ -1756,7 +1756,7 @@ export const createDriverApplicationDocumentReviewUrl = onCall(
   {region: "europe-west1", timeoutSeconds: 30, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
   async (request) => {
-    const reviewerUid = requireGoSmartAdmin(request.auth);
+    const reviewerUid = requireYoldaAlAdmin(request.auth);
     const input = validateDocumentReviewUrlPayload(request.data);
     const applicationRef = firestore.collection("driverApplications")
       .doc(input.applicationId);

@@ -3,7 +3,7 @@ import {HttpsError} from "firebase-functions/v2/https";
 
 type AuthContext = {uid: string; token: Record<string, unknown>} | null | undefined;
 
-export const requireGoSmartAdmin = (auth: AuthContext): string => {
+export const requireYoldaAlAdmin = (auth: AuthContext): string => {
   if (!auth) {
     throw new HttpsError("unauthenticated", "Kimlik doğrulaması gereklidir.",
       {reason: "authentication_required"});

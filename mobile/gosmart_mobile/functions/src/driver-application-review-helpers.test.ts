@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
-import {requireGoSmartAdmin} from "./admin-authorization-helpers.js";
+import {requireYoldaAlAdmin} from "./admin-authorization-helpers.js";
 import {
   buildReviewAuditEvent,
   determineDocumentReviewTransition,
@@ -21,11 +21,11 @@ const reason = (operation: () => unknown, expected: string) => {
 };
 
 test("admin claim yalnız gerçek boolean true kabul eder", () => {
-  reason(() => requireGoSmartAdmin(null), "authentication_required");
-  assert.equal(requireGoSmartAdmin({uid: "admin", token: {gosmartAdmin: true}}), "admin");
+  reason(() => requireYoldaAlAdmin(null), "authentication_required");
+  assert.equal(requireYoldaAlAdmin({uid: "admin", token: {gosmartAdmin: true}}), "admin");
   for (const token of [{gosmartAdmin: false}, {gosmartAdmin: "true"},
     {isAdmin: true}, {role: "admin"}]) {
-    reason(() => requireGoSmartAdmin({uid: "user", token}), "admin_access_required");
+    reason(() => requireYoldaAlAdmin({uid: "user", token}), "admin_access_required");
   }
 });
 
