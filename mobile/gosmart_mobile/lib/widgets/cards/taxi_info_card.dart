@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../core/buttons/gosmart_button.dart';
-import '../../core/cards/gosmart_card.dart';
-import '../../core/spacing/gosmart_spacing.dart';
-import '../../core/typography/gosmart_typography.dart';
+import '../../core/buttons/yoldaal_button.dart';
+import '../../core/cards/yoldaal_card.dart';
+import '../../core/spacing/yoldaal_spacing.dart';
+import '../../core/typography/yoldaal_typography.dart';
 import '../../models/taxi_model.dart';
 
 class TaxiInfoCard extends StatelessWidget {
@@ -19,7 +19,7 @@ class TaxiInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GoSmartCard(
+    return YoldaAlCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -27,33 +27,33 @@ class TaxiInfoCard extends StatelessWidget {
 
           Text(
             taxi.driverName,
-            style: GoSmartTypography.title,
+            style: YoldaAlTypography.title,
           ),
 
-          const SizedBox(height: GoSmartSpacing.sm),
+          const SizedBox(height: YoldaAlSpacing.sm),
 
           Text(
             taxi.vehicleType,
-            style: GoSmartTypography.body,
+            style: YoldaAlTypography.body,
           ),
 
-          const SizedBox(height: GoSmartSpacing.xs),
+          const SizedBox(height: YoldaAlSpacing.xs),
 
           Text(
             taxi.plateNumber,
-            style: GoSmartTypography.caption,
+            style: YoldaAlTypography.caption,
           ),
 
-          const SizedBox(height: GoSmartSpacing.sm),
+          const SizedBox(height: YoldaAlSpacing.sm),
 
           Text(
             "⭐ ${taxi.rating}",
-            style: GoSmartTypography.body,
+            style: YoldaAlTypography.body,
           ),
 
-          const SizedBox(height: GoSmartSpacing.lg),
+          const SizedBox(height: YoldaAlSpacing.lg),
 
-          GoSmartButton(
+          YoldaAlButton(
             text: "TAKSİ ÇAĞIR",
             onPressed: onRequestTaxi,
           ),

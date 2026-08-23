@@ -1,5 +1,5 @@
-class GoSmartImages {
-  GoSmartImages._();
+class YoldaAlImages {
+  YoldaAlImages._();
 
   static const String logo =
       "assets/images/gosmart_logo.png";

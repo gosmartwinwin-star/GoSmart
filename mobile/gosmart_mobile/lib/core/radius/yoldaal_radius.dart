@@ -1,5 +1,5 @@
-class GoSmartRadius {
-  GoSmartRadius._();
+class YoldaAlRadius {
+  YoldaAlRadius._();
 
   static const double xs = 6;
 

@@ -1,5 +1,5 @@
-class GoSmartSpacing {
-  GoSmartSpacing._();
+class YoldaAlSpacing {
+  YoldaAlSpacing._();
 
   static const double xs = 4;
 

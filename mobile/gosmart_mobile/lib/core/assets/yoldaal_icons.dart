@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class GoSmartIcons {
-  GoSmartIcons._();
+class YoldaAlIcons {
+  YoldaAlIcons._();
 
   static const IconData taxi = Icons.local_taxi_rounded;
 

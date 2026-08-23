@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../application/auth/authenticated_landing_resolver.dart';
-import '../../core/branding/gosmart_slogans.dart';
+import '../../core/branding/yoldaal_slogans.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 
 import '../auth/login_screen.dart';
@@ -157,7 +157,7 @@ class _SplashLoadingView extends StatelessWidget {
             ),
             SizedBox(height: 10),
             Text(
-              GoSmartSlogans.brand,
+              YoldaAlSlogans.brand,
               style: TextStyle(fontSize: 18, color: Colors.grey),
             ),
             SizedBox(height: 40),

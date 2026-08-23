@@ -9,7 +9,7 @@ import 'package:yoldaal_mobile/controllers/passenger_ride_controller.dart';
 import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 import 'package:yoldaal_mobile/models/route_result_model.dart';
 import 'package:yoldaal_mobile/screens/home/home_screen.dart';
-import 'package:yoldaal_mobile/widgets/map/gosmart_map.dart';
+import 'package:yoldaal_mobile/widgets/map/yoldaal_map.dart';
 
 void main() {
   testWidgets('home denied forever shows app settings', (tester) async {
@@ -41,7 +41,7 @@ void main() {
     );
     await tester.pump();
 
-    final map = tester.widget<GoSmartMap>(find.byType(GoSmartMap));
+    final map = tester.widget<YoldaAlMap>(find.byType(YoldaAlMap));
 
     await map.onMapCreated(_FakeGoogleMapController());
     await tester.pump();
@@ -88,7 +88,7 @@ void main() {
     );
     await tester.pump();
 
-    final map = tester.widget<GoSmartMap>(find.byType(GoSmartMap));
+    final map = tester.widget<YoldaAlMap>(find.byType(YoldaAlMap));
 
     await map.onMapCreated(_FakeGoogleMapController());
     await tester.pump();
@@ -130,7 +130,7 @@ void main() {
     );
     await tester.pump();
 
-    final map = tester.widget<GoSmartMap>(find.byType(GoSmartMap));
+    final map = tester.widget<YoldaAlMap>(find.byType(YoldaAlMap));
 
     await map.onMapCreated(_FakeGoogleMapController());
     await tester.pump();

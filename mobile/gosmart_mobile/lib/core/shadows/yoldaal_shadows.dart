@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../colors/gosmart_colors.dart';
+import '../colors/yoldaal_colors.dart';
 
-class GoSmartShadows {
-  GoSmartShadows._();
+class YoldaAlShadows {
+  YoldaAlShadows._();
 
   static const List<BoxShadow> card = [
     BoxShadow(
-      color: GoSmartColors.shadow,
+      color: YoldaAlColors.shadow,
       blurRadius: 18,
       offset: Offset(0, 6),
     ),

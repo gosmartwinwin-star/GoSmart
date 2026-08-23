@@ -27,7 +27,7 @@ import '../../widgets/ride/canonical_ride_card.dart';
 import '../../widgets/cards/route_summary_card.dart';
 import '../../widgets/cards/taxi_info_card.dart';
 import '../../widgets/location/location_access_banner.dart';
-import '../../widgets/map/gosmart_map.dart';
+import '../../widgets/map/yoldaal_map.dart';
 import '../../widgets/panels/home_bottom_panel.dart';
 import '../../widgets/panels/ride_request_panel.dart';
 
@@ -581,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(title: const Text("GoSmart Taksi"), centerTitle: true),
       body: Stack(
         children: [
-          GoSmartMap(
+          YoldaAlMap(
             initialPosition: _initialPosition,
             markers: _markers,
             polylines: _polylines,

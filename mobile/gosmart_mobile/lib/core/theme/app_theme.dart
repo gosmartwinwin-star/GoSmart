@@ -1,50 +1,50 @@
 import 'package:flutter/material.dart';
 
-import '../colors/gosmart_colors.dart';
-import '../radius/gosmart_radius.dart';
-import '../typography/gosmart_typography.dart';
+import '../colors/yoldaal_colors.dart';
+import '../radius/yoldaal_radius.dart';
+import '../typography/yoldaal_typography.dart';
 
-class GoSmartTheme {
-  GoSmartTheme._();
+class YoldaAlTheme {
+  YoldaAlTheme._();
 
   static ThemeData light() {
     return ThemeData(
       useMaterial3: true,
 
-      scaffoldBackgroundColor: GoSmartColors.background,
+      scaffoldBackgroundColor: YoldaAlColors.background,
 
       colorScheme: ColorScheme.fromSeed(
-        seedColor: GoSmartColors.primary,
+        seedColor: YoldaAlColors.primary,
         brightness: Brightness.light,
       ),
 
       appBarTheme: const AppBarTheme(
-        backgroundColor: GoSmartColors.surface,
-        foregroundColor: GoSmartColors.textPrimary,
+        backgroundColor: YoldaAlColors.surface,
+        foregroundColor: YoldaAlColors.textPrimary,
         elevation: 0,
         centerTitle: true,
       ),
 
-      cardColor: GoSmartColors.surface,
+      cardColor: YoldaAlColors.surface,
 
-      dividerColor: GoSmartColors.divider,
+      dividerColor: YoldaAlColors.divider,
 
       textTheme: const TextTheme(
-        headlineLarge: GoSmartTypography.headline1,
-        headlineMedium: GoSmartTypography.headline2,
-        titleLarge: GoSmartTypography.title,
-        bodyLarge: GoSmartTypography.body,
-        bodyMedium: GoSmartTypography.body,
-        bodySmall: GoSmartTypography.caption,
+        headlineLarge: YoldaAlTypography.headline1,
+        headlineMedium: YoldaAlTypography.headline2,
+        titleLarge: YoldaAlTypography.title,
+        bodyLarge: YoldaAlTypography.body,
+        bodyMedium: YoldaAlTypography.body,
+        bodySmall: YoldaAlTypography.caption,
       ),
 
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: GoSmartColors.primary,
+          backgroundColor: YoldaAlColors.primary,
           foregroundColor: Colors.black,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(
-              GoSmartRadius.md,
+              YoldaAlRadius.md,
             ),
           ),
           minimumSize: const Size(double.infinity, 54),
@@ -53,10 +53,10 @@ class GoSmartTheme {
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: GoSmartColors.searchBackground,
+        fillColor: YoldaAlColors.searchBackground,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(
-            GoSmartRadius.md,
+            YoldaAlRadius.md,
           ),
           borderSide: BorderSide.none,
         ),

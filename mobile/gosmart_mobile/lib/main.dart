@@ -8,11 +8,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeFirebase();
 
-  runApp(const GoSmartApp());
+  runApp(const YoldaAlApp());
 }
 
-class GoSmartApp extends StatelessWidget {
-  const GoSmartApp({super.key});
+class YoldaAlApp extends StatelessWidget {
+  const YoldaAlApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +21,7 @@ class GoSmartApp extends StatelessWidget {
       title: 'GoSmart',
 
       // GoSmart Design System Theme
-      theme: GoSmartTheme.light(),
+      theme: YoldaAlTheme.light(),
 
       home: const SplashScreen(),
     );

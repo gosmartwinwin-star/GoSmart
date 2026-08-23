@@ -14,7 +14,7 @@ import '../../services/ride_lifecycle_service.dart';
 import '../../services/ride_match_offer_service.dart';
 import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
-import '../../core/branding/gosmart_slogans.dart';
+import '../../core/branding/yoldaal_slogans.dart';
 import '../../domain/return_route/geo_coordinate.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_mode_repository.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_pass_repository.dart';
@@ -203,7 +203,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
             const Text(
-              GoSmartSlogans.driver,
+              YoldaAlSlogans.driver,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16),
             ),

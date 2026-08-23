@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-class GoSmartMap extends StatelessWidget {
+class YoldaAlMap extends StatelessWidget {
   final CameraPosition initialPosition;
   final Set<Marker> markers;
   final Set<Polyline> polylines;
   final Function(GoogleMapController) onMapCreated;
   final Function(LatLng)? onTap;
 
-  const GoSmartMap({
+  const YoldaAlMap({
     super.key,
     required this.initialPosition,
     required this.markers,

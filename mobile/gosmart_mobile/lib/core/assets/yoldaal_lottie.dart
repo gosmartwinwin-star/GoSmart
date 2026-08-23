@@ -1,5 +1,5 @@
-class GoSmartLottie {
-  GoSmartLottie._();
+class YoldaAlLottie {
+  YoldaAlLottie._();
 
   static const String loading =
       "assets/lottie/loading.json";

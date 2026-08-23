@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../colors/gosmart_colors.dart';
-import '../radius/gosmart_radius.dart';
-import '../typography/gosmart_typography.dart';
+import '../colors/yoldaal_colors.dart';
+import '../radius/yoldaal_radius.dart';
+import '../typography/yoldaal_typography.dart';
 
-class GoSmartButton extends StatelessWidget {
+class YoldaAlButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
   final IconData? icon;
   final bool expanded;
 
-  const GoSmartButton({
+  const YoldaAlButton({
     super.key,
     required this.text,
     this.onPressed,
@@ -26,11 +26,11 @@ class GoSmartButton extends StatelessWidget {
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           elevation: 0,
-          backgroundColor: GoSmartColors.primary,
+          backgroundColor: YoldaAlColors.primary,
           foregroundColor: Colors.black,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(
-              GoSmartRadius.md,
+              YoldaAlRadius.md,
             ),
           ),
         ),
@@ -44,7 +44,7 @@ class GoSmartButton extends StatelessWidget {
             ],
             Text(
               text,
-              style: GoSmartTypography.button,
+              style: YoldaAlTypography.button,
             ),
           ],
         ),

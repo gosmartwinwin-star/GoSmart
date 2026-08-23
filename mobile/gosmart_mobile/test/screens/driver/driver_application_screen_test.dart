@@ -8,7 +8,7 @@ import 'package:yoldaal_mobile/application/driver_application/driver_application
 import 'package:yoldaal_mobile/application/driver_application/submit_driver_application_gateway.dart';
 import 'package:yoldaal_mobile/application/driver_application/vehicle_catalog_repository.dart';
 import 'package:yoldaal_mobile/controllers/driver_application_form_controller.dart';
-import 'package:yoldaal_mobile/core/branding/gosmart_slogans.dart';
+import 'package:yoldaal_mobile/core/branding/yoldaal_slogans.dart';
 import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
 import 'package:yoldaal_mobile/domain/driver_application/vehicle_catalog.dart';
 import 'package:yoldaal_mobile/screens/driver/driver_application_screen.dart';
@@ -104,7 +104,7 @@ void main() {
   testWidgets('başlık slogan ve dört aşama görünür', (tester) async {
     await show(tester, controller());
     expect(find.text('Sürücü Başvurusu'), findsOneWidget);
-    expect(find.text(GoSmartSlogans.driver), findsOneWidget);
+    expect(find.text(YoldaAlSlogans.driver), findsOneWidget);
     for (final label in ['Kişisel', 'Araç', 'Belgeler', 'Onay']) {
       expect(find.text(label), findsOneWidget);
     }

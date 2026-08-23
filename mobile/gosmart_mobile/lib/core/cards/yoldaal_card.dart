@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../colors/gosmart_colors.dart';
-import '../radius/gosmart_radius.dart';
-import '../shadows/gosmart_shadows.dart';
+import '../colors/yoldaal_colors.dart';
+import '../radius/yoldaal_radius.dart';
+import '../shadows/yoldaal_shadows.dart';
 
-class GoSmartCard extends StatelessWidget {
+class YoldaAlCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
 
-  const GoSmartCard({
+  const YoldaAlCard({
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(18),
@@ -19,11 +19,11 @@ class GoSmartCard extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: GoSmartColors.surface,
+        color: YoldaAlColors.surface,
         borderRadius: BorderRadius.circular(
-          GoSmartRadius.lg,
+          YoldaAlRadius.lg,
         ),
-        boxShadow: GoSmartShadows.card,
+        boxShadow: YoldaAlShadows.card,
       ),
       child: child,
     );

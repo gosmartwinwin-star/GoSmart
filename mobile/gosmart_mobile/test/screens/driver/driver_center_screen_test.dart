@@ -13,7 +13,7 @@ import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
 import 'package:yoldaal_mobile/controllers/driver_center_controller.dart';
 import 'package:yoldaal_mobile/controllers/driver_plan_purchase_controller.dart';
 import 'package:yoldaal_mobile/controllers/driver_ride_controller.dart';
-import 'package:yoldaal_mobile/core/branding/gosmart_slogans.dart';
+import 'package:yoldaal_mobile/core/branding/yoldaal_slogans.dart';
 import 'package:yoldaal_mobile/domain/driver/driver_profile.dart';
 import 'package:yoldaal_mobile/domain/driver_application/driver_application_document_type.dart';
 import 'package:yoldaal_mobile/domain/driver_application/driver_application_review.dart';
@@ -166,7 +166,7 @@ void main() {
     tester,
   ) async {
     await show(tester, controller());
-    expect(find.text(GoSmartSlogans.driver), findsOneWidget);
+    expect(find.text(YoldaAlSlogans.driver), findsOneWidget);
     expect(find.text('Sürücü profili gerekli'), findsOneWidget);
   });
 

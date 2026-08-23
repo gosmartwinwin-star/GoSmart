@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../controllers/driver_application_form_controller.dart';
-import '../../core/branding/gosmart_slogans.dart';
+import '../../core/branding/yoldaal_slogans.dart';
 import '../../core/legal/driver_application_legal_content.dart';
 import '../../domain/driver_application/driver_application_document_type.dart';
 import '../../domain/driver_application/driver_work_type.dart';
@@ -82,7 +82,7 @@ class _DriverApplicationScreenState extends State<DriverApplicationScreen> {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Text(GoSmartSlogans.driver, textAlign: TextAlign.center),
+            child: Text(YoldaAlSlogans.driver, textAlign: TextAlign.center),
           ),
           _steps(),
           Expanded(

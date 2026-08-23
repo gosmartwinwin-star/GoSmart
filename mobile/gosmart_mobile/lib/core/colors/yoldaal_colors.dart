@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class GoSmartColors {
-  GoSmartColors._();
+class YoldaAlColors {
+  YoldaAlColors._();
 
   // Brand
   static const Color primary = Color(0xFFFFC400);
