@@ -1,5 +1,5 @@
 /* eslint-disable max-len */
-export const GOSMART_FIREBASE_PROJECT_ID = "gosmart-fd8f6";
+export const YOLDAAL_FIREBASE_PROJECT_ID = "gosmart-fd8f6";
 
 export type AdminClaimCommand = {
   projectId: string;
@@ -10,7 +10,7 @@ export type AdminClaimCommand = {
 
 export const validateFirebaseProjectId = (value: unknown): string => {
   if (typeof value !== "string" ||
-      value.trim() !== GOSMART_FIREBASE_PROJECT_ID) {
+      value.trim() !== YOLDAAL_FIREBASE_PROJECT_ID) {
     throw new Error("invalid_firebase_project");
   }
   return value.trim();

@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import {describe, it} from "node:test";
 import {
   buildUpdatedCustomClaims,
-  GOSMART_FIREBASE_PROJECT_ID,
+  YOLDAAL_FIREBASE_PROJECT_ID,
   maskUidForConsole,
   parseAdminClaimCommand,
   validateFirebaseProjectId,
 } from "./admin-claim-management-helpers.js";
 
 const base = [
-  "--project-id", GOSMART_FIREBASE_PROJECT_ID, "--uid", "User_123",
+  "--project-id", YOLDAAL_FIREBASE_PROJECT_ID, "--uid", "User_123",
 ];
 
 describe("admin claim command", () => {
@@ -18,7 +18,7 @@ describe("admin claim command", () => {
       ...base, "--enable", "--dry-run",
     ]);
     assert.deepEqual(command, {
-      projectId: GOSMART_FIREBASE_PROJECT_ID, uid: "User_123",
+      projectId: YOLDAAL_FIREBASE_PROJECT_ID, uid: "User_123",
       action: "enable", dryRun: true,
     });
   });
@@ -34,17 +34,17 @@ describe("admin claim command", () => {
     ["--project-id", "", "--uid", "User_123", "--enable"],
     ["--project-id", "other-project", "--uid", "User_123", "--enable"],
     ["--project-id", "GOSMART-FD8F6", "--uid", "User_123", "--enable"],
-    ["--project", GOSMART_FIREBASE_PROJECT_ID, "--uid", "User_123", "--enable"],
-    ["--firebase-project", GOSMART_FIREBASE_PROJECT_ID,
+    ["--project", YOLDAAL_FIREBASE_PROJECT_ID, "--uid", "User_123", "--enable"],
+    ["--firebase-project", YOLDAAL_FIREBASE_PROJECT_ID,
       "--uid", "User_123", "--enable"],
-    ["--quota-project", GOSMART_FIREBASE_PROJECT_ID,
+    ["--quota-project", YOLDAAL_FIREBASE_PROJECT_ID,
       "--uid", "User_123", "--enable"],
-    [...base, "--project-id", GOSMART_FIREBASE_PROJECT_ID, "--enable"],
+    [...base, "--project-id", YOLDAAL_FIREBASE_PROJECT_ID, "--enable"],
     [...base, "--unknown", "--enable"],
     [...base, "--enable", "--disable"],
     [...base],
-    ["--project-id", GOSMART_FIREBASE_PROJECT_ID, "--enable"],
-    ["--project-id", GOSMART_FIREBASE_PROJECT_ID, "--uid", "", "--enable"],
+    ["--project-id", YOLDAAL_FIREBASE_PROJECT_ID, "--enable"],
+    ["--project-id", YOLDAAL_FIREBASE_PROJECT_ID, "--uid", "", "--enable"],
   ]) {
     it(`rejects invalid command: ${args.join(" ")}`, () => {
       assert.throws(() => parseAdminClaimCommand(args));
@@ -53,7 +53,7 @@ describe("admin claim command", () => {
 
   it("trims the accepted project ID", () => {
     assert.equal(validateFirebaseProjectId("  gosmart-fd8f6  "),
-      GOSMART_FIREBASE_PROJECT_ID);
+      YOLDAAL_FIREBASE_PROJECT_ID);
   });
 });
 
