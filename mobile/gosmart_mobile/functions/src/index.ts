@@ -375,7 +375,7 @@ export const healthCheck = onRequest(
     region: "europe-west1",
   },
   (request, response) => {
-    logger.info("GoSmart functions health check", {
+    logger.info("YoldaAl functions health check", {
       method: request.method,
     });
     response.status(200).json({
@@ -455,7 +455,7 @@ export const computeRoute = onCall<ComputeRouteInput>(
         );
       }
 
-      logger.info("GoSmart route computed");
+      logger.info("YoldaAl route computed");
 
       return {
         encodedPolyline,
@@ -514,7 +514,7 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
         computeDrivingMeasurement(dropoff, dropoffAnchor),
       ]);
 
-      logger.info("GoSmart route deviation computed");
+      logger.info("YoldaAl route deviation computed");
 
       return {
         pickupDetourMeters: pickupMeasurement.distanceMeters,
@@ -587,7 +587,7 @@ export const getMyRideMatchOffers = onCall(
       }
 
       logger.error(
-        "GoSmart ride match offer discovery failed",
+        "YoldaAl ride match offer discovery failed",
         {
           errorType:
             error instanceof Error ?
@@ -1000,7 +1000,7 @@ export const getMyActiveReturnRoute = onCall(
       }
 
       logger.error(
-        "GoSmart active return route recovery failed",
+        "YoldaAl active return route recovery failed",
         {
           errorType:
             error instanceof Error ?
