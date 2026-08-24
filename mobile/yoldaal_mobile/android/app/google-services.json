@@ -16,6 +16,31 @@
       "api_key": [
         {
           "current_key": "AIzaSyDiwvUnlg_flBUVxWoRXZmd2o1yQsmLm8Y"
+        },
+        {
+          "current_key": "AIzaSyDaxcCMD0mrKxdi5sVJi7yTLskZPAOQVTo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:367158650760:android:bd511800f763be17cbfc3d",
+        "android_client_info": {
+          "package_name": "com.yoldaal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiwvUnlg_flBUVxWoRXZmd2o1yQsmLm8Y"
+        },
+        {
+          "current_key": "AIzaSyDaxcCMD0mrKxdi5sVJi7yTLskZPAOQVTo"
         }
       ],
       "services": {
