@@ -29,8 +29,6 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 build/
-admin/gosmart_admin/build/
-admin/gosmart_admin/.dart_tool/
 firestore_rules_tests/node_modules/
 
 # Symbolication related
