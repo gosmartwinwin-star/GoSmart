@@ -7,7 +7,8 @@ import '../domain/subscription/driver_pass_plan.dart';
 typedef DriverPlanPurchaseHttpsCaller =
     Future<Object?> Function(String name, Map<String, Object?> payload);
 
-class DriverPlanPurchaseService implements DriverPlanPurchaseGateway {
+class DriverPlanPurchaseService
+    implements DriverPlanPurchaseGateway, DriverPlanCheckoutGateway {
   DriverPlanPurchaseService({
     FirebaseFunctions? functions,
     DriverPlanPurchaseHttpsCaller? caller,
@@ -16,6 +17,7 @@ class DriverPlanPurchaseService implements DriverPlanPurchaseGateway {
            _firebaseCaller(functions ?? FirebaseFunctionsRegistry.client);
 
   static const callableName = 'prepareDriverPlanPurchase';
+  static const checkoutCallableName = 'initializeDriverPlanCheckout';
 
   final DriverPlanPurchaseHttpsCaller _caller;
 
@@ -40,6 +42,35 @@ class DriverPlanPurchaseService implements DriverPlanPurchaseGateway {
       });
 
       return _parseResponse(response, requestedPlan: plan);
+    } on FirebaseFunctionsException catch (error) {
+      throw DriverPlanPurchaseException(
+        code: _safeFunctionCode(error.code),
+        reason: _safeReason(error.details),
+      );
+    } on DriverPlanPurchaseException {
+      rethrow;
+    } catch (_) {
+      throw const DriverPlanPurchaseException(code: 'unavailable');
+    }
+  }
+
+  @override
+  Future<InitializedDriverPlanCheckout> initializeCheckout({
+    required String purchaseOperationId,
+    required DriverPlanCheckoutBuyer buyer,
+    required DriverPlanCheckoutBillingAddress billingAddress,
+  }) async {
+    try {
+      final response = await _caller(checkoutCallableName, <String, Object?>{
+        'purchaseOperationId': purchaseOperationId,
+        'buyer': buyer.toPayload(),
+        'billingAddress': billingAddress.toPayload(),
+      });
+
+      return _parseCheckoutResponse(
+        response,
+        requestedOperationId: purchaseOperationId,
+      );
     } on FirebaseFunctionsException catch (error) {
       throw DriverPlanPurchaseException(
         code: _safeFunctionCode(error.code),
@@ -117,6 +148,77 @@ PreparedDriverPlanPurchase _parseResponse(
     plan: plan,
     amountMinor: amountMinor,
     currency: currency,
+  );
+}
+
+InitializedDriverPlanCheckout _parseCheckoutResponse(
+  Object? value, {
+  required String requestedOperationId,
+}) {
+  if (value is! Map) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  const exactKeys = <String>{
+    'provider',
+    'purchaseOperationId',
+    'conversationId',
+    'token',
+    'paymentPageUrl',
+  };
+
+  if (value.length != exactKeys.length ||
+      !value.keys.every((key) => key is String && exactKeys.contains(key))) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  final provider = value['provider'];
+  final purchaseOperationId = value['purchaseOperationId'];
+  final conversationId = value['conversationId'];
+  final token = value['token'];
+  final paymentPageUrl = value['paymentPageUrl'];
+
+  if (provider != 'iyzico_checkout_form') {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  if (purchaseOperationId is! String ||
+      !RegExp(r'^[a-f0-9]{64}$').hasMatch(purchaseOperationId) ||
+      purchaseOperationId != requestedOperationId) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  if (conversationId is! String ||
+      conversationId.trim().isEmpty ||
+      conversationId.length > 256) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  if (token is! String || token.trim().isEmpty || token.length > 2048) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  if (paymentPageUrl is! String ||
+      paymentPageUrl.isEmpty ||
+      paymentPageUrl.length > 2048) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  final uri = Uri.tryParse(paymentPageUrl);
+
+  if (uri == null ||
+      !uri.isAbsolute ||
+      uri.scheme != 'https' ||
+      uri.host.isEmpty) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  return InitializedDriverPlanCheckout(
+    provider: provider as String,
+    purchaseOperationId: purchaseOperationId,
+    conversationId: conversationId,
+    token: token,
+    paymentPageUrl: uri,
   );
 }
 
