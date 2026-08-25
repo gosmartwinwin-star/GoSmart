@@ -1,6 +1,7 @@
 /* eslint-disable max-len, require-jsdoc */
 
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import test from "node:test";
 import {
   Firestore,
@@ -851,5 +852,298 @@ test("unknown callback token never invokes provider", async () => {
       "driverAccessPasses",
     ),
     0,
+  );
+});
+
+test("failed and review callbacks persist authoritative operation outcomes", async () => {
+  for (const current of [
+    {
+      result: paymentResult({
+        paymentStatus: "FAILURE",
+        fraudStatus: 1,
+      }),
+      expected: "payment_failed",
+    },
+    {
+      result: paymentResult({
+        fraudStatus: 0,
+      }),
+      expected: "payment_review",
+    },
+  ]) {
+    const context =
+      setup(current.result);
+
+    await handleDriverPlanCheckoutCallback(
+      context.dependencies,
+      {token},
+    );
+
+    const operation =
+      context.fake.get(
+        `driverPlanPurchaseOperations/${operationId}`,
+      );
+
+    assert.ok(operation);
+
+    assert.equal(
+      operation.status,
+      "pending",
+    );
+
+    assert.equal(
+      operation.paymentOutcome,
+      current.expected,
+    );
+
+    assert.ok(
+      operation.paymentOutcomeUpdatedAt instanceof Timestamp,
+    );
+
+    assert.equal(
+      (
+        operation.paymentOutcomeUpdatedAt as Timestamp
+      ).toMillis(),
+      now.toMillis(),
+    );
+  }
+});
+
+test("payment review may fail later but payment failure remains terminal", async () => {
+  const operationPath =
+    `driverPlanPurchaseOperations/${operationId}`;
+
+  const reviewContext =
+    setup(
+      paymentResult({
+        fraudStatus: 0,
+      }),
+    );
+
+  await handleDriverPlanCheckoutCallback(
+    reviewContext.dependencies,
+    {token},
+  );
+
+  const reviewedOperation =
+    reviewContext.fake.get(
+      operationPath,
+    );
+
+  assert.ok(reviewedOperation);
+  assert.equal(
+    reviewedOperation.paymentOutcome,
+    "payment_review",
+  );
+
+  const failureContext =
+    setup(
+      paymentResult({
+        paymentStatus: "FAILURE",
+        fraudStatus: 1,
+      }),
+    );
+
+  failureContext.fake.set(
+    operationPath,
+    {...reviewedOperation},
+  );
+
+  await handleDriverPlanCheckoutCallback(
+    failureContext.dependencies,
+    {token},
+  );
+
+  const failedOperation =
+    failureContext.fake.get(
+      operationPath,
+    );
+
+  assert.ok(failedOperation);
+
+  assert.equal(
+    failedOperation.paymentOutcome,
+    "payment_failed",
+  );
+
+  const frozenTimestamp =
+    Timestamp.fromMillis(
+      now.toMillis() - 1000,
+    );
+
+  const reviewAfterFailureContext =
+    setup(
+      paymentResult({
+        fraudStatus: 0,
+      }),
+    );
+
+  reviewAfterFailureContext.fake.set(
+    operationPath,
+    {
+      ...failedOperation,
+      paymentOutcomeUpdatedAt:
+        frozenTimestamp,
+      updatedAt:
+        frozenTimestamp,
+    },
+  );
+
+  await handleDriverPlanCheckoutCallback(
+    reviewAfterFailureContext.dependencies,
+    {token},
+  );
+
+  const stillFailed =
+    reviewAfterFailureContext.fake.get(
+      operationPath,
+    );
+
+  assert.ok(stillFailed);
+
+  assert.equal(
+    stillFailed.paymentOutcome,
+    "payment_failed",
+  );
+
+  assert.equal(
+    (
+      stillFailed.paymentOutcomeUpdatedAt as Timestamp
+    ).toMillis(),
+    frozenTimestamp.toMillis(),
+  );
+});
+
+test("settled outcome cannot be downgraded by a later failed callback", async () => {
+  const operationPath =
+    `driverPlanPurchaseOperations/${operationId}`;
+
+  const successfulContext =
+    setup();
+
+  const settledResult =
+    await handleDriverPlanCheckoutCallback(
+      successfulContext.dependencies,
+      {token},
+    );
+
+  assert.equal(
+    settledResult.status,
+    "settled",
+  );
+
+  const settledOperation =
+    successfulContext.fake.get(
+      operationPath,
+    );
+
+  assert.ok(settledOperation);
+
+  assert.equal(
+    settledOperation.status,
+    "settled",
+  );
+
+  assert.equal(
+    settledOperation.paymentOutcome,
+    "settled",
+  );
+
+  assert.ok(
+    settledOperation.paymentOutcomeUpdatedAt instanceof Timestamp,
+  );
+
+  const settledOutcomeUpdatedAt =
+    (
+      settledOperation.paymentOutcomeUpdatedAt as Timestamp
+    ).toMillis();
+
+  const laterFailureContext =
+    setup(
+      paymentResult({
+        paymentStatus: "FAILURE",
+        fraudStatus: 1,
+      }),
+    );
+
+  laterFailureContext.fake.set(
+    operationPath,
+    {...settledOperation},
+  );
+
+  await handleDriverPlanCheckoutCallback(
+    laterFailureContext.dependencies,
+    {token},
+  );
+
+  const afterFailure =
+    laterFailureContext.fake.get(
+      operationPath,
+    );
+
+  assert.ok(afterFailure);
+
+  assert.equal(
+    afterFailure.status,
+    "settled",
+  );
+
+  assert.equal(
+    afterFailure.paymentOutcome,
+    "settled",
+  );
+
+  assert.equal(
+    (
+      afterFailure.paymentOutcomeUpdatedAt as Timestamp
+    ).toMillis(),
+    settledOutcomeUpdatedAt,
+  );
+
+  assert.equal(
+    laterFailureContext.fake.count(
+      "driverAccessPasses",
+    ),
+    0,
+  );
+
+  assert.equal(
+    laterFailureContext.fake.count(
+      "driverPlanPaymentSettlements",
+    ),
+    0,
+  );
+});
+
+test("callback source persists failure and review without downgrading settlement", () => {
+  const source =
+    readFileSync(
+      "src/driver-plan-checkout-callback-authority.ts",
+      "utf8",
+    );
+
+  assert.match(
+    source,
+    /if\s*\(data\.status\s*===\s*"settled"\)\s*\{\s*return;\s*\}/u,
+  );
+
+  assert.match(
+    source,
+    /if\s*\(currentOutcome\s*===\s*"payment_failed"\)\s*\{\s*return;\s*\}/u,
+  );
+
+  assert.match(
+    source,
+    /await persistPaymentOutcome\(\s*dependencies,\s*operation\.purchaseOperationId,\s*"payment_failed",\s*\);/u,
+  );
+
+  assert.match(
+    source,
+    /await persistPaymentOutcome\(\s*dependencies,\s*operation\.purchaseOperationId,\s*"payment_review",\s*\);/u,
+  );
+
+  assert.match(
+    source,
+    /paymentOutcomeUpdatedAt:\s*now/u,
   );
 });

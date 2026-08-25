@@ -504,6 +504,110 @@ const retrievePayment = async (
   }
 };
 
+const persistPaymentOutcome = async (
+  dependencies: DriverPlanCheckoutCallbackDependencies,
+  purchaseOperationId: string,
+  paymentOutcome:
+    | "payment_failed"
+    | "payment_review",
+): Promise<void> => {
+  const now =
+    dependencies.now?.() ?? Timestamp.now();
+
+  const operationRef =
+    dependencies.firestore
+      .collection("driverPlanPurchaseOperations")
+      .doc(purchaseOperationId);
+
+  try {
+    await dependencies.firestore.runTransaction(
+      async (transaction) => {
+        const snapshot =
+          await transaction.get(operationRef);
+
+        if (!snapshot.exists) {
+          throw failure(
+            "not-found",
+            "purchase_operation_not_found",
+          );
+        }
+
+        const data = snapshot.data();
+
+        if (!isRecord(data)) {
+          throw failure(
+            "internal",
+            "purchase_operation_invalid",
+          );
+        }
+
+        // Settlement is terminal and wins any callback race.
+        if (data.status === "settled") {
+          return;
+        }
+
+        if (data.status !== "pending") {
+          throw failure(
+            "internal",
+            "purchase_operation_invalid",
+          );
+        }
+
+        const currentOutcome =
+          data.paymentOutcome;
+
+        if (currentOutcome === "settled") {
+          throw failure(
+            "internal",
+            "purchase_operation_invalid",
+          );
+        }
+
+        // payment_failed is terminal unless settlement succeeds.
+        if (currentOutcome === "payment_failed") {
+          return;
+        }
+
+        if (
+          currentOutcome === "payment_review" &&
+          paymentOutcome === "payment_review"
+        ) {
+          return;
+        }
+
+        if (
+          currentOutcome !== undefined &&
+          currentOutcome !== "pending" &&
+          currentOutcome !== "payment_review"
+        ) {
+          throw failure(
+            "internal",
+            "purchase_operation_invalid",
+          );
+        }
+
+        transaction.update(
+          operationRef,
+          {
+            paymentOutcome,
+            paymentOutcomeUpdatedAt: now,
+            updatedAt: now,
+          },
+        );
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+
+    throw failure(
+      "unavailable",
+      "driver_plan_checkout_outcome_persistence_failed",
+    );
+  }
+};
+
 export const handleDriverPlanCheckoutCallback = async (
   dependencies: DriverPlanCheckoutCallbackDependencies,
   rawInput: unknown,
@@ -533,6 +637,12 @@ export const handleDriverPlanCheckoutCallback = async (
     "FAILURE" ||
     retrieved.fraudStatus === -1
   ) {
+    await persistPaymentOutcome(
+      dependencies,
+      operation.purchaseOperationId,
+      "payment_failed",
+    );
+
     return {
       status: "payment_failed",
       purchaseOperationId:
@@ -543,6 +653,12 @@ export const handleDriverPlanCheckoutCallback = async (
   }
 
   if (retrieved.fraudStatus === 0) {
+    await persistPaymentOutcome(
+      dependencies,
+      operation.purchaseOperationId,
+      "payment_review",
+    );
+
     return {
       status: "payment_review",
       purchaseOperationId:

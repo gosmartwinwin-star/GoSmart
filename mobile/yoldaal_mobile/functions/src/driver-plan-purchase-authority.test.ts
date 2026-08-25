@@ -1,5 +1,6 @@
 /* eslint-disable max-len, @typescript-eslint/no-explicit-any, require-jsdoc, brace-style, block-spacing */
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import test from "node:test";
 import {Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
@@ -505,4 +506,64 @@ test("controlled errors sanitize internal catalog failure", async () => {
       throw error;
     }
   }, reasonIs("driver_plan_catalog_unavailable"));
+});
+
+test("settlement persists authoritative outcome in operation state", async () => {
+  const context =
+    setup();
+
+  const prepared =
+    await prepare(context);
+
+  const purchaseOperationId =
+    prepared.purchaseOperationId as string;
+
+  const expectedNow =
+    context.dependencies.now();
+
+  await settle(
+    context,
+    purchaseOperationId,
+  );
+
+  const operation =
+    context.fake.get(
+      `driverPlanPurchaseOperations/${purchaseOperationId}`,
+    );
+
+  assert.ok(operation);
+
+  assert.equal(
+    operation.status,
+    "settled",
+  );
+
+  assert.equal(
+    operation.paymentOutcome,
+    "settled",
+  );
+
+  assert.ok(
+    operation.paymentOutcomeUpdatedAt instanceof Timestamp,
+  );
+
+  assert.equal(
+    (
+      operation.paymentOutcomeUpdatedAt as Timestamp
+    ).toMillis(),
+    expectedNow.toMillis(),
+  );
+});
+
+test("settlement source persists authoritative settled payment outcome", () => {
+  const source =
+    readFileSync(
+      "src/driver-plan-purchase-authority.ts",
+      "utf8",
+    );
+
+  assert.match(
+    source,
+    /transaction\.update\(operationRef,\s*\{\s*status:\s*"settled",\s*paymentOutcome:\s*"settled",\s*paymentOutcomeUpdatedAt:\s*now,/u,
+  );
 });

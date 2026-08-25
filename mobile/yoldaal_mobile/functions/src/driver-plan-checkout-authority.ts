@@ -1247,6 +1247,8 @@ const persistInitializedCheckout = async (
         {
           paymentCheckout:
             initialized,
+          paymentOutcome: "pending",
+          paymentOutcomeUpdatedAt: now,
         },
       );
 

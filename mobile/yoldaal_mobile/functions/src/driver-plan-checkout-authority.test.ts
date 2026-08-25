@@ -1,5 +1,6 @@
 /* eslint-disable max-len, require-jsdoc */
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import test from "node:test";
 import {
   Firestore,
@@ -831,5 +832,53 @@ test("settled purchase cannot start another checkout", async () => {
   assert.equal(
     context.provider.calls.length,
     0,
+  );
+});
+
+test("initialized checkout persists pending outcome in operation state", async () => {
+  const context =
+    setup();
+
+  await initializeDriverPlanCheckout(
+    context.dependencies,
+    "uid-1",
+    input(),
+    context.runtime,
+  );
+
+  const operation =
+    context.firestore.get(
+      operationPath,
+    );
+
+  assert.ok(operation);
+
+  assert.equal(
+    operation.paymentOutcome,
+    "pending",
+  );
+
+  assert.ok(
+    operation.paymentOutcomeUpdatedAt instanceof Timestamp,
+  );
+
+  assert.equal(
+    (
+      operation.paymentOutcomeUpdatedAt as Timestamp
+    ).toDate().toISOString(),
+    "2026-01-15T10:00:00.000Z",
+  );
+});
+
+test("initialized checkout source persists pending payment outcome", () => {
+  const source =
+    readFileSync(
+      "src/driver-plan-checkout-authority.ts",
+      "utf8",
+    );
+
+  assert.match(
+    source,
+    /paymentCheckout:\s*initialized,\s*paymentOutcome:\s*"pending",\s*paymentOutcomeUpdatedAt:\s*now,/u,
   );
 });

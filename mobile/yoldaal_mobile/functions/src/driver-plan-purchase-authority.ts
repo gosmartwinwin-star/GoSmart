@@ -407,6 +407,8 @@ export const settleDriverPlanPurchase = async (
       });
       transaction.update(operationRef, {
         status: "settled",
+        paymentOutcome: "settled",
+        paymentOutcomeUpdatedAt: now,
         paymentSettlementId: settlementDocumentId,
         passId,
         settledAt: now,

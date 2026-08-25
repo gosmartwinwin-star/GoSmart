@@ -97,6 +97,9 @@ import {
   getDriverPlanCatalogForActor as getDriverPlanCatalogAuthority,
 } from "./driver-plan-catalog-read-authority.js";
 import {
+  getDriverPlanPaymentStatusForActor as getDriverPlanPaymentStatusAuthority,
+} from "./driver-plan-payment-status-read-authority.js";
+import {
   recoverActiveReturnRoute,
 } from "./active-return-route-recovery.js";
 import {getRideHistoryForActor} from "./ride-history-service.js";
@@ -835,6 +838,25 @@ export const initializeDriverPlanCheckout = onCall(
     );
   },
 );
+export const getDriverPlanPaymentStatus = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Driver plan payment status requires authentication.",
+      );
+    }
+
+    return getDriverPlanPaymentStatusAuthority(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
 export const prepareDriverPlanPurchase = onCall(
   {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
