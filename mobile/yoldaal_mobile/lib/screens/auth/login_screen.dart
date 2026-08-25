@@ -221,7 +221,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Akıllı Taksi Platformu',
+                  'Ortak Yol Ortak Kazanç',
                   style: TextStyle(fontSize: 18, color: AppColors.grey),
                 ),
                 const SizedBox(height: 40),
