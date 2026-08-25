@@ -8,7 +8,10 @@ typedef DriverPlanPurchaseHttpsCaller =
     Future<Object?> Function(String name, Map<String, Object?> payload);
 
 class DriverPlanPurchaseService
-    implements DriverPlanPurchaseGateway, DriverPlanCheckoutGateway {
+    implements
+        DriverPlanPurchaseGateway,
+        DriverPlanCheckoutGateway,
+        DriverPlanPaymentStatusGateway {
   DriverPlanPurchaseService({
     FirebaseFunctions? functions,
     DriverPlanPurchaseHttpsCaller? caller,
@@ -18,6 +21,7 @@ class DriverPlanPurchaseService
 
   static const callableName = 'prepareDriverPlanPurchase';
   static const checkoutCallableName = 'initializeDriverPlanCheckout';
+  static const paymentStatusCallableName = 'getDriverPlanPaymentStatus';
 
   final DriverPlanPurchaseHttpsCaller _caller;
 
@@ -82,6 +86,81 @@ class DriverPlanPurchaseService
       throw const DriverPlanPurchaseException(code: 'unavailable');
     }
   }
+
+  @override
+  Future<DriverPlanPaymentStatus> getPaymentStatus({
+    required String purchaseOperationId,
+  }) async {
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(purchaseOperationId)) {
+      throw const DriverPlanPurchaseException(code: 'invalid-response');
+    }
+
+    try {
+      final response = await _caller(
+        paymentStatusCallableName,
+        <String, Object?>{'purchaseOperationId': purchaseOperationId},
+      );
+
+      return _parsePaymentStatusResponse(
+        response,
+        requestedOperationId: purchaseOperationId,
+      );
+    } on FirebaseFunctionsException catch (error) {
+      throw DriverPlanPurchaseException(
+        code: _safeFunctionCode(error.code),
+        reason: _safeReason(error.details),
+      );
+    } on DriverPlanPurchaseException {
+      rethrow;
+    } catch (_) {
+      throw const DriverPlanPurchaseException(code: 'unavailable');
+    }
+  }
+}
+
+DriverPlanPaymentStatus _parsePaymentStatusResponse(
+  Object? value, {
+  required String requestedOperationId,
+}) {
+  if (value is! Map ||
+      value.length != 2 ||
+      !value.containsKey('purchaseOperationId') ||
+      !value.containsKey('paymentOutcome')) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  final purchaseOperationId = value['purchaseOperationId'];
+  final paymentOutcome = value['paymentOutcome'];
+
+  if (purchaseOperationId is! String ||
+      !RegExp(r'^[a-f0-9]{64}$').hasMatch(purchaseOperationId) ||
+      purchaseOperationId != requestedOperationId) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  final DriverPlanPaymentOutcome outcome;
+
+  switch (paymentOutcome) {
+    case 'pending':
+      outcome = DriverPlanPaymentOutcome.pending;
+      break;
+    case 'payment_failed':
+      outcome = DriverPlanPaymentOutcome.paymentFailed;
+      break;
+    case 'payment_review':
+      outcome = DriverPlanPaymentOutcome.paymentReview;
+      break;
+    case 'settled':
+      outcome = DriverPlanPaymentOutcome.settled;
+      break;
+    default:
+      throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  return DriverPlanPaymentStatus(
+    purchaseOperationId: purchaseOperationId,
+    outcome: outcome,
+  );
 }
 
 PreparedDriverPlanPurchase _parseResponse(

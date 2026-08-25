@@ -91,6 +91,18 @@ class InitializedDriverPlanCheckout {
   final Uri paymentPageUrl;
 }
 
+enum DriverPlanPaymentOutcome { pending, paymentFailed, paymentReview, settled }
+
+class DriverPlanPaymentStatus {
+  const DriverPlanPaymentStatus({
+    required this.purchaseOperationId,
+    required this.outcome,
+  });
+
+  final String purchaseOperationId;
+  final DriverPlanPaymentOutcome outcome;
+}
+
 class DriverPlanPurchaseException implements Exception {
   const DriverPlanPurchaseException({required this.code, this.reason});
 
@@ -110,5 +122,11 @@ abstract interface class DriverPlanCheckoutGateway {
     required String purchaseOperationId,
     required DriverPlanCheckoutBuyer buyer,
     required DriverPlanCheckoutBillingAddress billingAddress,
+  });
+}
+
+abstract interface class DriverPlanPaymentStatusGateway {
+  Future<DriverPlanPaymentStatus> getPaymentStatus({
+    required String purchaseOperationId,
   });
 }
