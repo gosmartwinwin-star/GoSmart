@@ -380,7 +380,7 @@ export const healthCheck = onRequest(
     });
     response.status(200).json({
       success: true,
-      service: "gosmart-functions",
+      service: "yoldaal-functions",
     });
   },
 );

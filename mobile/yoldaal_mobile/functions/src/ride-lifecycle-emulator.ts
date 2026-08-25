@@ -19,7 +19,7 @@ import {
   rideMatchOfferDocumentId,
 } from "./ride-match-offer-helpers.js";
 
-const projectId = "gosmart-ride-concurrency-test";
+const projectId = "yoldaal-ride-concurrency-test";
 let firestore: Firestore;
 let app: App;
 let sequence = 0;

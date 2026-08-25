@@ -25,7 +25,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
-const projectId = 'gosmart-rules-test';
+const projectId = 'yoldaal-rules-test';
 const here = dirname(fileURLToPath(import.meta.url));
 const rulesPath = resolve(here, '..', 'firestore.rules');
 let testEnv;

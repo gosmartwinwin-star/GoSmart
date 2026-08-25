@@ -27,7 +27,7 @@ class _WebDocumentPreviewState extends State<_WebDocumentPreview> {
   @override
   void initState() {
     super.initState();
-    viewType = 'gosmart-document-preview-${identityHashCode(this)}';
+    viewType = 'yoldaal-document-preview-${identityHashCode(this)}';
     isPdf = widget.preview.contentType == 'application/pdf';
     element = isPdf ? _pdfElement() : _imageElement();
     ui_web.platformViewRegistry.registerViewFactory(viewType, (_) => element!);

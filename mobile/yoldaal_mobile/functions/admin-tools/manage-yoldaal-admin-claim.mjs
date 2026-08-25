@@ -14,7 +14,7 @@ try {
   app = initializeApp({
     credential: applicationDefault(),
     projectId: command.projectId,
-  }, "gosmart-admin-claim-cli");
+  }, "yoldaal-admin-claim-cli");
   const auth = getAuth(app);
   const user = await auth.getUser(command.uid);
   const enable = command.action === "enable";

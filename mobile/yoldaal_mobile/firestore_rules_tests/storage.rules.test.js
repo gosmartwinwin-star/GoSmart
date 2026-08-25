@@ -9,8 +9,8 @@ import {
   deleteObject, getBytes, listAll, ref, uploadBytes,
 } from 'firebase/storage';
 
-const projectId = 'gosmart-rules-test';
-const bucket = 'gosmart-rules-test.appspot.com';
+const projectId = 'yoldaal-rules-test';
+const bucket = 'yoldaal-rules-test.appspot.com';
 const here = dirname(fileURLToPath(import.meta.url));
 let testEnv;
 

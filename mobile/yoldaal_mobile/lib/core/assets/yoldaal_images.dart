@@ -2,7 +2,7 @@ class YoldaAlImages {
   YoldaAlImages._();
 
   static const String logo =
-      "assets/images/gosmart_logo.png";
+      "assets/images/yoldaal_logo.png";
 
   static const String taxi =
       "assets/images/taxi.png";
