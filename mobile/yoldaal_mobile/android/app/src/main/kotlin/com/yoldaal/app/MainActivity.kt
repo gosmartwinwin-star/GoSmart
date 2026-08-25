@@ -1,4 +1,4 @@
-package com.example.gosmart_mobile
+package com.yoldaal.app
 
 import io.flutter.embedding.android.FlutterActivity
 

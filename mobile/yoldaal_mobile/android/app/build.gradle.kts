@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.gosmart_mobile"
+    namespace = "com.yoldaal.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gosmart_mobile"
+        applicationId = "com.yoldaal.app"
 
         // Google Maps için güvenli değer
         minSdk = flutter.minSdkVersion
