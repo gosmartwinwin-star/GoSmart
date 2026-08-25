@@ -149,6 +149,229 @@ void main() {
       expect(find.textContaining('aktif edildi'), findsNothing);
     },
   );
+
+  testWidgets(
+    'blank transient checkout form does not initialize checkout',
+    (tester) async {
+      final gateway = _Gateway();
+      final controller = await _showPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('driver-plan-daily')),
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey('driver-plan-purchase-prepare')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('driver-plan-checkout-transient-note')),
+        findsOneWidget,
+      );
+
+      final initialize = find.byKey(
+        const ValueKey('driver-plan-checkout-initialize'),
+      );
+
+      await tester.ensureVisible(initialize);
+      await tester.pumpAndSettle();
+      await tester.tap(initialize);
+      await tester.pump();
+
+      expect(gateway.checkoutCalls, 0);
+      expect(find.text('Bu alan zorunludur.'), findsWidgets);
+      expect(controller.paymentPageReady, isFalse);
+    },
+  );
+
+  testWidgets(
+    'transient buyer and billing input initializes payment page without launch',
+    (tester) async {
+      final gateway = _Gateway();
+      final controller = await _showPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('driver-plan-daily')),
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey('driver-plan-purchase-prepare')),
+      );
+      await tester.pumpAndSettle();
+
+      await _fillCheckoutForm(tester);
+
+      final initialize = find.byKey(
+        const ValueKey('driver-plan-checkout-initialize'),
+      );
+
+      await tester.ensureVisible(initialize);
+      await tester.pumpAndSettle();
+      await tester.tap(initialize);
+      await tester.pumpAndSettle();
+
+      expect(gateway.checkoutCalls, 1);
+
+      final buyer = gateway.checkoutBuyers.single;
+      expect(buyer.name, 'Test');
+      expect(buyer.surname, 'Buyer');
+      expect(buyer.identityNumber, '11111111111');
+      expect(buyer.email, 'buyer@example.test');
+      expect(buyer.registrationAddress, 'Registration Address');
+      expect(buyer.city, 'Istanbul');
+      expect(buyer.country, 'Turkey');
+      expect(buyer.zipCode, '34000');
+
+      final billing = gateway.checkoutBillingAddresses.single;
+      expect(billing.address, 'Billing Address');
+      expect(billing.contactName, 'Test Buyer');
+      expect(billing.city, 'Istanbul');
+      expect(billing.country, 'Turkey');
+      expect(billing.zipCode, '34000');
+
+      expect(
+        gateway.checkoutOperationIds.single,
+        controller.prepared!.purchaseOperationId,
+      );
+
+      expect(
+        find.byKey(const ValueKey('driver-plan-checkout-ready')),
+        findsOneWidget,
+      );
+
+      expect(
+        find.textContaining('https://sandbox.example.test/payment'),
+        findsNothing,
+      );
+      expect(find.textContaining('token-1'), findsNothing);
+      expect(find.textContaining('conversation-1'), findsNothing);
+
+      expect(
+        find.byKey(const ValueKey('driver-plan-buyer-identity-number')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'checkout failure keeps transient form retryable',
+    (tester) async {
+      final gateway = _Gateway()..checkoutFailures = 1;
+      final controller = await _showPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('driver-plan-daily')),
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey('driver-plan-purchase-prepare')),
+      );
+      await tester.pumpAndSettle();
+
+      await _fillCheckoutForm(tester);
+
+      final initialize = find.byKey(
+        const ValueKey('driver-plan-checkout-initialize'),
+      );
+
+      await tester.ensureVisible(initialize);
+      await tester.pumpAndSettle();
+      await tester.tap(initialize);
+      await tester.pumpAndSettle();
+
+      expect(gateway.checkoutCalls, 1);
+      expect(controller.paymentPageReady, isFalse);
+
+      expect(
+        find.byKey(const ValueKey('driver-plan-checkout-error')),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(initialize);
+      await tester.pumpAndSettle();
+      await tester.tap(initialize);
+      await tester.pumpAndSettle();
+
+      expect(gateway.checkoutCalls, 2);
+      expect(controller.checkoutErrorMessage, isNull);
+      expect(controller.paymentPageReady, isTrue);
+
+      expect(
+        find.byKey(const ValueKey('driver-plan-checkout-ready')),
+        findsOneWidget,
+      );
+    },
+  );
+}
+
+Future<void> _fillCheckoutForm(WidgetTester tester) async {
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-name')),
+    'Test',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-surname')),
+    'Buyer',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-identity-number')),
+    '11111111111',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-email')),
+    'buyer@example.test',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-registration-address')),
+    'Registration Address',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-city')),
+    'Istanbul',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-country')),
+    'Turkey',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-buyer-zip-code')),
+    '34000',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-billing-address')),
+    'Billing Address',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-billing-contact-name')),
+    'Test Buyer',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-billing-city')),
+    'Istanbul',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-billing-country')),
+    'Turkey',
+  );
+  await tester.enterText(
+    find.byKey(const ValueKey('driver-plan-billing-zip-code')),
+    '34000',
+  );
+
+  await tester.pump();
 }
 
 Future<DriverPlanPurchaseController> _showPanel(
@@ -162,7 +385,11 @@ Future<DriverPlanPurchaseController> _showPanel(
 
   await tester.pumpWidget(
     MaterialApp(
-      home: Scaffold(body: DriverPlanPurchasePanel(controller: controller)),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: DriverPlanPurchasePanel(controller: controller),
+        ),
+      ),
     ),
   );
 
@@ -201,11 +428,21 @@ DriverPlanCatalogSnapshot catalog() {
   );
 }
 
-class _Gateway implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
+class _Gateway
+    implements
+        DriverPlanPurchaseGateway,
+        DriverPlanCatalogGateway,
+        DriverPlanCheckoutGateway {
   int catalogCalls = 0;
   int catalogFailures = 0;
   int prepareFailures = 0;
+  int checkoutFailures = 0;
+  int checkoutCalls = 0;
   Completer<DriverPlanCatalogSnapshot>? catalogCompleter;
+
+  final List<String> checkoutOperationIds = [];
+  final List<DriverPlanCheckoutBuyer> checkoutBuyers = [];
+  final List<DriverPlanCheckoutBillingAddress> checkoutBillingAddresses = [];
 
   @override
   Future<DriverPlanCatalogSnapshot> load() async {
@@ -240,6 +477,33 @@ class _Gateway implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
       plan: plan,
       amountMinor: 1234,
       currency: 'TRY',
+    );
+  }
+
+  @override
+  Future<InitializedDriverPlanCheckout> initializeCheckout({
+    required String purchaseOperationId,
+    required DriverPlanCheckoutBuyer buyer,
+    required DriverPlanCheckoutBillingAddress billingAddress,
+  }) async {
+    checkoutCalls++;
+    checkoutOperationIds.add(purchaseOperationId);
+    checkoutBuyers.add(buyer);
+    checkoutBillingAddresses.add(billingAddress);
+
+    if (checkoutFailures > 0) {
+      checkoutFailures--;
+      throw const DriverPlanPurchaseException(code: 'unavailable');
+    }
+
+    return InitializedDriverPlanCheckout(
+      provider: 'iyzico_checkout_form',
+      purchaseOperationId: purchaseOperationId,
+      conversationId: 'conversation-1',
+      token: 'token-1',
+      paymentPageUrl: Uri.parse(
+        'https://sandbox.example.test/payment',
+      ),
     );
   }
 }

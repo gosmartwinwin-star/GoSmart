@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../application/driver_access/driver_plan_purchase_gateway.dart';
 import '../../controllers/driver_plan_purchase_controller.dart';
 import '../../domain/subscription/driver_pass_plan.dart';
 
@@ -14,6 +15,39 @@ class DriverPlanPurchasePanel extends StatefulWidget {
 }
 
 class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
+  final _checkoutFormKey = GlobalKey<FormState>();
+
+  final _buyerNameController = TextEditingController();
+  final _buyerSurnameController = TextEditingController();
+  final _buyerIdentityNumberController = TextEditingController();
+  final _buyerEmailController = TextEditingController();
+  final _buyerRegistrationAddressController = TextEditingController();
+  final _buyerCityController = TextEditingController();
+  final _buyerCountryController = TextEditingController();
+  final _buyerZipCodeController = TextEditingController();
+
+  final _billingAddressController = TextEditingController();
+  final _billingContactNameController = TextEditingController();
+  final _billingCityController = TextEditingController();
+  final _billingCountryController = TextEditingController();
+  final _billingZipCodeController = TextEditingController();
+
+  List<TextEditingController> get _checkoutInputControllers => [
+    _buyerNameController,
+    _buyerSurnameController,
+    _buyerIdentityNumberController,
+    _buyerEmailController,
+    _buyerRegistrationAddressController,
+    _buyerCityController,
+    _buyerCountryController,
+    _buyerZipCodeController,
+    _billingAddressController,
+    _billingContactNameController,
+    _billingCityController,
+    _billingCountryController,
+    _billingZipCodeController,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -25,7 +59,92 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.controller != widget.controller) {
+      _clearCheckoutInput();
       widget.controller.loadCatalog();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _checkoutInputControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _clearCheckoutInput() {
+    for (final controller in _checkoutInputControllers) {
+      controller.clear();
+    }
+  }
+
+  String? _requiredCheckoutField(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Bu alan zorunludur.';
+    }
+
+    return null;
+  }
+
+  Widget _checkoutField({
+    required Key key,
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TextFormField(
+        key: key,
+        controller: controller,
+        keyboardType: keyboardType,
+        textInputAction: TextInputAction.next,
+        validator: _requiredCheckoutField,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _initializeCheckout() async {
+    final valid = _checkoutFormKey.currentState?.validate() ?? false;
+
+    if (!valid) {
+      return;
+    }
+
+    final controller = widget.controller;
+
+    await controller.initializeCheckout(
+      buyer: DriverPlanCheckoutBuyer(
+        name: _buyerNameController.text.trim(),
+        surname: _buyerSurnameController.text.trim(),
+        identityNumber: _buyerIdentityNumberController.text.trim(),
+        email: _buyerEmailController.text.trim(),
+        registrationAddress: _buyerRegistrationAddressController.text.trim(),
+        city: _buyerCityController.text.trim(),
+        country: _buyerCountryController.text.trim(),
+        zipCode: _buyerZipCodeController.text.trim(),
+      ),
+      billingAddress: DriverPlanCheckoutBillingAddress(
+        address: _billingAddressController.text.trim(),
+        contactName: _billingContactNameController.text.trim(),
+        city: _billingCityController.text.trim(),
+        country: _billingCountryController.text.trim(),
+        zipCode: _billingZipCodeController.text.trim(),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (controller.paymentPageReady) {
+      _clearCheckoutInput();
+      FocusScope.of(context).unfocus();
     }
   }
 
@@ -123,6 +242,154 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
                     const Text(
                       'Ödeme veya paket aktivasyonu henüz tamamlanmadı.',
                     ),
+                  ],
+                  if (prepared != null) ...[
+                    const SizedBox(height: 16),
+                    if (controller.paymentPageReady)
+                      const Text(
+                        '\u00d6deme sayfas\u0131 haz\u0131r. '
+                        'A\u00e7ma ad\u0131m\u0131 hen\u00fcz ba\u015flat\u0131lmad\u0131.',
+                        key: ValueKey('driver-plan-checkout-ready'),
+                      )
+                    else ...[
+                      Text(
+                        '\u00d6deme bilgileri',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Bu bilgiler yaln\u0131zca \u00f6deme sayfas\u0131n\u0131 '
+                        'haz\u0131rlamak i\u00e7in kullan\u0131l\u0131r.',
+                        key: ValueKey('driver-plan-checkout-transient-note'),
+                      ),
+                      const SizedBox(height: 12),
+                      Form(
+                        key: _checkoutFormKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Al\u0131c\u0131 bilgileri',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            const SizedBox(height: 8),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-buyer-name'),
+                              label: 'Ad',
+                              controller: _buyerNameController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-buyer-surname'),
+                              label: 'Soyad',
+                              controller: _buyerSurnameController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey(
+                                'driver-plan-buyer-identity-number',
+                              ),
+                              label: 'Kimlik numaras\u0131',
+                              controller: _buyerIdentityNumberController,
+                              keyboardType: TextInputType.number,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-buyer-email'),
+                              label: 'E-posta',
+                              controller: _buyerEmailController,
+                              keyboardType: TextInputType.emailAddress,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey(
+                                'driver-plan-buyer-registration-address',
+                              ),
+                              label: 'Kay\u0131t adresi',
+                              controller: _buyerRegistrationAddressController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-buyer-city'),
+                              label: '\u015eehir',
+                              controller: _buyerCityController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-buyer-country'),
+                              label: '\u00dclke',
+                              controller: _buyerCountryController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-buyer-zip-code'),
+                              label: 'Posta kodu',
+                              controller: _buyerZipCodeController,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Fatura adresi',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            const SizedBox(height: 8),
+                            _checkoutField(
+                              key: const ValueKey(
+                                'driver-plan-billing-address',
+                              ),
+                              label: 'Adres',
+                              controller: _billingAddressController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey(
+                                'driver-plan-billing-contact-name',
+                              ),
+                              label: '\u0130leti\u015fim ad\u0131',
+                              controller: _billingContactNameController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey('driver-plan-billing-city'),
+                              label: '\u015eehir',
+                              controller: _billingCityController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey(
+                                'driver-plan-billing-country',
+                              ),
+                              label: '\u00dclke',
+                              controller: _billingCountryController,
+                            ),
+                            _checkoutField(
+                              key: const ValueKey(
+                                'driver-plan-billing-zip-code',
+                              ),
+                              label: 'Posta kodu',
+                              controller: _billingZipCodeController,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (controller.checkoutErrorMessage case final error?) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          error,
+                          key: const ValueKey(
+                            'driver-plan-checkout-error',
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      FilledButton.tonal(
+                        key: const ValueKey(
+                          'driver-plan-checkout-initialize',
+                        ),
+                        onPressed: controller.checkoutInitializing
+                            ? null
+                            : _initializeCheckout,
+                        child: controller.checkoutInitializing
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                '\u00d6deme Sayfas\u0131n\u0131 Haz\u0131rla',
+                              ),
+                      ),
+                    ],
                   ],
                   const SizedBox(height: 12),
                   FilledButton(

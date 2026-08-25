@@ -214,6 +214,124 @@ void main() {
   );
 
   test(
+    'checkout initialization uses prepared operation and transient input',
+    () async {
+      final gateway = _Gateway();
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-1',
+      );
+      addTearDown(controller.dispose);
+
+      await controller.loadCatalog();
+      controller.selectPlan(DriverPassPlan.daily);
+      await controller.prepare();
+
+      final buyer = checkoutBuyer();
+      final billingAddress = checkoutBillingAddress();
+
+      await controller.initializeCheckout(
+        buyer: buyer,
+        billingAddress: billingAddress,
+      );
+
+      expect(gateway.checkoutCalls, 1);
+      expect(
+        gateway.checkoutOperationIds,
+        [controller.prepared!.purchaseOperationId],
+      );
+      expect(gateway.checkoutBuyers.single, same(buyer));
+      expect(gateway.checkoutBillingAddresses.single, same(billingAddress));
+      expect(controller.checkoutInitializing, isFalse);
+      expect(controller.checkoutErrorMessage, isNull);
+      expect(controller.paymentPageReady, isTrue);
+      expect(
+        controller.initializedCheckout!.paymentPageUrl,
+        Uri.parse('https://sandbox.example.test/payment'),
+      );
+    },
+  );
+
+  test('concurrent checkout initialization is suppressed', () async {
+    final gateway = _Gateway();
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      requestIdFactory: () => 'request-1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+
+    final completer = Completer<InitializedDriverPlanCheckout>();
+    gateway.checkoutCompleter = completer;
+
+    final buyer = checkoutBuyer();
+    final billingAddress = checkoutBillingAddress();
+
+    final first = controller.initializeCheckout(
+      buyer: buyer,
+      billingAddress: billingAddress,
+    );
+    final second = controller.initializeCheckout(
+      buyer: buyer,
+      billingAddress: billingAddress,
+    );
+
+    expect(gateway.checkoutCalls, 1);
+    expect(controller.checkoutInitializing, isTrue);
+
+    completer.complete(
+      initializedCheckout(controller.prepared!.purchaseOperationId),
+    );
+
+    await Future.wait([first, second]);
+
+    expect(gateway.checkoutCalls, 1);
+    expect(controller.checkoutInitializing, isFalse);
+    expect(controller.paymentPageReady, isTrue);
+  });
+
+  test('checkout transport failure is sanitized and retryable', () async {
+    final gateway = _Gateway()..unexpectedCheckoutFailure = true;
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      requestIdFactory: () => 'request-1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+
+    final operationId = controller.prepared!.purchaseOperationId;
+    final buyer = checkoutBuyer();
+    final billingAddress = checkoutBillingAddress();
+
+    await controller.initializeCheckout(
+      buyer: buyer,
+      billingAddress: billingAddress,
+    );
+
+    expect(controller.paymentPageReady, isFalse);
+    expect(controller.checkoutErrorMessage, isNotNull);
+    expect(controller.checkoutErrorMessage, isNot(contains('checkout secret')));
+
+    gateway.unexpectedCheckoutFailure = false;
+
+    await controller.initializeCheckout(
+      buyer: buyer,
+      billingAddress: billingAddress,
+    );
+
+    expect(gateway.checkoutCalls, 2);
+    expect(gateway.checkoutOperationIds, [operationId, operationId]);
+    expect(controller.checkoutErrorMessage, isNull);
+    expect(controller.paymentPageReady, isTrue);
+  });
+
+  test(
     'dispose during async catalog completion does not notify after dispose',
     () async {
       final gateway = _Gateway();
@@ -278,7 +396,44 @@ PreparedDriverPlanPurchase prepared(DriverPassPlan plan) {
   );
 }
 
-class _Gateway implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
+DriverPlanCheckoutBuyer checkoutBuyer() {
+  return const DriverPlanCheckoutBuyer(
+    name: 'Test',
+    surname: 'Buyer',
+    identityNumber: '11111111111',
+    email: 'buyer@example.test',
+    registrationAddress: 'Test Registration Address',
+    city: 'Istanbul',
+    country: 'Turkey',
+    zipCode: '34000',
+  );
+}
+
+DriverPlanCheckoutBillingAddress checkoutBillingAddress() {
+  return const DriverPlanCheckoutBillingAddress(
+    address: 'Test Billing Address',
+    contactName: 'Test Buyer',
+    city: 'Istanbul',
+    country: 'Turkey',
+    zipCode: '34000',
+  );
+}
+
+InitializedDriverPlanCheckout initializedCheckout(String purchaseOperationId) {
+  return InitializedDriverPlanCheckout(
+    provider: 'iyzico_checkout_form',
+    purchaseOperationId: purchaseOperationId,
+    conversationId: 'conversation-1',
+    token: 'token-1',
+    paymentPageUrl: Uri.parse('https://sandbox.example.test/payment'),
+  );
+}
+
+class _Gateway
+    implements
+        DriverPlanPurchaseGateway,
+        DriverPlanCatalogGateway,
+        DriverPlanCheckoutGateway {
   DriverPlanCatalogSnapshot catalogValue = catalog();
   int catalogFailures = 0;
   DriverPlanCatalogException? catalogError;
@@ -290,6 +445,13 @@ class _Gateway implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
   Completer<PreparedDriverPlanPurchase>? prepareCompleter;
   int prepareCalls = 0;
   final List<String> prepareRequestIds = [];
+
+  bool unexpectedCheckoutFailure = false;
+  Completer<InitializedDriverPlanCheckout>? checkoutCompleter;
+  int checkoutCalls = 0;
+  final List<String> checkoutOperationIds = [];
+  final List<DriverPlanCheckoutBuyer> checkoutBuyers = [];
+  final List<DriverPlanCheckoutBillingAddress> checkoutBillingAddresses = [];
 
   @override
   Future<DriverPlanCatalogSnapshot> load() async {
@@ -333,5 +495,27 @@ class _Gateway implements DriverPlanPurchaseGateway, DriverPlanCatalogGateway {
     }
 
     return prepared(plan);
+  }
+
+  @override
+  Future<InitializedDriverPlanCheckout> initializeCheckout({
+    required String purchaseOperationId,
+    required DriverPlanCheckoutBuyer buyer,
+    required DriverPlanCheckoutBillingAddress billingAddress,
+  }) async {
+    checkoutCalls++;
+    checkoutOperationIds.add(purchaseOperationId);
+    checkoutBuyers.add(buyer);
+    checkoutBillingAddresses.add(billingAddress);
+
+    if (unexpectedCheckoutFailure) {
+      throw StateError('checkout secret');
+    }
+
+    if (checkoutCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return initializedCheckout(purchaseOperationId);
   }
 }

@@ -11,6 +11,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   DriverPlanPurchaseController({
     required DriverPlanPurchaseGateway gateway,
     DriverPlanCatalogGateway? catalogGateway,
+    DriverPlanCheckoutGateway? checkoutGateway,
     String Function()? requestIdFactory,
   }) : _gateway = gateway,
        _catalogGateway =
@@ -18,10 +19,16 @@ class DriverPlanPurchaseController extends ChangeNotifier {
            (gateway is DriverPlanCatalogGateway
                ? gateway as DriverPlanCatalogGateway
                : null),
+       _checkoutGateway =
+           checkoutGateway ??
+           (gateway is DriverPlanCheckoutGateway
+               ? gateway as DriverPlanCheckoutGateway
+               : null),
        _requestIdFactory = requestIdFactory ?? _secureRequestId;
 
   final DriverPlanPurchaseGateway _gateway;
   final DriverPlanCatalogGateway? _catalogGateway;
+  final DriverPlanCheckoutGateway? _checkoutGateway;
   final String Function() _requestIdFactory;
 
   DriverPlanCatalogSnapshot? _catalog;
@@ -33,6 +40,11 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   PreparedDriverPlanPurchase? _prepared;
   String? _errorMessage;
   String? _requestId;
+
+  bool _checkoutInitializing = false;
+  InitializedDriverPlanCheckout? _initializedCheckout;
+  String? _checkoutErrorMessage;
+
   bool _disposed = false;
 
   DriverPlanCatalogSnapshot? get catalog => _catalog;
@@ -44,6 +56,12 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   PreparedDriverPlanPurchase? get prepared => _prepared;
   String? get errorMessage => _errorMessage;
   String? get requestId => _requestId;
+
+  bool get checkoutAvailable => _checkoutGateway != null;
+  bool get checkoutInitializing => _checkoutInitializing;
+  InitializedDriverPlanCheckout? get initializedCheckout => _initializedCheckout;
+  String? get checkoutErrorMessage => _checkoutErrorMessage;
+  bool get paymentPageReady => _initializedCheckout != null;
 
   bool isPlanEnabled(DriverPassPlan plan) {
     final current = _catalog;
@@ -124,7 +142,11 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   }
 
   void selectPlan(DriverPassPlan plan) {
-    if (_disposed || _catalogLoading || _preparing || !isPlanEnabled(plan)) {
+    if (_disposed ||
+        _catalogLoading ||
+        _preparing ||
+        _checkoutInitializing ||
+        !isPlanEnabled(plan)) {
       return;
     }
 
@@ -136,6 +158,8 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     _prepared = null;
     _errorMessage = null;
     _requestId = null;
+    _initializedCheckout = null;
+    _checkoutErrorMessage = null;
     _notify();
   }
 
@@ -185,6 +209,8 @@ class DriverPlanPurchaseController extends ChangeNotifier {
 
       _prepared = result;
       _errorMessage = null;
+      _initializedCheckout = null;
+      _checkoutErrorMessage = null;
     } on DriverPlanPurchaseException catch (error) {
       if (_disposed) {
         return;
@@ -203,6 +229,79 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     }
   }
 
+  Future<void> initializeCheckout({
+    required DriverPlanCheckoutBuyer buyer,
+    required DriverPlanCheckoutBillingAddress billingAddress,
+  }) async {
+    if (_disposed || _checkoutInitializing || _initializedCheckout != null) {
+      return;
+    }
+
+    final prepared = _prepared;
+
+    if (prepared == null) {
+      _checkoutErrorMessage =
+          '\u00d6deme ad\u0131m\u0131 hen\u00fcz haz\u0131r de\u011fil. '
+          'L\u00fctfen \u00f6nce plan talebini haz\u0131rlay\u0131n.';
+      _notify();
+      return;
+    }
+
+    final gateway = _checkoutGateway;
+
+    if (gateway == null) {
+      _checkoutErrorMessage =
+          '\u00d6deme sayfas\u0131 haz\u0131rlanamad\u0131. '
+          'L\u00fctfen tekrar deneyin.';
+      _notify();
+      return;
+    }
+
+    _checkoutInitializing = true;
+    _checkoutErrorMessage = null;
+    _notify();
+
+    try {
+      final result = await gateway.initializeCheckout(
+        purchaseOperationId: prepared.purchaseOperationId,
+        buyer: buyer,
+        billingAddress: billingAddress,
+      );
+
+      if (_disposed) {
+        return;
+      }
+
+      if (_prepared?.purchaseOperationId != prepared.purchaseOperationId ||
+          result.purchaseOperationId != prepared.purchaseOperationId) {
+        _checkoutErrorMessage =
+            '\u00d6deme sayfas\u0131 haz\u0131rlanamad\u0131. '
+            'L\u00fctfen tekrar deneyin.';
+        return;
+      }
+
+      _initializedCheckout = result;
+      _checkoutErrorMessage = null;
+    } on DriverPlanPurchaseException catch (error) {
+      if (_disposed) {
+        return;
+      }
+
+      _checkoutErrorMessage = _safeCheckoutMessage(error);
+    } catch (_) {
+      if (_disposed) {
+        return;
+      }
+
+      _checkoutErrorMessage =
+          '\u00d6deme sayfas\u0131 haz\u0131rlanamad\u0131. '
+          'L\u00fctfen tekrar deneyin.';
+    } finally {
+      _checkoutInitializing = false;
+      _notify();
+    }
+  }
+
   String _safeCatalogMessage(DriverPlanCatalogException error) {
     return switch (error.code) {
       'unauthenticated' => 'Oturumunuzu kontrol edip tekrar deneyin.',
@@ -217,6 +316,18 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       'unauthenticated' => 'Oturumunuzu kontrol edip tekrar deneyin.',
       'permission-denied' => 'Bu plan talebi için yetkiniz bulunmuyor.',
       _ => 'Plan talebi hazırlanamadı. Lütfen tekrar deneyin.',
+    };
+  }
+
+  String _safeCheckoutMessage(DriverPlanPurchaseException error) {
+    return switch (error.code) {
+      'unauthenticated' =>
+        'Oturumunuzu kontrol edip tekrar deneyin.',
+      'permission-denied' =>
+        'Bu \u00f6deme talebi i\u00e7in yetkiniz bulunmuyor.',
+      _ =>
+        '\u00d6deme sayfas\u0131 haz\u0131rlanamad\u0131. '
+            'L\u00fctfen tekrar deneyin.',
     };
   }
 
