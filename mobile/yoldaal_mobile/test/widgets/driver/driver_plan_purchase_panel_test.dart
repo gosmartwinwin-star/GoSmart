@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_payment_page_launcher.dart';
 import 'package:yoldaal_mobile/controllers/driver_plan_purchase_controller.dart';
 import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
 import 'package:yoldaal_mobile/widgets/driver/driver_plan_purchase_panel.dart';
@@ -315,6 +316,141 @@ void main() {
       );
     },
   );
+  testWidgets(
+    'payment page ready exposes safe external launch UX',
+    (tester) async {
+      final gateway = _Gateway();
+      final launcher = _PaymentPageLauncher();
+
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        paymentPageLauncher: launcher,
+        requestIdFactory: () => 'request-launch',
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: DriverPlanPurchasePanel(
+                controller: controller,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      controller.selectPlan(DriverPassPlan.daily);
+      await controller.prepare();
+
+      await controller.initializeCheckout(
+        buyer: const DriverPlanCheckoutBuyer(
+          name: 'Test',
+          surname: 'Buyer',
+          identityNumber: '11111111111',
+          email: 'buyer@example.test',
+          registrationAddress: 'Test Registration Address',
+          city: 'Istanbul',
+          country: 'Turkey',
+          zipCode: '34000',
+        ),
+        billingAddress: const DriverPlanCheckoutBillingAddress(
+          address: 'Test Billing Address',
+          contactName: 'Test Buyer',
+          city: 'Istanbul',
+          country: 'Turkey',
+          zipCode: '34000',
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-ready'),
+        ),
+        findsOneWidget,
+      );
+
+      final openButton = find.byKey(
+        const ValueKey('driver-plan-checkout-open'),
+      );
+
+      expect(openButton, findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-browser-note'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(openButton);
+      await tester.tap(openButton);
+      await tester.pumpAndSettle();
+
+      expect(launcher.calls, 1);
+      expect(
+        launcher.urls,
+        [controller.initializedCheckout!.paymentPageUrl],
+      );
+      expect(controller.paymentPageReady, isTrue);
+      expect(
+        controller.paymentPageLaunchErrorMessage,
+        isNull,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-launch-error'),
+        ),
+        findsNothing,
+      );
+
+      launcher.failure =
+          const DriverPlanPaymentPageLaunchException(
+            code: 'unavailable',
+          );
+
+      await tester.ensureVisible(openButton);
+      await tester.tap(openButton);
+      await tester.pumpAndSettle();
+
+      expect(launcher.calls, 2);
+      expect(controller.paymentPageReady, isTrue);
+      expect(
+        controller.paymentPageLaunchErrorMessage,
+        '\u00d6deme sayfas\u0131 a\u00e7\u0131lamad\u0131. '
+        'L\u00fctfen tekrar deneyin.',
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-launch-error'),
+        ),
+        findsOneWidget,
+      );
+
+      launcher.failure = null;
+
+      await tester.ensureVisible(openButton);
+      await tester.tap(openButton);
+      await tester.pumpAndSettle();
+
+      expect(launcher.calls, 3);
+      expect(controller.paymentPageReady, isTrue);
+      expect(
+        controller.paymentPageLaunchErrorMessage,
+        isNull,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-launch-error'),
+        ),
+        findsNothing,
+      );
+    },
+  );
 }
 
 Future<void> _fillCheckoutForm(WidgetTester tester) async {
@@ -428,6 +564,22 @@ DriverPlanCatalogSnapshot catalog() {
   );
 }
 
+class _PaymentPageLauncher
+    implements DriverPlanPaymentPageLauncher {
+  int calls = 0;
+  final List<Uri> urls = [];
+  DriverPlanPaymentPageLaunchException? failure;
+
+  @override
+  Future<void> launchPaymentPage(Uri paymentPageUrl) async {
+    calls++;
+    urls.add(paymentPageUrl);
+
+    if (failure case final error?) {
+      throw error;
+    }
+  }
+}
 class _Gateway
     implements
         DriverPlanPurchaseGateway,

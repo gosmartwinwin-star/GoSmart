@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
+import 'package:yoldaal_mobile/application/driver_access/driver_plan_payment_page_launcher.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_plan_purchase_gateway.dart';
 import 'package:yoldaal_mobile/controllers/driver_plan_purchase_controller.dart';
 import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
@@ -331,6 +332,146 @@ void main() {
     expect(controller.paymentPageReady, isTrue);
   });
 
+  test('payment page launch passes only initialized checkout URL', () async {
+    final gateway = _Gateway();
+    final launcher = _PaymentPageLauncher();
+
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      paymentPageLauncher: launcher,
+      requestIdFactory: () => 'request-1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+    await controller.initializeCheckout(
+      buyer: checkoutBuyer(),
+      billingAddress: checkoutBillingAddress(),
+    );
+
+    final expectedUrl = controller.initializedCheckout!.paymentPageUrl;
+
+    await controller.launchPaymentPage();
+
+    expect(launcher.calls, 1);
+    expect(launcher.urls, [expectedUrl]);
+    expect(controller.paymentPageLaunching, isFalse);
+    expect(controller.paymentPageLaunchErrorMessage, isNull);
+    expect(controller.paymentPageReady, isTrue);
+    expect(controller.initializedCheckout!.paymentPageUrl, expectedUrl);
+  });
+
+  test('concurrent payment page launches are suppressed', () async {
+    final gateway = _Gateway();
+    final launcher = _PaymentPageLauncher();
+    final completer = Completer<void>();
+    launcher.completer = completer;
+
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      paymentPageLauncher: launcher,
+      requestIdFactory: () => 'request-1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+    await controller.initializeCheckout(
+      buyer: checkoutBuyer(),
+      billingAddress: checkoutBillingAddress(),
+    );
+
+    final first = controller.launchPaymentPage();
+    final second = controller.launchPaymentPage();
+
+    expect(launcher.calls, 1);
+    expect(controller.paymentPageLaunching, isTrue);
+
+    completer.complete();
+    await Future.wait([first, second]);
+
+    expect(launcher.calls, 1);
+    expect(controller.paymentPageLaunching, isFalse);
+    expect(controller.paymentPageLaunchErrorMessage, isNull);
+    expect(controller.paymentPageReady, isTrue);
+  });
+
+  test('controlled launcher failure is sanitized and retryable', () async {
+    final gateway = _Gateway();
+    final launcher = _PaymentPageLauncher()
+      ..failure = const DriverPlanPaymentPageLaunchException(
+        code: 'unavailable',
+      );
+
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      paymentPageLauncher: launcher,
+      requestIdFactory: () => 'request-1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+    await controller.initializeCheckout(
+      buyer: checkoutBuyer(),
+      billingAddress: checkoutBillingAddress(),
+    );
+
+    await controller.launchPaymentPage();
+
+    expect(launcher.calls, 1);
+    expect(controller.paymentPageReady, isTrue);
+    expect(
+      controller.paymentPageLaunchErrorMessage,
+      'Ödeme sayfası açılamadı. Lütfen tekrar deneyin.',
+    );
+
+    launcher.failure = null;
+
+    await controller.launchPaymentPage();
+
+    expect(launcher.calls, 2);
+    expect(controller.paymentPageLaunchErrorMessage, isNull);
+    expect(controller.paymentPageReady, isTrue);
+  });
+
+  test('unexpected launcher failure never leaks raw platform details', () async {
+    final gateway = _Gateway();
+    final launcher = _PaymentPageLauncher()..unexpectedFailure = true;
+
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      paymentPageLauncher: launcher,
+      requestIdFactory: () => 'request-1',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+    await controller.initializeCheckout(
+      buyer: checkoutBuyer(),
+      billingAddress: checkoutBillingAddress(),
+    );
+
+    await controller.launchPaymentPage();
+
+    expect(launcher.calls, 1);
+    expect(controller.paymentPageLaunching, isFalse);
+    expect(controller.paymentPageReady, isTrue);
+    expect(
+      controller.paymentPageLaunchErrorMessage,
+      'Ödeme sayfası açılamadı. Lütfen tekrar deneyin.',
+    );
+    expect(
+      controller.paymentPageLaunchErrorMessage,
+      isNot(contains('raw browser platform secret')),
+    );
+  });
   test(
     'dispose during async catalog completion does not notify after dispose',
     () async {
@@ -429,6 +570,31 @@ InitializedDriverPlanCheckout initializedCheckout(String purchaseOperationId) {
   );
 }
 
+class _PaymentPageLauncher implements DriverPlanPaymentPageLauncher {
+  int calls = 0;
+  final List<Uri> urls = [];
+  Completer<void>? completer;
+  DriverPlanPaymentPageLaunchException? failure;
+  bool unexpectedFailure = false;
+
+  @override
+  Future<void> launchPaymentPage(Uri paymentPageUrl) async {
+    calls++;
+    urls.add(paymentPageUrl);
+
+    if (failure case final error?) {
+      throw error;
+    }
+
+    if (unexpectedFailure) {
+      throw StateError('raw browser platform secret');
+    }
+
+    if (completer case final pending?) {
+      await pending.future;
+    }
+  }
+}
 class _Gateway
     implements
         DriverPlanPurchaseGateway,

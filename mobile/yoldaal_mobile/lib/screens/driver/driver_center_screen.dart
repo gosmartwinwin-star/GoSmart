@@ -27,6 +27,7 @@ import '../../domain/driver_application/driver_application_review.dart';
 import '../../services/driver_application_review_service.dart';
 import '../../services/driver_plan_catalog_service.dart';
 import '../../services/driver_plan_purchase_service.dart';
+import '../../services/driver_plan_payment_page_launcher_service.dart';
 import 'driver_application_screen.dart';
 import 'driver_application_document_resubmission_screen.dart';
 import '../../widgets/driver/active_return_route_card.dart';
@@ -119,6 +120,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             ? DriverPlanPurchaseController(
                 gateway: DriverPlanPurchaseService(),
                 catalogGateway: DriverPlanCatalogService(),
+                paymentPageLauncher: UrlLauncherDriverPlanPaymentPageLauncher(),
               )
             : null);
     controller.load();

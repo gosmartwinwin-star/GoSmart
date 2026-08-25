@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../application/driver_access/driver_plan_catalog_gateway.dart';
+import '../application/driver_access/driver_plan_payment_page_launcher.dart';
 import '../application/driver_access/driver_plan_purchase_gateway.dart';
 import '../domain/subscription/driver_pass_plan.dart';
 
@@ -12,6 +13,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     required DriverPlanPurchaseGateway gateway,
     DriverPlanCatalogGateway? catalogGateway,
     DriverPlanCheckoutGateway? checkoutGateway,
+    DriverPlanPaymentPageLauncher? paymentPageLauncher,
     String Function()? requestIdFactory,
   }) : _gateway = gateway,
        _catalogGateway =
@@ -24,11 +26,13 @@ class DriverPlanPurchaseController extends ChangeNotifier {
            (gateway is DriverPlanCheckoutGateway
                ? gateway as DriverPlanCheckoutGateway
                : null),
+       _paymentPageLauncher = paymentPageLauncher,
        _requestIdFactory = requestIdFactory ?? _secureRequestId;
 
   final DriverPlanPurchaseGateway _gateway;
   final DriverPlanCatalogGateway? _catalogGateway;
   final DriverPlanCheckoutGateway? _checkoutGateway;
+  final DriverPlanPaymentPageLauncher? _paymentPageLauncher;
   final String Function() _requestIdFactory;
 
   DriverPlanCatalogSnapshot? _catalog;
@@ -44,6 +48,9 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   bool _checkoutInitializing = false;
   InitializedDriverPlanCheckout? _initializedCheckout;
   String? _checkoutErrorMessage;
+
+  bool _paymentPageLaunching = false;
+  String? _paymentPageLaunchErrorMessage;
 
   bool _disposed = false;
 
@@ -62,6 +69,10 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   InitializedDriverPlanCheckout? get initializedCheckout => _initializedCheckout;
   String? get checkoutErrorMessage => _checkoutErrorMessage;
   bool get paymentPageReady => _initializedCheckout != null;
+  bool get paymentPageLaunchAvailable => _paymentPageLauncher != null;
+  bool get paymentPageLaunching => _paymentPageLaunching;
+  String? get paymentPageLaunchErrorMessage =>
+      _paymentPageLaunchErrorMessage;
 
   bool isPlanEnabled(DriverPassPlan plan) {
     final current = _catalog;
@@ -146,6 +157,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
         _catalogLoading ||
         _preparing ||
         _checkoutInitializing ||
+        _paymentPageLaunching ||
         !isPlanEnabled(plan)) {
       return;
     }
@@ -160,6 +172,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     _requestId = null;
     _initializedCheckout = null;
     _checkoutErrorMessage = null;
+    _paymentPageLaunchErrorMessage = null;
     _notify();
   }
 
@@ -211,6 +224,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       _errorMessage = null;
       _initializedCheckout = null;
       _checkoutErrorMessage = null;
+      _paymentPageLaunchErrorMessage = null;
     } on DriverPlanPurchaseException catch (error) {
       if (_disposed) {
         return;
@@ -282,6 +296,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
 
       _initializedCheckout = result;
       _checkoutErrorMessage = null;
+      _paymentPageLaunchErrorMessage = null;
     } on DriverPlanPurchaseException catch (error) {
       if (_disposed) {
         return;
@@ -298,6 +313,61 @@ class DriverPlanPurchaseController extends ChangeNotifier {
           'L\u00fctfen tekrar deneyin.';
     } finally {
       _checkoutInitializing = false;
+      _notify();
+    }
+  }
+
+  Future<void> launchPaymentPage() async {
+    if (_disposed || _paymentPageLaunching) {
+      return;
+    }
+
+    final checkout = _initializedCheckout;
+
+    if (checkout == null) {
+      _paymentPageLaunchErrorMessage =
+          'Ödeme sayfası henüz hazır değil. Lütfen tekrar deneyin.';
+      _notify();
+      return;
+    }
+
+    final launcher = _paymentPageLauncher;
+
+    if (launcher == null) {
+      _paymentPageLaunchErrorMessage =
+          'Ödeme sayfası açılamadı. Lütfen tekrar deneyin.';
+      _notify();
+      return;
+    }
+
+    _paymentPageLaunching = true;
+    _paymentPageLaunchErrorMessage = null;
+    _notify();
+
+    try {
+      await launcher.launchPaymentPage(checkout.paymentPageUrl);
+
+      if (_disposed) {
+        return;
+      }
+
+      _paymentPageLaunchErrorMessage = null;
+    } on DriverPlanPaymentPageLaunchException {
+      if (_disposed) {
+        return;
+      }
+
+      _paymentPageLaunchErrorMessage =
+          'Ödeme sayfası açılamadı. Lütfen tekrar deneyin.';
+    } catch (_) {
+      if (_disposed) {
+        return;
+      }
+
+      _paymentPageLaunchErrorMessage =
+          'Ödeme sayfası açılamadı. Lütfen tekrar deneyin.';
+    } finally {
+      _paymentPageLaunching = false;
       _notify();
     }
   }

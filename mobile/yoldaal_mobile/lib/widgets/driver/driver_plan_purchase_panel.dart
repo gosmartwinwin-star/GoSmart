@@ -157,6 +157,8 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
       builder: (context, _) {
         final catalog = controller.catalog;
         final prepared = controller.prepared;
+        final paymentPageLaunchErrorMessage =
+            controller.paymentPageLaunchErrorMessage;
 
         return Card(
           key: const ValueKey('driver-plan-purchase-panel'),
@@ -245,13 +247,58 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
                   ],
                   if (prepared != null) ...[
                     const SizedBox(height: 16),
-                    if (controller.paymentPageReady)
+                    if (controller.paymentPageReady) ...[
                       const Text(
                         '\u00d6deme sayfas\u0131 haz\u0131r. '
-                        'A\u00e7ma ad\u0131m\u0131 hen\u00fcz ba\u015flat\u0131lmad\u0131.',
+                        'Harici taray\u0131c\u0131da devam edebilirsiniz.',
                         key: ValueKey('driver-plan-checkout-ready'),
-                      )
-                    else ...[
+                      ),
+                    const SizedBox(height: 12),
+                    if (paymentPageLaunchErrorMessage != null) ...[
+                      Text(
+                        paymentPageLaunchErrorMessage,
+                        key: const ValueKey(
+                          'driver-plan-checkout-launch-error',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    FilledButton.icon(
+                      key: const ValueKey(
+                        'driver-plan-checkout-open',
+                      ),
+                      onPressed:
+                          controller.paymentPageLaunchAvailable &&
+                              !controller.paymentPageLaunching
+                          ? () {
+                              controller.launchPaymentPage();
+                            }
+                          : null,
+                      icon: controller.paymentPageLaunching
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.open_in_new),
+                      label: Text(
+                        controller.paymentPageLaunching
+                            ? 'Ödeme Sayfası Açılıyor'
+                            : 'Ödeme Sayfasını Aç',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Ödeme harici tarayıcıda devam eder. '
+                      'Tarayıcıdan dönmek ödemenin tamamlandığı '
+                      'anlamına gelmez.',
+                      key: ValueKey(
+                        'driver-plan-checkout-browser-note',
+                      ),
+                    ),
+                    ] else ...[
                       Text(
                         '\u00d6deme bilgileri',
                         style: Theme.of(context).textTheme.titleSmall,
