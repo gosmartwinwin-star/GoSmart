@@ -752,6 +752,352 @@ void main() {
   );
 
   testWidgets(
+    'initState triggers recovery exactly once',
+    (tester) async {
+      final gateway = _Gateway();
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-init',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(gateway.recoveryCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'controller replacement triggers recovery on new controller exactly once',
+    (tester) async {
+      final firstGateway = _Gateway();
+      final secondGateway = _Gateway();
+      final firstController = DriverPlanPurchaseController(
+        gateway: firstGateway,
+        requestIdFactory: () => 'request-panel-recovery-first',
+      );
+      final secondController = DriverPlanPurchaseController(
+        gateway: secondGateway,
+        requestIdFactory: () => 'request-panel-recovery-second',
+      );
+      addTearDown(firstController.dispose);
+      addTearDown(secondController.dispose);
+
+      await _pumpRecoveryPanel(tester, firstController);
+      expect(firstGateway.recoveryCalls, 1);
+
+      await _pumpRecoveryPanel(tester, secondController);
+
+      expect(firstGateway.recoveryCalls, 1);
+      expect(secondGateway.recoveryCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'same controller rebuild does not retrigger failed recovery',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryError =
+            const DriverPlanPurchaseException(code: 'unavailable');
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-same',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+      expect(gateway.recoveryCalls, 1);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(gateway.recoveryCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'null recovery renders no recovered status UX',
+    (tester) async {
+      final gateway = _Gateway();
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-null',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(gateway.recoveryCalls, 1);
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-loading'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-pending'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-review'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-failure'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-success'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-error'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-refresh'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'recovered pending is visible and refreshable',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryStatus =
+            _recoveredStatus(DriverPlanPaymentOutcome.pending)
+        ..statusOutcome = DriverPlanPaymentOutcome.paymentReview;
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-pending',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-pending'),
+        ),
+        findsOneWidget,
+      );
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+      expect(refresh, findsOneWidget);
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(gateway.statusCalls, 1);
+      expect(gateway.statusOperationIds, [_recoveredOperationId()]);
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-review'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'recovered paymentReview is visible and refreshable',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryStatus =
+            _recoveredStatus(DriverPlanPaymentOutcome.paymentReview);
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-review',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-review'),
+        ),
+        findsOneWidget,
+      );
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+      expect(refresh, findsOneWidget);
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'recovered paymentFailed is visible and terminal',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryStatus =
+            _recoveredStatus(DriverPlanPaymentOutcome.paymentFailed);
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-failed',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-failure'),
+        ),
+        findsOneWidget,
+      );
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+      expect(refresh, findsOneWidget);
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'recovered settled is visible and terminal',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryStatus =
+            _recoveredStatus(DriverPlanPaymentOutcome.settled);
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-settled',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-success'),
+        ),
+        findsOneWidget,
+      );
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+      expect(refresh, findsOneWidget);
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'recovery read error renders status error and not payment failure',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryError =
+            const DriverPlanPurchaseException(code: 'unavailable');
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        requestIdFactory: () => 'request-panel-recovery-error',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-error'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-failure'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-refresh'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'recovered-only UX has no payment-page browser or provider artifacts',
+    (tester) async {
+      final gateway = _Gateway()
+        ..recoveryStatus =
+            _recoveredStatus(DriverPlanPaymentOutcome.pending);
+      final launcher = _PaymentPageLauncher();
+      final controller = DriverPlanPurchaseController(
+        gateway: gateway,
+        paymentPageLauncher: launcher,
+        requestIdFactory: () => 'request-panel-recovery-security',
+      );
+      addTearDown(controller.dispose);
+
+      await _pumpRecoveryPanel(tester, controller);
+
+      expect(controller.prepared, isNull);
+      expect(controller.initializedCheckout, isNull);
+      expect(gateway.checkoutCalls, 0);
+      expect(launcher.calls, 0);
+
+      expect(
+        find.byKey(const ValueKey('driver-plan-checkout-ready')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('driver-plan-checkout-open')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-browser-note'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-checkout-launch-error'),
+        ),
+        findsNothing,
+      );
+      expect(find.textContaining('token-1'), findsNothing);
+      expect(find.textContaining('conversation-1'), findsNothing);
+      expect(
+        find.textContaining('https://sandbox.example.test/payment'),
+        findsNothing,
+      );
+    },
+  );
+  testWidgets(
     'status UX never renders payment URL token or conversation id',
     (tester) async {
       final gateway = _Gateway()
@@ -787,6 +1133,34 @@ void main() {
   );
 }
 
+String _recoveredOperationId() =>
+    List<String>.filled(64, 'c').join();
+
+DriverPlanPaymentStatus _recoveredStatus(
+  DriverPlanPaymentOutcome outcome,
+) {
+  return DriverPlanPaymentStatus(
+    purchaseOperationId: _recoveredOperationId(),
+    outcome: outcome,
+  );
+}
+
+Future<void> _pumpRecoveryPanel(
+  WidgetTester tester,
+  DriverPlanPurchaseController controller,
+) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: DriverPlanPurchasePanel(controller: controller),
+        ),
+      ),
+    ),
+  );
+
+  await tester.pumpAndSettle();
+}
 Future<DriverPlanPurchaseController> _showPaymentStatusReadyPanel(
   WidgetTester tester,
   _Gateway gateway, {
@@ -977,7 +1351,8 @@ class _Gateway
         DriverPlanPurchaseGateway,
         DriverPlanCatalogGateway,
         DriverPlanCheckoutGateway,
-        DriverPlanPaymentStatusGateway {
+        DriverPlanPaymentStatusGateway,
+        DriverPlanPaymentStatusRecoveryGateway {
   int catalogCalls = 0;
   int catalogFailures = 0;
   int prepareFailures = 0;
@@ -995,6 +1370,11 @@ class _Gateway
       DriverPlanPaymentOutcome.pending;
   DriverPlanPurchaseException? statusError;
   Completer<DriverPlanPaymentStatus>? statusCompleter;
+
+  int recoveryCalls = 0;
+  DriverPlanPaymentStatus? recoveryStatus;
+  DriverPlanPurchaseException? recoveryError;
+  Completer<DriverPlanPaymentStatus?>? recoveryCompleter;
 
   @override
   Future<DriverPlanCatalogSnapshot> load() async {
@@ -1078,5 +1458,20 @@ class _Gateway
       purchaseOperationId: purchaseOperationId,
       outcome: statusOutcome,
     );
+  }
+
+  @override
+  Future<DriverPlanPaymentStatus?> getLatestPaymentStatus() async {
+    recoveryCalls++;
+
+    if (recoveryError case final error?) {
+      throw error;
+    }
+
+    if (recoveryCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return recoveryStatus;
   }
 }
