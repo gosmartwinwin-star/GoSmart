@@ -47,12 +47,14 @@ class HomeScreen extends StatefulWidget {
     this.authenticate,
     this.locationAccess,
     this.profileScreenBuilder,
+    this.enableSyntheticTaxis = kDebugMode,
   });
   final PassengerRideController? rideController;
   final HomeRouteLoader? routeLoader;
   final Future<bool> Function()? authenticate;
   final LocationAccessGateway? locationAccess;
   final WidgetBuilder? profileScreenBuilder;
+  final bool enableSyntheticTaxis;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -120,24 +122,26 @@ class _HomeScreenState extends State<HomeScreen> {
           .listen((user) => rideController.authChanged(user?.uid));
     }
 
-    _initializeTaxis();
+    if (widget.enableSyntheticTaxis) {
+      _initializeTaxis();
 
-    taxiController.startSimulation(() {
-      if (!mounted) return;
+      taxiController.startSimulation(() {
+        if (!mounted) return;
 
-      setState(() {
-        final selectedTaxiId = selectedTaxi?.id;
-        if (selectedTaxiId != null) {
-          for (final taxi in taxiController.taxis) {
-            if (taxi.id == selectedTaxiId) {
-              selectedTaxi = taxi;
-              break;
+        setState(() {
+          final selectedTaxiId = selectedTaxi?.id;
+          if (selectedTaxiId != null) {
+            for (final taxi in taxiController.taxis) {
+              if (taxi.id == selectedTaxiId) {
+                selectedTaxi = taxi;
+                break;
+              }
             }
           }
-        }
-        _refreshMarkers();
+          _refreshMarkers();
+        });
       });
-    });
+    }
   }
 
   @override
@@ -177,6 +181,8 @@ class _HomeScreenState extends State<HomeScreen> {
     required double latitude,
     required double longitude,
   }) {
+    if (!widget.enableSyntheticTaxis) return;
+
     taxiController.loadTaxisAround(latitude: latitude, longitude: longitude);
 
     if (!mounted) return;
@@ -206,21 +212,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Taksi markerlarını ekle
-    final taxiMarkers = markerService.createTaxiMarkers(
-      taxis: taxiController.taxis,
-      onTap: (TaxiModel taxi) {
-        setState(() {
-          selectedTaxi = taxi;
-        });
+    if (widget.enableSyntheticTaxis) {
+      final taxiMarkers = markerService.createTaxiMarkers(
+        taxis: taxiController.taxis,
+        onTap: (TaxiModel taxi) {
+          setState(() {
+            selectedTaxi = taxi;
+          });
 
-        debugPrint("${taxi.driverName} seçildi");
-      },
-    );
-    _markers.addAll(taxiMarkers);
+          debugPrint("${taxi.driverName} seçildi");
+        },
+      );
+      _markers.addAll(taxiMarkers);
 
-    if (kDebugMode) {
-      debugPrint("Taksi modeli sayısı: ${taxiController.taxis.length}");
-      debugPrint("Taksi marker sayısı: ${taxiMarkers.length}");
+      if (kDebugMode) {
+        debugPrint("Taksi modeli sayısı: ${taxiController.taxis.length}");
+        debugPrint("Taksi marker sayısı: ${taxiMarkers.length}");
+      }
     }
 
     // Pickup & Destination markerlarını ekle

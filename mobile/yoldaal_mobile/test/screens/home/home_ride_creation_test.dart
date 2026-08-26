@@ -196,6 +196,7 @@ void main() {
         home: HomeScreen(
           rideController: controller,
           authenticate: () async => true,
+          enableSyntheticTaxis: false,
           routeLoader: ({required pickup, required destination}) {
             routeCalls++;
             return routeCompleter.future;
@@ -260,6 +261,47 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets(
+    'sentetik taksiler kapaliyken haritada taksi markeri olusturmaz',
+    (tester) async {
+      final gateway = _FakeRideGateway();
+      final controller = PassengerRideController(
+        gateway: gateway,
+        repository: gateway,
+      );
+      final location = _HomeLocationGateway(
+        LocationAccessIssue.permissionDenied,
+      );
+
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            rideController: controller,
+            locationAccess: location,
+            authenticate: () async => true,
+            enableSyntheticTaxis: false,
+            routeLoader: ({required pickup, required destination}) async =>
+                const RouteResultModel(
+                  points: [],
+                  distanceMeters: 0,
+                  durationSeconds: 0,
+                ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final map = tester.widget<YoldaAlMap>(find.byType(YoldaAlMap));
+      final syntheticTaxiMarkers = map.markers.where(
+        (marker) => marker.markerId.value.startsWith('taxi_'),
+      );
+
+      expect(syntheticTaxiMarkers, isEmpty);
+    },
+  );
 }
 
 class _FakeRideGateway implements RideGateway, RideStreamRepository {
