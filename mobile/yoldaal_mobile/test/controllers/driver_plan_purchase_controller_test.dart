@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_plan_catalog_gateway.dart';
@@ -489,6 +490,290 @@ void main() {
       await future;
     },
   );
+  test('recovery gateway falls back from primary gateway', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.pending);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(gateway.recoveryCalls, 1);
+    expect(controller.paymentStatus?.purchaseOperationId, recoveredOperationId());
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+
+  test('successful recovery is one-shot per controller', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.settled);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+    await controller.recoverLatestPaymentStatus();
+
+    expect(gateway.recoveryCalls, 1);
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.settled);
+  });
+
+  test('concurrent recovery calls are suppressed', () async {
+    final gateway = _Gateway();
+    final completer = Completer<DriverPlanPaymentStatus?>();
+    gateway.recoveryCompleter = completer;
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    final first = controller.recoverLatestPaymentStatus();
+    final second = controller.recoverLatestPaymentStatus();
+
+    expect(gateway.recoveryCalls, 1);
+
+    completer.complete(
+      recoveredStatus(DriverPlanPaymentOutcome.pending),
+    );
+
+    await Future.wait([first, second]);
+
+    expect(gateway.recoveryCalls, 1);
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+  });
+
+  test('null recovery is silent and fabricates no failure', () async {
+    final gateway = _Gateway();
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(gateway.recoveryCalls, 1);
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+    expect(controller.prepared, isNull);
+    expect(controller.initializedCheckout, isNull);
+  });
+
+  test('pending recovery is stored', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.pending);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+  });
+
+  test('paymentReview recovery is stored', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.paymentReview);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(
+      controller.paymentStatus?.outcome,
+      DriverPlanPaymentOutcome.paymentReview,
+    );
+  });
+
+  test('paymentFailed recovery is stored', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.paymentFailed);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(
+      controller.paymentStatus?.outcome,
+      DriverPlanPaymentOutcome.paymentFailed,
+    );
+  });
+
+  test('settled recovery is stored', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.settled);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.settled);
+  });
+
+  test('recovery errors are sanitized and failed recovery is retryable', () async {
+    final gateway = _Gateway()
+      ..recoveryError = const DriverPlanPurchaseException(
+        code: 'permission-denied',
+        reason: 'RAW_RECOVERY_BACKEND_REASON',
+      );
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(gateway.recoveryCalls, 1);
+    expect(controller.paymentStatus, isNull);
+    expect(
+      controller.paymentStatusErrorMessage,
+      'Bu \u00f6deme durumu i\u00e7in yetkiniz bulunmuyor.',
+    );
+    expect(
+      controller.paymentStatusErrorMessage,
+      isNot(contains('RAW_RECOVERY_BACKEND_REASON')),
+    );
+
+    gateway.recoveryError = null;
+    gateway.recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.pending);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(gateway.recoveryCalls, 2);
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+    expect(controller.paymentStatusErrorMessage, isNull);
+
+    final unexpectedGateway = _Gateway()..unexpectedRecoveryFailure = true;
+    final unexpectedController =
+        DriverPlanPurchaseController(gateway: unexpectedGateway);
+    addTearDown(unexpectedController.dispose);
+
+    await unexpectedController.recoverLatestPaymentStatus();
+
+    expect(
+      unexpectedController.paymentStatusErrorMessage,
+      '\u00d6deme durumu kontrol edilemedi. L\u00fctfen tekrar deneyin.',
+    );
+    expect(
+      unexpectedController.paymentStatusErrorMessage,
+      isNot(contains('raw recovery status secret')),
+    );
+  });
+
+  test('recovery read error path preserves authoritative status state', () {
+    final source = File(
+      'lib/controllers/driver_plan_purchase_controller.dart',
+    ).readAsStringSync();
+    final recoveryStart = source.indexOf(
+      'Future<void> recoverLatestPaymentStatus() async',
+    );
+    final refreshStart = source.indexOf(
+      'Future<void> refreshPaymentStatus() async',
+    );
+
+    expect(recoveryStart, greaterThanOrEqualTo(0));
+    expect(refreshStart, greaterThan(recoveryStart));
+
+    final recoverySurface = source.substring(recoveryStart, refreshStart);
+
+    expect(recoverySurface, isNot(contains('_paymentStatus = null;')));
+    expect(
+      recoverySurface,
+      contains('_paymentStatusErrorMessage = _safePaymentStatusMessage(error);'),
+    );
+  });
+
+  test('manual refresh uses recovered operation id without checkout', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.pending);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(controller.initializedCheckout, isNull);
+
+    gateway.statusOutcome = DriverPlanPaymentOutcome.paymentReview;
+    await controller.refreshPaymentStatus();
+
+    expect(gateway.statusCalls, 1);
+    expect(gateway.statusOperationIds, [recoveredOperationId()]);
+    expect(
+      controller.paymentStatus?.outcome,
+      DriverPlanPaymentOutcome.paymentReview,
+    );
+  });
+
+  test('new user flow clears and invalidates restart recovery', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.pending);
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+    expect(controller.paymentStatus, isNotNull);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+
+    final retryGateway = _Gateway()
+      ..recoveryError = const DriverPlanPurchaseException(code: 'unavailable');
+    final retryController =
+        DriverPlanPurchaseController(gateway: retryGateway);
+    addTearDown(retryController.dispose);
+
+    await retryController.recoverLatestPaymentStatus();
+    expect(retryGateway.recoveryCalls, 1);
+
+    await retryController.loadCatalog();
+    retryController.selectPlan(DriverPassPlan.daily);
+    retryGateway.recoveryError = null;
+    retryGateway.recoveryStatus =
+        recoveredStatus(DriverPlanPaymentOutcome.settled);
+
+    await retryController.recoverLatestPaymentStatus();
+
+    expect(retryGateway.recoveryCalls, 1);
+    expect(retryController.paymentStatus, isNull);
+  });
+
+  test('in-flight stale recovery cannot revive status after new flow', () async {
+    final gateway = _Gateway();
+    final completer = Completer<DriverPlanPaymentStatus?>();
+    gateway.recoveryCompleter = completer;
+    final controller = DriverPlanPurchaseController(gateway: gateway);
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+
+    final recovery = controller.recoverLatestPaymentStatus();
+    expect(gateway.recoveryCalls, 1);
+
+    controller.selectPlan(DriverPassPlan.daily);
+
+    completer.complete(
+      recoveredStatus(DriverPlanPaymentOutcome.settled),
+    );
+    await recovery;
+
+    expect(controller.selectedPlan, DriverPassPlan.daily);
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+
+  test('recovery never fabricates prepared checkout or browser state', () async {
+    final gateway = _Gateway()
+      ..recoveryStatus = recoveredStatus(DriverPlanPaymentOutcome.pending);
+    final launcher = _PaymentPageLauncher();
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      paymentPageLauncher: launcher,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.recoverLatestPaymentStatus();
+
+    expect(controller.selectedPlan, isNull);
+    expect(controller.prepared, isNull);
+    expect(controller.initializedCheckout, isNull);
+    expect(controller.paymentPageReady, isFalse);
+    expect(launcher.calls, 0);
+    expect(controller.paymentStatus, isNotNull);
+  });
   test('status gateway falls back from primary gateway', () async {
     final gateway = _Gateway();
     final controller = await _readyForPaymentStatus(gateway);
@@ -748,6 +1033,14 @@ void main() {
   });
 }
 
+String recoveredOperationId() => List<String>.filled(64, 'b').join();
+
+DriverPlanPaymentStatus recoveredStatus(DriverPlanPaymentOutcome outcome) {
+  return DriverPlanPaymentStatus(
+    purchaseOperationId: recoveredOperationId(),
+    outcome: outcome,
+  );
+}
 Future<DriverPlanPurchaseController> _readyForPaymentStatus(
   _Gateway gateway, {
   DriverPlanPaymentPageLauncher? paymentPageLauncher,
@@ -878,7 +1171,8 @@ class _Gateway
         DriverPlanPurchaseGateway,
         DriverPlanCatalogGateway,
         DriverPlanCheckoutGateway,
-        DriverPlanPaymentStatusGateway {
+        DriverPlanPaymentStatusGateway,
+        DriverPlanPaymentStatusRecoveryGateway {
   DriverPlanCatalogSnapshot catalogValue = catalog();
   int catalogFailures = 0;
   DriverPlanCatalogException? catalogError;
@@ -905,6 +1199,12 @@ class _Gateway
   DriverPlanPurchaseException? statusError;
   bool unexpectedStatusFailure = false;
   Completer<DriverPlanPaymentStatus>? statusCompleter;
+
+  int recoveryCalls = 0;
+  DriverPlanPaymentStatus? recoveryStatus;
+  DriverPlanPurchaseException? recoveryError;
+  bool unexpectedRecoveryFailure = false;
+  Completer<DriverPlanPaymentStatus?>? recoveryCompleter;
 
   @override
   Future<DriverPlanCatalogSnapshot> load() async {
@@ -995,5 +1295,24 @@ class _Gateway
       purchaseOperationId: purchaseOperationId,
       outcome: statusOutcome,
     );
+  }
+
+  @override
+  Future<DriverPlanPaymentStatus?> getLatestPaymentStatus() async {
+    recoveryCalls++;
+
+    if (recoveryError case final error?) {
+      throw error;
+    }
+
+    if (unexpectedRecoveryFailure) {
+      throw StateError('raw recovery status secret');
+    }
+
+    if (recoveryCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return recoveryStatus;
   }
 }

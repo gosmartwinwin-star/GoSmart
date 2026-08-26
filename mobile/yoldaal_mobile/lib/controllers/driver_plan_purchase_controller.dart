@@ -14,6 +14,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     DriverPlanCatalogGateway? catalogGateway,
     DriverPlanCheckoutGateway? checkoutGateway,
     DriverPlanPaymentStatusGateway? paymentStatusGateway,
+    DriverPlanPaymentStatusRecoveryGateway? paymentStatusRecoveryGateway,
     DriverPlanPaymentPageLauncher? paymentPageLauncher,
     String Function()? requestIdFactory,
   }) : _gateway = gateway,
@@ -32,6 +33,11 @@ class DriverPlanPurchaseController extends ChangeNotifier {
            (gateway is DriverPlanPaymentStatusGateway
                ? gateway as DriverPlanPaymentStatusGateway
                : null),
+       _paymentStatusRecoveryGateway =
+           paymentStatusRecoveryGateway ??
+           (gateway is DriverPlanPaymentStatusRecoveryGateway
+               ? gateway as DriverPlanPaymentStatusRecoveryGateway
+               : null),
        _paymentPageLauncher = paymentPageLauncher,
        _requestIdFactory = requestIdFactory ?? _secureRequestId;
 
@@ -39,6 +45,8 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   final DriverPlanCatalogGateway? _catalogGateway;
   final DriverPlanCheckoutGateway? _checkoutGateway;
   final DriverPlanPaymentStatusGateway? _paymentStatusGateway;
+  final DriverPlanPaymentStatusRecoveryGateway?
+      _paymentStatusRecoveryGateway;
   final DriverPlanPaymentPageLauncher? _paymentPageLauncher;
   final String Function() _requestIdFactory;
 
@@ -59,6 +67,9 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   bool _paymentPageLaunching = false;
   String? _paymentPageLaunchErrorMessage;
 
+  bool _paymentStatusRecovering = false;
+  bool _paymentStatusRecoveryCompleted = false;
+  int _paymentStatusRecoveryGeneration = 0;
   bool _paymentStatusRefreshing = false;
   DriverPlanPaymentStatus? _paymentStatus;
   String? _paymentStatusErrorMessage;
@@ -181,6 +192,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       return;
     }
 
+    _invalidatePaymentStatusRecoveryForNewFlow();
     _selectedPlan = plan;
     _prepared = null;
     _errorMessage = null;
@@ -221,6 +233,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       return;
     }
 
+    _invalidatePaymentStatusRecoveryForNewFlow();
     _preparing = true;
     _errorMessage = null;
     _requestId ??= _requestIdFactory();
@@ -290,6 +303,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       return;
     }
 
+    _invalidatePaymentStatusRecoveryForNewFlow();
     _checkoutInitializing = true;
     _checkoutErrorMessage = null;
     _notify();
@@ -338,14 +352,75 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     }
   }
 
+  void _invalidatePaymentStatusRecoveryForNewFlow() {
+    _paymentStatusRecoveryGeneration++;
+    _paymentStatusRecoveryCompleted = true;
+  }
+
+  Future<void> recoverLatestPaymentStatus() async {
+    if (_disposed ||
+        _paymentStatusRecovering ||
+        _paymentStatusRecoveryCompleted) {
+      return;
+    }
+
+    final gateway = _paymentStatusRecoveryGateway;
+
+    if (gateway == null) {
+      return;
+    }
+
+    final recoveryGeneration = _paymentStatusRecoveryGeneration;
+
+    _paymentStatusRecovering = true;
+    _paymentStatusErrorMessage = null;
+    _notify();
+
+    try {
+      final result = await gateway.getLatestPaymentStatus();
+
+      if (_disposed ||
+          recoveryGeneration != _paymentStatusRecoveryGeneration) {
+        return;
+      }
+
+      _paymentStatusRecoveryCompleted = true;
+
+      if (result != null) {
+        _paymentStatus = result;
+      }
+
+      _paymentStatusErrorMessage = null;
+    } on DriverPlanPurchaseException catch (error) {
+      if (_disposed ||
+          recoveryGeneration != _paymentStatusRecoveryGeneration) {
+        return;
+      }
+
+      _paymentStatusErrorMessage = _safePaymentStatusMessage(error);
+    } catch (_) {
+      if (_disposed ||
+          recoveryGeneration != _paymentStatusRecoveryGeneration) {
+        return;
+      }
+
+      _paymentStatusErrorMessage =
+          '\u00d6deme durumu kontrol edilemedi. L\u00fctfen tekrar deneyin.';
+    } finally {
+      _paymentStatusRecovering = false;
+      _notify();
+    }
+  }
   Future<void> refreshPaymentStatus() async {
     if (_disposed || _paymentStatusRefreshing) {
       return;
     }
 
-    final checkout = _initializedCheckout;
+    final purchaseOperationId =
+        _initializedCheckout?.purchaseOperationId ??
+        _paymentStatus?.purchaseOperationId;
 
-    if (checkout == null) {
+    if (purchaseOperationId == null) {
       _paymentStatusErrorMessage =
           '\u00d6deme durumu hen\u00fcz kontrol edilemiyor. '
           'L\u00fctfen \u00f6nce \u00f6deme sayfas\u0131n\u0131 haz\u0131rlay\u0131n.';
@@ -368,15 +443,18 @@ class DriverPlanPurchaseController extends ChangeNotifier {
 
     try {
       final result = await gateway.getPaymentStatus(
-        purchaseOperationId: checkout.purchaseOperationId,
+        purchaseOperationId: purchaseOperationId,
       );
 
       if (_disposed) {
         return;
       }
 
-      if (_initializedCheckout?.purchaseOperationId !=
-          checkout.purchaseOperationId) {
+      final currentPurchaseOperationId =
+          _initializedCheckout?.purchaseOperationId ??
+          _paymentStatus?.purchaseOperationId;
+
+      if (currentPurchaseOperationId != purchaseOperationId) {
         return;
       }
 
