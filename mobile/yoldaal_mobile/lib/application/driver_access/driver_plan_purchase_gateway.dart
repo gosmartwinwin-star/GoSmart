@@ -130,3 +130,7 @@ abstract interface class DriverPlanPaymentStatusGateway {
     required String purchaseOperationId,
   });
 }
+
+abstract interface class DriverPlanPaymentStatusRecoveryGateway {
+  Future<DriverPlanPaymentStatus?> getLatestPaymentStatus();
+}

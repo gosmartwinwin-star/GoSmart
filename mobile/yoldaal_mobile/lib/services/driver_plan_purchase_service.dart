@@ -11,7 +11,8 @@ class DriverPlanPurchaseService
     implements
         DriverPlanPurchaseGateway,
         DriverPlanCheckoutGateway,
-        DriverPlanPaymentStatusGateway {
+        DriverPlanPaymentStatusGateway,
+        DriverPlanPaymentStatusRecoveryGateway {
   DriverPlanPurchaseService({
     FirebaseFunctions? functions,
     DriverPlanPurchaseHttpsCaller? caller,
@@ -22,6 +23,8 @@ class DriverPlanPurchaseService
   static const callableName = 'prepareDriverPlanPurchase';
   static const checkoutCallableName = 'initializeDriverPlanCheckout';
   static const paymentStatusCallableName = 'getDriverPlanPaymentStatus';
+  static const paymentStatusRecoveryCallableName =
+      'getMyLatestDriverPlanPaymentStatus';
 
   final DriverPlanPurchaseHttpsCaller _caller;
 
@@ -116,11 +119,50 @@ class DriverPlanPurchaseService
       throw const DriverPlanPurchaseException(code: 'unavailable');
     }
   }
+
+  @override
+  Future<DriverPlanPaymentStatus?> getLatestPaymentStatus() async {
+    try {
+      final response = await _caller(
+        paymentStatusRecoveryCallableName,
+        const <String, Object?>{},
+      );
+
+      return _parsePaymentStatusRecoveryResponse(response);
+    } on FirebaseFunctionsException catch (error) {
+      throw DriverPlanPurchaseException(
+        code: _safeFunctionCode(error.code),
+        reason: _safeReason(error.details),
+      );
+    } on DriverPlanPurchaseException {
+      rethrow;
+    } catch (_) {
+      throw const DriverPlanPurchaseException(code: 'unavailable');
+    }
+  }
+}
+
+DriverPlanPaymentStatus? _parsePaymentStatusRecoveryResponse(
+  Object? value,
+) {
+  if (value is! Map ||
+      value.length != 1 ||
+      !value.containsKey('paymentStatus')) {
+    throw const DriverPlanPurchaseException(code: 'invalid-response');
+  }
+
+  final paymentStatus = value['paymentStatus'];
+
+  if (paymentStatus == null) {
+    return null;
+  }
+
+  return _parsePaymentStatusResponse(paymentStatus);
 }
 
 DriverPlanPaymentStatus _parsePaymentStatusResponse(
   Object? value, {
-  required String requestedOperationId,
+  String? requestedOperationId,
 }) {
   if (value is! Map ||
       value.length != 2 ||
@@ -134,7 +176,8 @@ DriverPlanPaymentStatus _parsePaymentStatusResponse(
 
   if (purchaseOperationId is! String ||
       !RegExp(r'^[a-f0-9]{64}$').hasMatch(purchaseOperationId) ||
-      purchaseOperationId != requestedOperationId) {
+      (requestedOperationId != null &&
+          purchaseOperationId != requestedOperationId)) {
     throw const DriverPlanPurchaseException(code: 'invalid-response');
   }
 
