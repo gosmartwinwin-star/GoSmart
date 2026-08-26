@@ -13,6 +13,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     required DriverPlanPurchaseGateway gateway,
     DriverPlanCatalogGateway? catalogGateway,
     DriverPlanCheckoutGateway? checkoutGateway,
+    DriverPlanPaymentStatusGateway? paymentStatusGateway,
     DriverPlanPaymentPageLauncher? paymentPageLauncher,
     String Function()? requestIdFactory,
   }) : _gateway = gateway,
@@ -26,12 +27,18 @@ class DriverPlanPurchaseController extends ChangeNotifier {
            (gateway is DriverPlanCheckoutGateway
                ? gateway as DriverPlanCheckoutGateway
                : null),
+       _paymentStatusGateway =
+           paymentStatusGateway ??
+           (gateway is DriverPlanPaymentStatusGateway
+               ? gateway as DriverPlanPaymentStatusGateway
+               : null),
        _paymentPageLauncher = paymentPageLauncher,
        _requestIdFactory = requestIdFactory ?? _secureRequestId;
 
   final DriverPlanPurchaseGateway _gateway;
   final DriverPlanCatalogGateway? _catalogGateway;
   final DriverPlanCheckoutGateway? _checkoutGateway;
+  final DriverPlanPaymentStatusGateway? _paymentStatusGateway;
   final DriverPlanPaymentPageLauncher? _paymentPageLauncher;
   final String Function() _requestIdFactory;
 
@@ -51,6 +58,10 @@ class DriverPlanPurchaseController extends ChangeNotifier {
 
   bool _paymentPageLaunching = false;
   String? _paymentPageLaunchErrorMessage;
+
+  bool _paymentStatusRefreshing = false;
+  DriverPlanPaymentStatus? _paymentStatus;
+  String? _paymentStatusErrorMessage;
 
   bool _disposed = false;
 
@@ -73,6 +84,9 @@ class DriverPlanPurchaseController extends ChangeNotifier {
   bool get paymentPageLaunching => _paymentPageLaunching;
   String? get paymentPageLaunchErrorMessage =>
       _paymentPageLaunchErrorMessage;
+  bool get paymentStatusRefreshing => _paymentStatusRefreshing;
+  DriverPlanPaymentStatus? get paymentStatus => _paymentStatus;
+  String? get paymentStatusErrorMessage => _paymentStatusErrorMessage;
 
   bool isPlanEnabled(DriverPassPlan plan) {
     final current = _catalog;
@@ -158,6 +172,7 @@ class DriverPlanPurchaseController extends ChangeNotifier {
         _preparing ||
         _checkoutInitializing ||
         _paymentPageLaunching ||
+        _paymentStatusRefreshing ||
         !isPlanEnabled(plan)) {
       return;
     }
@@ -173,6 +188,8 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     _initializedCheckout = null;
     _checkoutErrorMessage = null;
     _paymentPageLaunchErrorMessage = null;
+    _paymentStatus = null;
+    _paymentStatusErrorMessage = null;
     _notify();
   }
 
@@ -225,6 +242,8 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       _initializedCheckout = null;
       _checkoutErrorMessage = null;
       _paymentPageLaunchErrorMessage = null;
+      _paymentStatus = null;
+      _paymentStatusErrorMessage = null;
     } on DriverPlanPurchaseException catch (error) {
       if (_disposed) {
         return;
@@ -297,6 +316,8 @@ class DriverPlanPurchaseController extends ChangeNotifier {
       _initializedCheckout = result;
       _checkoutErrorMessage = null;
       _paymentPageLaunchErrorMessage = null;
+      _paymentStatus = null;
+      _paymentStatusErrorMessage = null;
     } on DriverPlanPurchaseException catch (error) {
       if (_disposed) {
         return;
@@ -317,6 +338,68 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshPaymentStatus() async {
+    if (_disposed || _paymentStatusRefreshing) {
+      return;
+    }
+
+    final checkout = _initializedCheckout;
+
+    if (checkout == null) {
+      _paymentStatusErrorMessage =
+          '\u00d6deme durumu hen\u00fcz kontrol edilemiyor. '
+          'L\u00fctfen \u00f6nce \u00f6deme sayfas\u0131n\u0131 haz\u0131rlay\u0131n.';
+      _notify();
+      return;
+    }
+
+    final gateway = _paymentStatusGateway;
+
+    if (gateway == null) {
+      _paymentStatusErrorMessage =
+          '\u00d6deme durumu kontrol edilemedi. L\u00fctfen tekrar deneyin.';
+      _notify();
+      return;
+    }
+
+    _paymentStatusRefreshing = true;
+    _paymentStatusErrorMessage = null;
+    _notify();
+
+    try {
+      final result = await gateway.getPaymentStatus(
+        purchaseOperationId: checkout.purchaseOperationId,
+      );
+
+      if (_disposed) {
+        return;
+      }
+
+      if (_initializedCheckout?.purchaseOperationId !=
+          checkout.purchaseOperationId) {
+        return;
+      }
+
+      _paymentStatus = result;
+      _paymentStatusErrorMessage = null;
+    } on DriverPlanPurchaseException catch (error) {
+      if (_disposed) {
+        return;
+      }
+
+      _paymentStatusErrorMessage = _safePaymentStatusMessage(error);
+    } catch (_) {
+      if (_disposed) {
+        return;
+      }
+
+      _paymentStatusErrorMessage =
+          '\u00d6deme durumu kontrol edilemedi. L\u00fctfen tekrar deneyin.';
+    } finally {
+      _paymentStatusRefreshing = false;
+      _notify();
+    }
+  }
   Future<void> launchPaymentPage() async {
     if (_disposed || _paymentPageLaunching) {
       return;
@@ -401,6 +484,18 @@ class DriverPlanPurchaseController extends ChangeNotifier {
     };
   }
 
+  String _safePaymentStatusMessage(DriverPlanPurchaseException error) {
+    return switch (error.code) {
+      'unauthenticated' =>
+        'Oturumunuzu kontrol edip tekrar deneyin.',
+      'permission-denied' =>
+        'Bu \u00f6deme durumu i\u00e7in yetkiniz bulunmuyor.',
+      'not-found' =>
+        '\u00d6deme durumu bulunamad\u0131. L\u00fctfen tekrar deneyin.',
+      _ =>
+        '\u00d6deme durumu kontrol edilemedi. L\u00fctfen tekrar deneyin.',
+    };
+  }
   void _notify() {
     if (!_disposed) {
       notifyListeners();

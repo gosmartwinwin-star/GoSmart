@@ -159,6 +159,15 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
         final prepared = controller.prepared;
         final paymentPageLaunchErrorMessage =
             controller.paymentPageLaunchErrorMessage;
+        final paymentStatusOutcome =
+            controller.paymentStatus?.outcome;
+        final paymentStatusErrorMessage =
+            controller.paymentStatusErrorMessage;
+        final paymentStatusTerminal =
+            paymentStatusOutcome ==
+                DriverPlanPaymentOutcome.paymentFailed ||
+            paymentStatusOutcome ==
+                DriverPlanPaymentOutcome.settled;
 
         return Card(
           key: const ValueKey('driver-plan-purchase-panel'),
@@ -296,6 +305,75 @@ class _DriverPlanPurchasePanelState extends State<DriverPlanPurchasePanel> {
                       'anlamına gelmez.',
                       key: ValueKey(
                         'driver-plan-checkout-browser-note',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (controller.paymentStatusRefreshing)
+                      const Center(
+                        child: CircularProgressIndicator(
+                          key: ValueKey(
+                            'driver-plan-payment-status-loading',
+                          ),
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    if (paymentStatusOutcome ==
+                        DriverPlanPaymentOutcome.pending)
+                      const Text(
+                        '\u00d6deme sonucu bekleniyor.',
+                        key: ValueKey(
+                          'driver-plan-payment-status-pending',
+                        ),
+                      ),
+                    if (paymentStatusOutcome ==
+                        DriverPlanPaymentOutcome.paymentReview)
+                      const Text(
+                        '\u00d6deme incelemede. '
+                        'Durumu daha sonra tekrar kontrol edin.',
+                        key: ValueKey(
+                          'driver-plan-payment-status-review',
+                        ),
+                      ),
+                    if (paymentStatusOutcome ==
+                        DriverPlanPaymentOutcome.paymentFailed)
+                      const Text(
+                        '\u00d6deme ba\u015far\u0131s\u0131z.',
+                        key: ValueKey(
+                          'driver-plan-payment-status-failure',
+                        ),
+                      ),
+                    if (paymentStatusOutcome ==
+                        DriverPlanPaymentOutcome.settled)
+                      const Text(
+                        '\u00d6deme ba\u015far\u0131yla tamamland\u0131.',
+                        key: ValueKey(
+                          'driver-plan-payment-status-success',
+                        ),
+                      ),
+                    if (paymentStatusErrorMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        paymentStatusErrorMessage,
+                        key: const ValueKey(
+                          'driver-plan-payment-status-error',
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      key: const ValueKey(
+                        'driver-plan-payment-status-refresh',
+                      ),
+                      onPressed:
+                          !controller.paymentStatusRefreshing &&
+                              !paymentStatusTerminal
+                          ? () {
+                              controller.refreshPaymentStatus();
+                            }
+                          : null,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(
+                        '\u00d6deme Durumunu Kontrol Et',
                       ),
                     ),
                     ] else ...[

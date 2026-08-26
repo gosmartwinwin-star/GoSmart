@@ -451,6 +451,398 @@ void main() {
       );
     },
   );
+  testWidgets(
+    'explicit status refresh appears only when payment page ready',
+    (tester) async {
+      final gateway = _Gateway();
+      final controller = await _showPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-refresh'),
+        ),
+        findsNothing,
+      );
+
+      controller.selectPlan(DriverPassPlan.daily);
+      await controller.prepare();
+      await controller.initializeCheckout(
+        buyer: _statusBuyer(),
+        billingAddress: _statusBillingAddress(),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-refresh'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'payment status loading disables explicit refresh',
+    (tester) async {
+      final gateway = _Gateway();
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final completer = Completer<DriverPlanPaymentStatus>();
+      gateway.statusCompleter = completer;
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pump();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-loading'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNull,
+      );
+
+      completer.complete(
+        DriverPlanPaymentStatus(
+          purchaseOperationId:
+              controller.initializedCheckout!.purchaseOperationId,
+          outcome: DriverPlanPaymentOutcome.pending,
+        ),
+      );
+
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'pending status renders pending key and stays refreshable',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusOutcome = DriverPlanPaymentOutcome.pending;
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-pending'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'paymentReview status renders review key and stays refreshable',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusOutcome = DriverPlanPaymentOutcome.paymentReview;
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-review'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'paymentFailed status renders failure key and disables refresh',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusOutcome = DriverPlanPaymentOutcome.paymentFailed;
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-failure'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'settled status renders success key and disables refresh',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusOutcome = DriverPlanPaymentOutcome.settled;
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-success'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        tester.widget<OutlinedButton>(refresh).onPressed,
+        isNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'status read error renders separate status error key',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusError =
+            const DriverPlanPurchaseException(code: 'unavailable');
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-error'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'status read error does not render payment failure',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusError =
+            const DriverPlanPurchaseException(code: 'unavailable');
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-error'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-failure'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'browser launch alone does not render payment success',
+    (tester) async {
+      final gateway = _Gateway();
+      final launcher = _PaymentPageLauncher();
+
+      final controller = await _showPaymentStatusReadyPanel(
+        tester,
+        gateway,
+        paymentPageLauncher: launcher,
+      );
+      addTearDown(controller.dispose);
+
+      final open = find.byKey(
+        const ValueKey('driver-plan-checkout-open'),
+      );
+
+      await tester.ensureVisible(open);
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+
+      expect(launcher.calls, 1);
+      expect(gateway.statusCalls, 0);
+
+      expect(
+        find.byKey(
+          const ValueKey('driver-plan-payment-status-success'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'status UX never renders payment URL token or conversation id',
+    (tester) async {
+      final gateway = _Gateway()
+        ..statusOutcome = DriverPlanPaymentOutcome.settled;
+
+      final controller =
+          await _showPaymentStatusReadyPanel(tester, gateway);
+      addTearDown(controller.dispose);
+
+      final refresh = find.byKey(
+        const ValueKey('driver-plan-payment-status-refresh'),
+      );
+
+      await tester.ensureVisible(refresh);
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      final checkout = controller.initializedCheckout!;
+
+      expect(
+        find.textContaining(checkout.paymentPageUrl.toString()),
+        findsNothing,
+      );
+      expect(
+        find.textContaining(checkout.token),
+        findsNothing,
+      );
+      expect(
+        find.textContaining(checkout.conversationId),
+        findsNothing,
+      );
+    },
+  );
+}
+
+Future<DriverPlanPurchaseController> _showPaymentStatusReadyPanel(
+  WidgetTester tester,
+  _Gateway gateway, {
+  DriverPlanPaymentPageLauncher? paymentPageLauncher,
+}) async {
+  final controller = DriverPlanPurchaseController(
+    gateway: gateway,
+    paymentPageLauncher: paymentPageLauncher,
+    requestIdFactory: () => 'request-panel-status',
+  );
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: DriverPlanPurchasePanel(controller: controller),
+        ),
+      ),
+    ),
+  );
+
+  await tester.pumpAndSettle();
+
+  controller.selectPlan(DriverPassPlan.daily);
+  await controller.prepare();
+  await controller.initializeCheckout(
+    buyer: _statusBuyer(),
+    billingAddress: _statusBillingAddress(),
+  );
+
+  await tester.pumpAndSettle();
+
+  return controller;
+}
+
+DriverPlanCheckoutBuyer _statusBuyer() {
+  return const DriverPlanCheckoutBuyer(
+    name: 'Test',
+    surname: 'Buyer',
+    identityNumber: '11111111111',
+    email: 'buyer@example.test',
+    registrationAddress: 'Test Registration Address',
+    city: 'Istanbul',
+    country: 'Turkey',
+    zipCode: '34000',
+  );
+}
+
+DriverPlanCheckoutBillingAddress _statusBillingAddress() {
+  return const DriverPlanCheckoutBillingAddress(
+    address: 'Test Billing Address',
+    contactName: 'Test Buyer',
+    city: 'Istanbul',
+    country: 'Turkey',
+    zipCode: '34000',
+  );
 }
 
 Future<void> _fillCheckoutForm(WidgetTester tester) async {
@@ -584,7 +976,8 @@ class _Gateway
     implements
         DriverPlanPurchaseGateway,
         DriverPlanCatalogGateway,
-        DriverPlanCheckoutGateway {
+        DriverPlanCheckoutGateway,
+        DriverPlanPaymentStatusGateway {
   int catalogCalls = 0;
   int catalogFailures = 0;
   int prepareFailures = 0;
@@ -595,6 +988,13 @@ class _Gateway
   final List<String> checkoutOperationIds = [];
   final List<DriverPlanCheckoutBuyer> checkoutBuyers = [];
   final List<DriverPlanCheckoutBillingAddress> checkoutBillingAddresses = [];
+
+  int statusCalls = 0;
+  final List<String> statusOperationIds = [];
+  DriverPlanPaymentOutcome statusOutcome =
+      DriverPlanPaymentOutcome.pending;
+  DriverPlanPurchaseException? statusError;
+  Completer<DriverPlanPaymentStatus>? statusCompleter;
 
   @override
   Future<DriverPlanCatalogSnapshot> load() async {
@@ -656,6 +1056,27 @@ class _Gateway
       paymentPageUrl: Uri.parse(
         'https://sandbox.example.test/payment',
       ),
+    );
+  }
+
+  @override
+  Future<DriverPlanPaymentStatus> getPaymentStatus({
+    required String purchaseOperationId,
+  }) async {
+    statusCalls++;
+    statusOperationIds.add(purchaseOperationId);
+
+    if (statusError case final error?) {
+      throw error;
+    }
+
+    if (statusCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return DriverPlanPaymentStatus(
+      purchaseOperationId: purchaseOperationId,
+      outcome: statusOutcome,
     );
   }
 }

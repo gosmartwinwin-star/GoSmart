@@ -489,6 +489,284 @@ void main() {
       await future;
     },
   );
+  test('status gateway falls back from primary gateway', () async {
+    final gateway = _Gateway();
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(gateway.statusCalls, 1);
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+
+  test('payment status refresh requires initialized checkout', () async {
+    final gateway = _Gateway();
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      requestIdFactory: () => 'request-status-missing-checkout',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(gateway.statusCalls, 0);
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNotNull);
+  });
+
+  test('payment status refresh sends initialized checkout operation id', () async {
+    final gateway = _Gateway();
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(
+      gateway.statusOperationIds,
+      [controller.initializedCheckout!.purchaseOperationId],
+    );
+  });
+
+  test('concurrent payment status refresh calls are suppressed', () async {
+    final gateway = _Gateway();
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    final completer = Completer<DriverPlanPaymentStatus>();
+    gateway.statusCompleter = completer;
+
+    final first = controller.refreshPaymentStatus();
+    final second = controller.refreshPaymentStatus();
+
+    expect(gateway.statusCalls, 1);
+    expect(controller.paymentStatusRefreshing, isTrue);
+
+    completer.complete(
+      DriverPlanPaymentStatus(
+        purchaseOperationId:
+            controller.initializedCheckout!.purchaseOperationId,
+        outcome: DriverPlanPaymentOutcome.pending,
+      ),
+    );
+
+    await Future.wait([first, second]);
+
+    expect(gateway.statusCalls, 1);
+    expect(controller.paymentStatusRefreshing, isFalse);
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+  });
+
+  test('pending payment outcome is stored', () async {
+    final gateway = _Gateway()
+      ..statusOutcome = DriverPlanPaymentOutcome.pending;
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+  });
+
+  test('paymentReview payment outcome is stored', () async {
+    final gateway = _Gateway()
+      ..statusOutcome = DriverPlanPaymentOutcome.paymentReview;
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(
+      controller.paymentStatus?.outcome,
+      DriverPlanPaymentOutcome.paymentReview,
+    );
+  });
+
+  test('paymentFailed payment outcome is stored', () async {
+    final gateway = _Gateway()
+      ..statusOutcome = DriverPlanPaymentOutcome.paymentFailed;
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(
+      controller.paymentStatus?.outcome,
+      DriverPlanPaymentOutcome.paymentFailed,
+    );
+  });
+
+  test('settled payment outcome is stored', () async {
+    final gateway = _Gateway()
+      ..statusOutcome = DriverPlanPaymentOutcome.settled;
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.settled);
+  });
+
+  test('controlled payment status read error is surfaced safely', () async {
+    final gateway = _Gateway()
+      ..statusError = const DriverPlanPurchaseException(
+        code: 'permission-denied',
+        reason: 'raw_backend_reason',
+      );
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus, isNull);
+    expect(
+      controller.paymentStatusErrorMessage,
+      'Bu \u00f6deme durumu i\u00e7in yetkiniz bulunmuyor.',
+    );
+    expect(
+      controller.paymentStatusErrorMessage,
+      isNot(contains('raw_backend_reason')),
+    );
+  });
+
+  test('unexpected payment status error is sanitized', () async {
+    final gateway = _Gateway()..unexpectedStatusFailure = true;
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus, isNull);
+    expect(
+      controller.paymentStatusErrorMessage,
+      '\u00d6deme durumu kontrol edilemedi. L\u00fctfen tekrar deneyin.',
+    );
+    expect(
+      controller.paymentStatusErrorMessage,
+      isNot(contains('raw payment status secret')),
+    );
+  });
+
+  test('status read error preserves previous authoritative status', () async {
+    final gateway = _Gateway()
+      ..statusOutcome = DriverPlanPaymentOutcome.pending;
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+
+    gateway.statusError =
+        const DriverPlanPurchaseException(code: 'unavailable');
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus?.outcome, DriverPlanPaymentOutcome.pending);
+    expect(controller.paymentStatusErrorMessage, isNotNull);
+  });
+
+  test('plan change clears authoritative payment status', () async {
+    final gateway = _Gateway();
+    final controller = await _readyForPaymentStatus(gateway);
+    addTearDown(controller.dispose);
+
+    await controller.refreshPaymentStatus();
+
+    expect(controller.paymentStatus, isNotNull);
+
+    controller.selectPlan(DriverPassPlan.monthly);
+
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+
+  test('successful new prepare keeps stale payment status state cleared', () async {
+    final gateway = _Gateway();
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      requestIdFactory: () => 'request-new-prepare',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+
+    await controller.refreshPaymentStatus();
+    expect(controller.paymentStatusErrorMessage, isNotNull);
+
+    await controller.prepare();
+
+    expect(controller.prepared, isNotNull);
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+
+  test('successful new checkout clears pre-checkout status read error', () async {
+    final gateway = _Gateway();
+    final controller = DriverPlanPurchaseController(
+      gateway: gateway,
+      requestIdFactory: () => 'request-new-checkout',
+    );
+    addTearDown(controller.dispose);
+
+    await controller.loadCatalog();
+    controller.selectPlan(DriverPassPlan.daily);
+    await controller.prepare();
+
+    await controller.refreshPaymentStatus();
+    expect(controller.paymentStatusErrorMessage, isNotNull);
+
+    await controller.initializeCheckout(
+      buyer: checkoutBuyer(),
+      billingAddress: checkoutBillingAddress(),
+    );
+
+    expect(controller.paymentPageReady, isTrue);
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+
+  test('payment page launch success does not fabricate payment status', () async {
+    final gateway = _Gateway();
+    final launcher = _PaymentPageLauncher();
+    final controller = await _readyForPaymentStatus(
+      gateway,
+      paymentPageLauncher: launcher,
+    );
+    addTearDown(controller.dispose);
+
+    expect(controller.paymentStatus, isNull);
+
+    await controller.launchPaymentPage();
+
+    expect(launcher.calls, 1);
+    expect(gateway.statusCalls, 0);
+    expect(controller.paymentStatus, isNull);
+    expect(controller.paymentStatusErrorMessage, isNull);
+  });
+}
+
+Future<DriverPlanPurchaseController> _readyForPaymentStatus(
+  _Gateway gateway, {
+  DriverPlanPaymentPageLauncher? paymentPageLauncher,
+}) async {
+  final controller = DriverPlanPurchaseController(
+    gateway: gateway,
+    paymentPageLauncher: paymentPageLauncher,
+    requestIdFactory: () => 'request-status-ready',
+  );
+
+  await controller.loadCatalog();
+  controller.selectPlan(DriverPassPlan.daily);
+  await controller.prepare();
+  await controller.initializeCheckout(
+    buyer: checkoutBuyer(),
+    billingAddress: checkoutBillingAddress(),
+  );
+
+  return controller;
 }
 
 DriverPlanCatalogSnapshot catalog({
@@ -599,7 +877,8 @@ class _Gateway
     implements
         DriverPlanPurchaseGateway,
         DriverPlanCatalogGateway,
-        DriverPlanCheckoutGateway {
+        DriverPlanCheckoutGateway,
+        DriverPlanPaymentStatusGateway {
   DriverPlanCatalogSnapshot catalogValue = catalog();
   int catalogFailures = 0;
   DriverPlanCatalogException? catalogError;
@@ -618,6 +897,14 @@ class _Gateway
   final List<String> checkoutOperationIds = [];
   final List<DriverPlanCheckoutBuyer> checkoutBuyers = [];
   final List<DriverPlanCheckoutBillingAddress> checkoutBillingAddresses = [];
+
+  int statusCalls = 0;
+  final List<String> statusOperationIds = [];
+  DriverPlanPaymentOutcome statusOutcome =
+      DriverPlanPaymentOutcome.pending;
+  DriverPlanPurchaseException? statusError;
+  bool unexpectedStatusFailure = false;
+  Completer<DriverPlanPaymentStatus>? statusCompleter;
 
   @override
   Future<DriverPlanCatalogSnapshot> load() async {
@@ -683,5 +970,30 @@ class _Gateway
     }
 
     return initializedCheckout(purchaseOperationId);
+  }
+
+  @override
+  Future<DriverPlanPaymentStatus> getPaymentStatus({
+    required String purchaseOperationId,
+  }) async {
+    statusCalls++;
+    statusOperationIds.add(purchaseOperationId);
+
+    if (statusError case final error?) {
+      throw error;
+    }
+
+    if (unexpectedStatusFailure) {
+      throw StateError('raw payment status secret');
+    }
+
+    if (statusCompleter case final completer?) {
+      return completer.future;
+    }
+
+    return DriverPlanPaymentStatus(
+      purchaseOperationId: purchaseOperationId,
+      outcome: statusOutcome,
+    );
   }
 }
