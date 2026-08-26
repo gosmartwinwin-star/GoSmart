@@ -81,6 +81,7 @@ import {
   transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
 import {loadApprovedDriverId} from "./ride-driver-identity.js";
+import {publishDriverLivePresence} from "./driver-live-presence-authority.js";
 import {
   prepareDriverPlanPurchase as prepareDriverPlanPurchaseAuthority,
 } from "./driver-plan-purchase-authority.js";
@@ -2006,6 +2007,24 @@ export const publishReturnRoute = onCall<PublishReturnRouteInput>(
   },
 );
 
+export const publishDriverLiveLocation = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Sürücü konumunu yayımlamak için giriş yapmalısınız.",
+      );
+    }
+
+    return publishDriverLivePresence(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
 export const searchPlaces = onCall(
   {
     region: "europe-west1",
