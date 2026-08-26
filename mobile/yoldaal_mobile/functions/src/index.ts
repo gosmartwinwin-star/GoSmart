@@ -100,6 +100,10 @@ import {
   getDriverPlanPaymentStatusForActor as getDriverPlanPaymentStatusAuthority,
 } from "./driver-plan-payment-status-read-authority.js";
 import {
+  getMyLatestDriverPlanPaymentStatusForActor as
+  getLatestDriverPlanPaymentStatusAuthority,
+} from "./driver-plan-checkout-recovery-read-authority.js";
+import {
   recoverActiveReturnRoute,
 } from "./active-return-route-recovery.js";
 import {getRideHistoryForActor} from "./ride-history-service.js";
@@ -850,6 +854,25 @@ export const getDriverPlanPaymentStatus = onCall(
     }
 
     return getDriverPlanPaymentStatusAuthority(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
+export const getMyLatestDriverPlanPaymentStatus = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Driver plan checkout recovery requires authentication.",
+      );
+    }
+
+    return getLatestDriverPlanPaymentStatusAuthority(
       {firestore},
       request.auth.uid,
       request.data,

@@ -1178,6 +1178,7 @@ const persistInitializedCheckout = async (
   dependencies:
     DriverPlanCheckoutDependencies,
   purchaseOperationId: string,
+  driverId: string,
   attemptId: string,
   session: DriverPlanPaymentSession,
 ): Promise<DriverPlanCheckoutResult> => {
@@ -1241,6 +1242,21 @@ const persistInitializedCheckout = async (
         initializedAt: now,
         updatedAt: now,
       };
+
+      const pointerRef =
+        dependencies.firestore
+          .collection(
+            "driverLatestPlanCheckoutOperations",
+          )
+          .doc(driverId);
+
+      transaction.set(
+        pointerRef,
+        {
+          purchaseOperationId,
+          updatedAt: now,
+        },
+      );
 
       transaction.update(
         operationRef,
@@ -1439,6 +1455,7 @@ export const initializeDriverPlanCheckout = async (
     return await persistInitializedCheckout(
       dependencies,
       input.purchaseOperationId,
+      begin.prepared.driverId,
       begin.attemptId,
       verifiedSession,
     );

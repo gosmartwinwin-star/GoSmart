@@ -68,6 +68,18 @@ class Tx {
     );
   }
 
+  set(
+    ref: Ref,
+    value: Data,
+  ) {
+    this.fs.set(
+      ref.path,
+      value,
+    );
+
+    return this;
+  }
+
   update(
     ref: Ref,
     value: Data,
@@ -183,6 +195,9 @@ const operationId =
 
 const operationPath =
   `driverPlanPurchaseOperations/${operationId}`;
+
+const pointerPath =
+  "driverLatestPlanCheckoutOperations/driver-1";
 
 const input = () => ({
   purchaseOperationId:
@@ -714,6 +729,13 @@ test("definitive provider rejection allows later safe retry", async () => {
     "rejected",
   );
 
+  assert.equal(
+    context.firestore.get(
+      pointerPath,
+    ),
+    undefined,
+  );
+
   const result =
     await initializeDriverPlanCheckout(
       context.dependencies,
@@ -730,6 +752,18 @@ test("definitive provider rejection allows later safe retry", async () => {
   assert.equal(
     context.provider.calls.length,
     2,
+  );
+
+  const pointer =
+    context.firestore.get(
+      pointerPath,
+    );
+
+  assert.ok(pointer);
+
+  assert.equal(
+    pointer.purchaseOperationId,
+    operationId,
   );
 });
 
@@ -868,6 +902,93 @@ test("initialized checkout persists pending outcome in operation state", async (
     ).toDate().toISOString(),
     "2026-01-15T10:00:00.000Z",
   );
+
+  const pointer =
+    context.firestore.get(
+      pointerPath,
+    );
+
+  assert.ok(pointer);
+
+  assert.deepEqual(
+    Object.keys(pointer).sort(),
+    [
+      "purchaseOperationId",
+      "updatedAt",
+    ],
+  );
+
+  assert.equal(
+    pointer.purchaseOperationId,
+    operationId,
+  );
+
+  assert.ok(
+    pointer.updatedAt instanceof Timestamp,
+  );
+
+  assert.equal(
+    (
+      pointer.updatedAt as Timestamp
+    ).toDate().toISOString(),
+    "2026-01-15T10:00:00.000Z",
+  );
+});
+
+test("new successful checkout overwrites previous latest pointer", async () => {
+  const context =
+    setup();
+
+  const previousUpdatedAt =
+    Timestamp.fromDate(
+      new Date(
+        "2026-01-14T10:00:00.000Z",
+      ),
+    );
+
+  context.firestore.set(
+    pointerPath,
+    {
+      purchaseOperationId:
+        "c".repeat(64),
+      updatedAt:
+        previousUpdatedAt,
+    },
+  );
+
+  await initializeDriverPlanCheckout(
+    context.dependencies,
+    "uid-1",
+    input(),
+    context.runtime,
+  );
+
+  const pointer =
+    context.firestore.get(
+      pointerPath,
+    );
+
+  assert.ok(pointer);
+
+  assert.deepEqual(
+    Object.keys(pointer).sort(),
+    [
+      "purchaseOperationId",
+      "updatedAt",
+    ],
+  );
+
+  assert.equal(
+    pointer.purchaseOperationId,
+    operationId,
+  );
+
+  assert.equal(
+    (
+      pointer.updatedAt as Timestamp
+    ).toDate().toISOString(),
+    "2026-01-15T10:00:00.000Z",
+  );
 });
 
 test("initialized checkout source persists pending payment outcome", () => {
@@ -880,5 +1001,10 @@ test("initialized checkout source persists pending payment outcome", () => {
   assert.match(
     source,
     /paymentCheckout:\s*initialized,\s*paymentOutcome:\s*"pending",\s*paymentOutcomeUpdatedAt:\s*now,/u,
+  );
+
+  assert.match(
+    source,
+    /driverLatestPlanCheckoutOperations[\s\S]*transaction\.set\([\s\S]*purchaseOperationId,[\s\S]*updatedAt:\s*now[\s\S]*transaction\.update\([\s\S]*paymentOutcome:\s*"pending"/u,
   );
 });
