@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../../application/driver_access/driver_plan_purchase_gateway.dart';
 import '../../controllers/driver_center_controller.dart';
 import '../../controllers/driver_plan_purchase_controller.dart';
 import '../../controllers/driver_ride_controller.dart';
@@ -68,9 +69,10 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   DriverRideMatchOfferController? matchOfferController;
   late final bool _ownsMatchOfferController;
   DriverPlanPurchaseController? planPurchaseController;
-  late final bool _ownsPlanPurchaseController;
+  bool _ownsPlanPurchaseController = false;
   String? _matchOfferRouteId;
   bool _driverRideRecoveryRequested = false;
+  final Set<String> _entitlementReloadedSettledOperationIds = <String>{};
   StreamSubscription<User?>? _authSubscription;
 
   @override
@@ -111,19 +113,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             ? DriverRideMatchOfferController(gateway: RideMatchOfferService())
             : null);
     matchOfferController?.addListener(_refresh);
-    _ownsPlanPurchaseController =
-        widget.driverPlanPurchaseController == null &&
-        widget.controller == null;
-    planPurchaseController =
-        widget.driverPlanPurchaseController ??
-        (widget.controller == null
-            ? DriverPlanPurchaseController(
-                gateway: DriverPlanPurchaseService(),
-                catalogGateway: DriverPlanCatalogService(),
-                paymentPageLauncher: UrlLauncherDriverPlanPaymentPageLauncher(),
-              )
-            : null);
+    planPurchaseController = _resolvePlanPurchaseController();
     controller.load();
+    _attachPlanPurchaseController();
     if (_ownsRideController) {
       _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
         _driverRideRecoveryRequested = false;
@@ -138,6 +130,82 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     }
   }
 
+  DriverPlanPurchaseController? _resolvePlanPurchaseController() {
+    final injected = widget.driverPlanPurchaseController;
+
+    if (injected != null) {
+      _ownsPlanPurchaseController = false;
+      return injected;
+    }
+
+    if (widget.controller != null) {
+      _ownsPlanPurchaseController = false;
+      return null;
+    }
+
+    _ownsPlanPurchaseController = true;
+    return DriverPlanPurchaseController(
+      gateway: DriverPlanPurchaseService(),
+      catalogGateway: DriverPlanCatalogService(),
+      paymentPageLauncher: UrlLauncherDriverPlanPaymentPageLauncher(),
+    );
+  }
+
+  void _attachPlanPurchaseController() {
+    planPurchaseController?.addListener(_handlePlanPurchaseChanged);
+    _syncSettledEntitlementRefresh();
+  }
+
+  void _detachPlanPurchaseController() {
+    planPurchaseController?.removeListener(_handlePlanPurchaseChanged);
+  }
+
+  void _handlePlanPurchaseChanged() {
+    if (!mounted) return;
+    _syncSettledEntitlementRefresh();
+  }
+
+  void _syncSettledEntitlementRefresh() {
+    final paymentStatus = planPurchaseController?.paymentStatus;
+
+    if (paymentStatus == null ||
+        paymentStatus.outcome != DriverPlanPaymentOutcome.settled) {
+      return;
+    }
+
+    final purchaseOperationId = paymentStatus.purchaseOperationId;
+
+    if (!_entitlementReloadedSettledOperationIds.add(purchaseOperationId)) {
+      return;
+    }
+
+    unawaited(controller.load());
+  }
+
+  @override
+  void didUpdateWidget(covariant DriverCenterScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.controller != widget.controller) {
+      return;
+    }
+
+    if (oldWidget.driverPlanPurchaseController ==
+        widget.driverPlanPurchaseController) {
+      return;
+    }
+
+    final previous = planPurchaseController;
+    _detachPlanPurchaseController();
+
+    if (_ownsPlanPurchaseController) {
+      previous?.dispose();
+    }
+
+    planPurchaseController = _resolvePlanPurchaseController();
+    _attachPlanPurchaseController();
+  }
+
   void _refresh() {
     if (!mounted) return;
     setState(() {});
@@ -150,7 +218,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     controller.removeListener(_refresh);
     rideController?.removeListener(_refresh);
     matchOfferController?.removeListener(_refresh);
-    planPurchaseController?.removeListener(_refresh);
+    _detachPlanPurchaseController();
     _authSubscription?.cancel();
     if (_ownsRideController) rideController?.dispose();
     if (_ownsMatchOfferController) matchOfferController?.dispose();
