@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../application/location/location_access_gateway.dart';
+import '../application/driver/driver_live_presence_gateway.dart';
 import '../application/driver_access/driver_access_mode_repository.dart';
 import '../application/driver_access/driver_access_pass_repository.dart';
 import '../application/driver_access/driver_profile_repository.dart';
@@ -29,6 +30,7 @@ class DriverCenterController extends ChangeNotifier {
   final DriverAccessPassRepository _passes;
   final DriverAccessModeRepository _accessModes;
   final PublishReturnRouteGateway _publisher;
+  final DriverLivePresenceGateway? _livePresence;
   final ActiveReturnRouteRecoveryGateway? _returnRouteRecovery;
   final Timer Function(Duration, void Function()) _expiryTimerFactory;
   Timer? _publishedRouteExpiryTimer;
@@ -60,6 +62,7 @@ class DriverCenterController extends ChangeNotifier {
     DriverAccessModeRepository accessModes =
         const PaidDriverAccessModeRepository(),
     required PublishReturnRouteGateway publisher,
+    DriverLivePresenceGateway? livePresence,
     ActiveReturnRouteRecoveryGateway? returnRouteRecovery,
     Timer Function(Duration, void Function())? expiryTimerFactory,
     required LocationAccessGateway location,
@@ -71,6 +74,7 @@ class DriverCenterController extends ChangeNotifier {
        _passes = passes,
        _accessModes = accessModes,
        _publisher = publisher,
+       _livePresence = livePresence,
        _returnRouteRecovery = returnRouteRecovery,
        _expiryTimerFactory =
            expiryTimerFactory ?? ((delay, callback) => Timer(delay, callback)),
@@ -197,11 +201,17 @@ class DriverCenterController extends ChangeNotifier {
         return;
       }
 
-      origin = GeoCoordinate(
+      final currentOrigin = GeoCoordinate(
         latitude: location.latitude,
         longitude: location.longitude,
       );
+      origin = currentOrigin;
       locationIssue = null;
+      try {
+        await _livePresence?.publish(location: currentOrigin);
+      } catch (_) {
+        // Presence publication must not invalidate the local sample.
+      }
     } catch (_) {
       origin = null;
       locationIssue = LocationAccessIssue.unavailable;

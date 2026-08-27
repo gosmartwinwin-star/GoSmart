@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/application/location/location_access_gateway.dart';
+import 'package:yoldaal_mobile/application/driver/driver_live_presence_gateway.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_access_pass_repository.dart';
 import 'package:yoldaal_mobile/application/driver_access/driver_profile_repository.dart';
 import 'package:yoldaal_mobile/application/return_route/publish_return_route_gateway.dart';
@@ -70,6 +71,7 @@ void main() {
     DriverAccessPass? loadedPass,
     Object? profileError,
     PublishReturnRouteGateway? publisher,
+    DriverLivePresenceGateway? livePresence,
     ActiveReturnRouteRecoveryGateway? recovery,
     Timer Function(Duration, void Function())? expiryTimerFactory,
     DateTime Function()? nowProvider,
@@ -79,6 +81,7 @@ void main() {
     profiles: _Profiles(loadedProfile, profileError),
     passes: _Passes(loadedPass),
     publisher: publisher ?? _Publisher(published()),
+    livePresence: livePresence,
     returnRouteRecovery: recovery,
     expiryTimerFactory:
         expiryTimerFactory ?? _ManualExpiryTimerFactory().create,
@@ -128,21 +131,31 @@ void main() {
     expect(value.rejectionReason, 'subscription_required');
   });
   test('approved profil ve aktif pass ready olur ve konumu alır', () async {
-    final value = controller(
-      loadedProfile: profile(DriverProfileStatus.approved),
-      loadedPass: pass(),
-    );
-    await value.load();
-    expect(value.status, DriverCenterStatus.ready);
-    expect(value.origin, origin);
-  });
-  test('service disabled typed location state', () async {
-    final location = _IssueLocation(LocationAccessIssue.serviceDisabled);
+    final location = _Location(origin);
+    final presence = _PresencePublisher();
 
     final value = controller(
       loadedProfile: profile(DriverProfileStatus.approved),
       loadedPass: pass(),
       location: location,
+      livePresence: presence,
+    );
+    await value.load();
+    expect(value.status, DriverCenterStatus.ready);
+    expect(value.origin, origin);
+    expect(location.currentCalls, 1);
+    expect(presence.calls, 1);
+    expect(presence.lastLocation, origin);
+  });
+  test('service disabled typed location state', () async {
+    final location = _IssueLocation(LocationAccessIssue.serviceDisabled);
+    final presence = _PresencePublisher();
+
+    final value = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      loadedPass: pass(),
+      location: location,
+      livePresence: presence,
     );
 
     await value.load();
@@ -151,11 +164,13 @@ void main() {
     expect(value.origin, isNull);
     expect(value.locationIssue, LocationAccessIssue.serviceDisabled);
     expect(value.errorMessage, isNull);
+    expect(presence.calls, 0);
 
     await value.handleLocationIssueAction();
 
     expect(location.locationSettingsCalls, 1);
     expect(location.appSettingsCalls, 0);
+    expect(presence.calls, 0);
   });
 
   test('denied forever opens app settings', () async {
@@ -194,6 +209,87 @@ void main() {
     expect(location.currentCalls, 2);
   });
 
+  test('permission denied retry success publishes retry sample once', () async {
+    final retrySample = GeoCoordinate(latitude: 41.2, longitude: 29.2);
+    final location = _RetryLocation(
+      LocationAccessIssue.permissionDenied,
+      retrySample,
+    );
+    final presence = _PresencePublisher();
+
+    final value = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      loadedPass: pass(),
+      location: location,
+      livePresence: presence,
+    );
+
+    await value.load();
+    expect(location.currentCalls, 1);
+    expect(value.origin, isNull);
+    expect(value.locationIssue, LocationAccessIssue.permissionDenied);
+    expect(presence.calls, 0);
+
+    await value.handleLocationIssueAction();
+
+    expect(location.currentCalls, 2);
+    expect(value.origin, retrySample);
+    expect(value.locationIssue, isNull);
+    expect(presence.calls, 1);
+    expect(presence.lastLocation, retrySample);
+  });
+
+  test('presence failure preserves successful local location state', () async {
+    final location = _Location(origin);
+    final presence = _PresencePublisher(
+      error: StateError('RAW_PRESENCE_ERROR'),
+    );
+
+    final value = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      loadedPass: pass(),
+      location: location,
+      livePresence: presence,
+    );
+
+    await value.load();
+
+    expect(value.status, DriverCenterStatus.ready);
+    expect(value.origin, origin);
+    expect(value.locationIssue, isNull);
+    expect(value.errorMessage, isNull);
+    expect(location.currentCalls, 1);
+    expect(presence.calls, 1);
+    expect(presence.lastLocation, origin);
+  });
+
+  test('return route publish remains independent from presence', () async {
+    final location = _Location(origin);
+    final presence = _PresencePublisher();
+    final routePublisher = _Publisher(published());
+
+    final value = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      loadedPass: pass(),
+      location: location,
+      livePresence: presence,
+      publisher: routePublisher,
+    );
+
+    await value.load();
+
+    expect(presence.calls, 1);
+    expect(routePublisher.calls, 0);
+
+    value.destination = destination;
+    value.destinationLabel = 'Hedef';
+    expect(value.canPublish, isTrue);
+
+    await value.publish();
+
+    expect(presence.calls, 1);
+    expect(routePublisher.calls, 1);
+  });
   test('raw location exception becomes unavailable', () async {
     final value = controller(
       loadedProfile: profile(DriverProfileStatus.approved),
@@ -572,12 +668,15 @@ class _Location implements LocationAccessGateway {
   _Location(this.value);
 
   final GeoCoordinate value;
+  int currentCalls = 0;
 
   @override
-  Future<LocationAccessResult> currentLocation() async =>
-      LocationAccessResult.granted(
-        DeviceLocation(latitude: value.latitude, longitude: value.longitude),
-      );
+  Future<LocationAccessResult> currentLocation() async {
+    currentCalls++;
+    return LocationAccessResult.granted(
+      DeviceLocation(latitude: value.latitude, longitude: value.longitude),
+    );
+  }
 
   @override
   Future<bool> openAppSettings() async => true;
@@ -613,6 +712,33 @@ class _IssueLocation implements LocationAccessGateway {
   }
 }
 
+class _RetryLocation implements LocationAccessGateway {
+  _RetryLocation(this.issue, this.retryValue);
+
+  final LocationAccessIssue issue;
+  final GeoCoordinate retryValue;
+  int currentCalls = 0;
+
+  @override
+  Future<LocationAccessResult> currentLocation() async {
+    currentCalls++;
+    if (currentCalls == 1) {
+      return LocationAccessResult.failed(issue);
+    }
+    return LocationAccessResult.granted(
+      DeviceLocation(
+        latitude: retryValue.latitude,
+        longitude: retryValue.longitude,
+      ),
+    );
+  }
+
+  @override
+  Future<bool> openAppSettings() async => true;
+
+  @override
+  Future<bool> openLocationSettings() async => true;
+}
 class _ThrowingLocation implements LocationAccessGateway {
   @override
   Future<LocationAccessResult> currentLocation() async {
@@ -626,6 +752,26 @@ class _ThrowingLocation implements LocationAccessGateway {
   Future<bool> openLocationSettings() async => true;
 }
 
+class _PresencePublisher implements DriverLivePresenceGateway {
+  _PresencePublisher({this.error});
+
+  final Object? error;
+  int calls = 0;
+  GeoCoordinate? lastLocation;
+
+  @override
+  Future<DriverLivePresencePublishResult> publish({
+    required GeoCoordinate location,
+  }) async {
+    calls++;
+    lastLocation = location;
+    final failure = error;
+    if (failure != null) {
+      throw failure;
+    }
+    return const DriverLivePresencePublishResult(updatedAtMillis: 123);
+  }
+}
 class _Publisher implements PublishReturnRouteGateway {
   final PublishedReturnRoute value;
   int calls = 0;

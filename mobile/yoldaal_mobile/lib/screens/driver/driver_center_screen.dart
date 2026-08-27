@@ -24,6 +24,7 @@ import '../../models/address_model.dart';
 import '../../services/location_access_service.dart';
 import '../../services/active_return_route_recovery_service.dart';
 import '../../services/publish_return_route_service.dart';
+import '../../services/publish_driver_live_location_service.dart';
 import '../../domain/driver_application/driver_application_review.dart';
 import '../../services/driver_application_review_service.dart';
 import '../../services/driver_plan_catalog_service.dart';
@@ -87,6 +88,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           passes: FirestoreDriverAccessPassRepository(),
           accessModes: FirestoreDriverAccessModeRepository(),
           publisher: PublishReturnRouteService(),
+          livePresence: PublishDriverLiveLocationService(),
           returnRouteRecovery: ActiveReturnRouteRecoveryService(),
           location: LocationAccessService(),
           applications: DriverApplicationReviewService(),
