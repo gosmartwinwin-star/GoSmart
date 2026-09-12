@@ -9,15 +9,20 @@ import {
   onCall,
   onRequest,
 } from "firebase-functions/v2/https";
+import {getFunctions} from "firebase-admin/functions";
+import {getMessaging} from "firebase-admin/messaging";
+import {onDocumentWritten} from "firebase-functions/v2/firestore";
+import {onTaskDispatched} from "firebase-functions/v2/tasks";
 import * as logger from "firebase-functions/logger";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {
   CoordinateInput,
+  computeTrafficAwareDrivingMeasurement,
+  computeTrafficAwareDrivingRoute,
   coordinatesEqual,
   durationToSeconds,
   validateCoordinate,
   validateDirection,
-  validateNonNegativeInteger,
   validateRouteIndex,
 } from "./route-helpers.js";
 import {
@@ -83,6 +88,13 @@ import {
 import {loadApprovedDriverId} from "./ride-driver-identity.js";
 import {publishDriverLivePresence} from "./driver-live-presence-authority.js";
 import {
+  registerDriverPushTarget as registerDriverPushTargetAuthority,
+} from "./driver-push-target-authority.js";
+import {
+  getActiveRideDriverTrackingForActor,
+} from "./ride-live-tracking-authority.js";
+import {getRideLiveTrackingEta} from "./ride-live-tracking-eta.js";
+import {
   prepareDriverPlanPurchase as prepareDriverPlanPurchaseAuthority,
 } from "./driver-plan-purchase-authority.js";
 import {
@@ -109,6 +121,21 @@ import {
 } from "./active-return-route-recovery.js";
 import {getRideHistoryForActor} from "./ride-history-service.js";
 import {
+  getRideRatingStatusForActor,
+  submitRideRatingForActor,
+} from "./ride-rating-authority.js";
+import {
+  createRideSupportCaseForActor,
+} from "./ride-support-authority.js";
+import {
+  createActiveRideSupportCaseForActor,
+} from "./ride-active-support-authority.js";
+import {
+  acknowledgeRideDropoffChangeForActor,
+  getPendingRideDropoffChangeProposalForActor,
+  proposeRideDropoffChangeForActor,
+} from "./ride-midtrip-route-change-authority.js";
+import {
   resolvePlace as resolvePlaceWithPlacesApi,
   searchPlaces as searchPlacesWithPlacesApi,
 } from "./place-search-service.js";
@@ -119,6 +146,46 @@ import type {
   RideMatchDeviationInput,
   RideMatchDeviationMeasurement,
 } from "./ride-match-offer-discovery.js";
+
+import {
+  discoverNearbyPassengerDriversForPassenger,
+} from "./nearby-passenger-discovery-authority.js";
+import type {
+  NearbyPassengerDiscoveryMeasurementInput,
+} from "./nearby-passenger-discovery-authority.js";
+import {
+  RETURN_ROUTE_MATCH_MAX_DETOUR_METERS,
+} from "./ride-match-offer-helpers.js";
+import type {
+  RideMatchMeasurement,
+} from "./ride-match-offer-helpers.js";
+import {
+  decodeEncodedPolyline,
+  geoDistanceMeters,
+  locateRouteAnchors,
+  routeAnchorDirectionCompatible,
+} from "./ride-route-geometry.js";
+import {
+  buildReturnRouteCorridorPrefixes,
+} from "./return-route-corridor-prefix-helpers.js";
+import {
+  RIDE_OFFER_HINT_TASK_MAX_ATTEMPTS,
+  RIDE_OFFER_HINT_TASK_MAX_BACKOFF_SECONDS,
+  RIDE_OFFER_HINT_TASK_MAX_CONCURRENT_DISPATCHES,
+  RIDE_OFFER_HINT_TASK_MAX_DISPATCHES_PER_SECOND,
+  RIDE_OFFER_HINT_TASK_MIN_BACKOFF_SECONDS,
+  RIDE_OFFER_HINT_TASK_TIMEOUT_SECONDS,
+} from "./ride-background-offer-dispatch-policy.js";
+import {
+  enqueueRideBackgroundOfferInitialDispatch,
+} from "./ride-background-offer-dispatch-enqueue-authority.js";
+import {
+  executeRideOfferHintPageTask,
+} from "./ride-background-offer-dispatch-task-worker-authority.js";
+
+const RETURN_ROUTE_CORRIDOR_INITIAL_PRECISION = 4;
+const RETURN_ROUTE_CORRIDOR_MAX_PREFIX_COUNT = 16;
+
 
 type ComputeRouteInput = {
   origin: CoordinateInput;
@@ -201,47 +268,18 @@ const toWaypoint = (coordinate: CoordinateInput) => ({
   },
 });
 
-const computeDrivingMeasurement = async (
+const computeDrivingMeasurement = (
   origin: CoordinateInput,
   destination: CoordinateInput,
-): Promise<{distanceMeters: number; durationSeconds: number}> => {
-  if (coordinatesEqual(origin, destination)) {
-    return {distanceMeters: 0, durationSeconds: 0};
-  }
-
-  const [response] = await routesClient.computeRoutes(
-    {
-      origin: toWaypoint(origin),
-      destination: toWaypoint(destination),
-      travelMode: routing.RouteTravelMode.DRIVE,
-      routingPreference: routing.RoutingPreference.TRAFFIC_AWARE,
-      computeAlternativeRoutes: false,
-      languageCode: "tr-TR",
-      regionCode: "TR",
-      units: routing.Units.METRIC,
-    },
-    {
-      otherArgs: {
-        headers: {
-          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
-        },
-      },
-    },
+): Promise<{
+  distanceMeters: number;
+  durationSeconds: number;
+}> =>
+  computeTrafficAwareDrivingMeasurement(
+    routesClient,
+    origin,
+    destination,
   );
-
-  const route = response.routes?.[0];
-  const distanceMeters = validateNonNegativeInteger(route?.distanceMeters);
-  const durationSeconds = durationToSeconds(route?.duration);
-
-  if (distanceMeters === null || durationSeconds === null) {
-    throw new HttpsError(
-      "internal",
-      "Sürüş sapması ölçümü tamamlanamadı.",
-    );
-  }
-
-  return {distanceMeters, durationSeconds};
-};
 
 const computeRideMatchDeviation = async (
   input: RideMatchDeviationInput,
@@ -271,6 +309,117 @@ const computeRideMatchDeviation = async (
       dropoffMeasurement.durationSeconds,
   };
 };
+
+const computeNearbyPassengerCompatibility = async (
+  input: NearbyPassengerDiscoveryMeasurementInput,
+): Promise<RideMatchMeasurement | null> => {
+  if (
+    typeof input.returnRouteData !== "object" ||
+    input.returnRouteData === null ||
+    Array.isArray(input.returnRouteData)
+  ) {
+    return null;
+  }
+
+  const returnRoute =
+    input.returnRouteData as Record<string, unknown>;
+
+  const encodedPolyline =
+    returnRoute.encodedPolyline;
+
+  if (
+    typeof encodedPolyline !== "string" ||
+    encodedPolyline.length === 0
+  ) {
+    return null;
+  }
+
+  let origin: CoordinateInput;
+  let destination: CoordinateInput;
+  let anchors:
+    ReturnType<typeof locateRouteAnchors>;
+
+  try {
+    origin =
+      validateCoordinate(
+        returnRoute.origin,
+      );
+
+    destination =
+      validateCoordinate(
+        returnRoute.destination,
+      );
+
+    const routePoints =
+      decodeEncodedPolyline(
+        encodedPolyline,
+      );
+
+    anchors =
+      locateRouteAnchors(
+        routePoints,
+        input.passengerPickup,
+        input.passengerDropoff,
+      );
+  } catch (_error: unknown) {
+    return null;
+  }
+
+  if (
+    !routeAnchorDirectionCompatible(
+      anchors,
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    geoDistanceMeters(
+      origin,
+      input.passengerPickup,
+    ) >
+      RETURN_ROUTE_MATCH_MAX_DETOUR_METERS ||
+    geoDistanceMeters(
+      input.passengerDropoff,
+      destination,
+    ) >
+      RETURN_ROUTE_MATCH_MAX_DETOUR_METERS
+  ) {
+    return null;
+  }
+
+  const deviation =
+    await computeRideMatchDeviation({
+      pickupAnchor:
+        origin,
+      pickup:
+        input.passengerPickup,
+      dropoff:
+        input.passengerDropoff,
+      dropoffAnchor:
+        destination,
+      pickupRouteIndex:
+        anchors.pickupRouteIndex,
+      dropoffRouteIndex:
+        anchors.dropoffRouteIndex,
+    });
+
+  return {
+    pickupRouteIndex:
+      anchors.pickupRouteIndex,
+    dropoffRouteIndex:
+      anchors.dropoffRouteIndex,
+    pickupDetourMeters:
+      deviation.pickupDetourMeters,
+    pickupDetourSeconds:
+      deviation.pickupDetourSeconds,
+    dropoffDetourMeters:
+      deviation.dropoffDetourMeters,
+    dropoffDetourSeconds:
+      deviation.dropoffDetourSeconds,
+  };
+};
+
 
 const safePrecondition = (reason: string) => new HttpsError(
   "failed-precondition",
@@ -335,48 +484,19 @@ const validatePublishInput = (value: unknown): PublishReturnRouteInput => {
   }
 };
 
-const computePublishedRoute = async (
+const computePublishedRoute = (
   origin: CoordinateInput,
   destination: CoordinateInput,
 ): Promise<{
   distanceMeters: number;
   durationSeconds: number;
   encodedPolyline: string;
-}> => {
-  const [response] = await routesClient.computeRoutes({
-    origin: toWaypoint(origin),
-    destination: toWaypoint(destination),
-    travelMode: routing.RouteTravelMode.DRIVE,
-    routingPreference: routing.RoutingPreference.TRAFFIC_AWARE,
-    computeAlternativeRoutes: false,
-    polylineQuality: routing.PolylineQuality.OVERVIEW,
-    polylineEncoding: routing.PolylineEncoding.ENCODED_POLYLINE,
-    languageCode: "tr-TR",
-    regionCode: "TR",
-    units: routing.Units.METRIC,
-  }, {
-    otherArgs: {headers: {"X-Goog-FieldMask":
-      "routes.duration,routes.distanceMeters," +
-      "routes.polyline.encodedPolyline"}},
-  });
-  const route = response.routes?.[0];
-  const distanceMeters = route?.distanceMeters;
-  const durationSeconds = durationToSeconds(route?.duration);
-  const encodedPolyline = route?.polyline?.encodedPolyline;
-  if (
-    typeof distanceMeters !== "number" ||
-    !Number.isInteger(distanceMeters) ||
-    distanceMeters <= 0 ||
-    durationSeconds === null ||
-    !Number.isInteger(durationSeconds) ||
-    durationSeconds <= 0 ||
-    typeof encodedPolyline !== "string" ||
-    encodedPolyline.length === 0
-  ) {
-    throw new Error("Invalid route response");
-  }
-  return {distanceMeters, durationSeconds, encodedPolyline};
-};
+}> =>
+  computeTrafficAwareDrivingRoute(
+    routesClient,
+    origin,
+    destination,
+  );
 
 export const healthCheck = onRequest(
   {
@@ -611,6 +731,56 @@ export const getMyRideMatchOffers = onCall(
     }
   },
 );
+
+export const getNearbyPassengerDrivers = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Yak?ndaki s?r?c?ler i?in giri? yapmal?s?n?z.",
+      );
+    }
+
+    try {
+      return await discoverNearbyPassengerDriversForPassenger(
+        {
+          firestore,
+          measureCompatibility:
+            computeNearbyPassengerCompatibility,
+        },
+        request.auth.uid,
+        request.data,
+      );
+    } catch (error: unknown) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      logger.error(
+        "YoldaAl nearby passenger driver discovery failed",
+        {
+          errorType:
+            error instanceof Error ?
+              error.name :
+              "UnknownError",
+        },
+      );
+
+      throw new HttpsError(
+        "unavailable",
+        "Yak?ndaki s?r?c?ler ?u anda y?klenemedi.",
+      );
+    }
+  },
+);
+
 
 export const createRideRequest = onCall(
   {
@@ -950,6 +1120,150 @@ export const completeRide = onCall(
   },
 );
 
+export const submitRideRating = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated",
+        "Ride rating requires authentication.");
+    }
+    return submitRideRatingForActor(
+      {firestore}, request.auth.uid, request.data);
+  },
+);
+export const getMyRideRatingStatus = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride rating status requires authentication.",
+      );
+    }
+
+    return getRideRatingStatusForActor(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const createRideSupportCase = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride support requires authentication.",
+      );
+    }
+
+    return createRideSupportCaseForActor(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const createActiveRideSupportCase = onCall(
+  {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
+    minInstances: 0, maxInstances: 3},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Active ride support requires authentication.",
+      );
+    }
+
+    return createActiveRideSupportCaseForActor(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const proposeRideDropoffChange = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride dropoff change requires authentication.",
+      );
+    }
+
+    return proposeRideDropoffChangeForActor(
+      {
+        firestore,
+        routesClient,
+      },
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
+export const acknowledgeRideDropoffChange = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride dropoff change acknowledgement requires authentication.",
+      );
+    }
+
+    return acknowledgeRideDropoffChangeForActor(
+      {
+        firestore,
+        routesClient,
+      },
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const getPendingRideDropoffChangeProposal = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride dropoff change proposal requires authentication.",
+      );
+    }
+
+    return getPendingRideDropoffChangeProposalForActor(
+      {
+        firestore,
+      },
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
 export const getMyActiveDriverRide = onCall(
   {region: "europe-west1", timeoutSeconds: 15, memory: "256MiB",
     minInstances: 0, maxInstances: 3},
@@ -1920,11 +2234,20 @@ export const publishReturnRoute = onCall<PublishReturnRouteInput>(
     }
 
     let routeMeasurement: Awaited<ReturnType<typeof computePublishedRoute>>;
+    let corridorPrefixes: ReturnType<typeof buildReturnRouteCorridorPrefixes>;
     try {
       routeMeasurement = await computePublishedRoute(
         input.origin,
         input.destination,
       );
+      corridorPrefixes = buildReturnRouteCorridorPrefixes({
+        routePoints: decodeEncodedPolyline(
+          routeMeasurement.encodedPolyline,
+        ),
+        radiusMeters: RETURN_ROUTE_MATCH_MAX_DETOUR_METERS,
+        initialPrecision: RETURN_ROUTE_CORRIDOR_INITIAL_PRECISION,
+        maxPrefixCount: RETURN_ROUTE_CORRIDOR_MAX_PREFIX_COUNT,
+      });
     } catch (_error: unknown) {
       throw new HttpsError(
         "unavailable",
@@ -1939,6 +2262,9 @@ export const publishReturnRoute = onCall<PublishReturnRouteInput>(
     );
     const routeReference = firestore.collection("driverReturnRoutes").doc();
     const lockReference = firestore.collection("driverActiveReturnRoutes")
+      .doc(driverId);
+    const corridorIndexReference = firestore
+      .collection("driverReturnRouteCorridorIndexes")
       .doc(driverId);
 
     try {
@@ -1978,6 +2304,13 @@ export const publishReturnRoute = onCall<PublishReturnRouteInput>(
           routeDurationSeconds: routeMeasurement.durationSeconds,
           encodedPolyline: routeMeasurement.encodedPolyline,
           pricingVersion: null,
+        });
+        transaction.set(corridorIndexReference, {
+          driverId,
+          returnRouteId: routeReference.id,
+          corridorPrefixes,
+          activatedAt: now,
+          expiresAt,
         });
         transaction.set(lockReference, {
           routeId: routeReference.id,
@@ -2020,6 +2353,62 @@ export const publishDriverLiveLocation = onCall(
 
     return publishDriverLivePresence(
       {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const registerDriverPushTarget = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Driver push target requires authentication.",
+      );
+    }
+
+    return registerDriverPushTargetAuthority(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const getActiveRideDriverTracking = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Canlı yolculuk konumu için giriş yapmalısınız.",
+      );
+    }
+
+    return getActiveRideDriverTrackingForActor(
+      {
+        firestore,
+        resolveEta: (input) =>
+          getRideLiveTrackingEta(
+            {
+              firestore,
+              computeDrivingMeasurement,
+            },
+            input,
+          ),
+      },
       request.auth.uid,
       request.data,
     );
@@ -2167,3 +2556,104 @@ export const driverPlanCheckoutCallback = onRequest(
     }
   },
 );
+
+const RIDE_OFFER_HINT_TASK_QUEUE_TARGET =
+  "locations/europe-west1/functions/dispatchRideOfferHintPage";
+
+export const onRideBackgroundOfferHintWritten =
+  onDocumentWritten(
+    {
+      document: "rides/{rideId}",
+      region: "europe-west1",
+      retry: true,
+    },
+    async (event) => {
+      await enqueueRideBackgroundOfferInitialDispatch(
+        {
+          beforeValue:
+            event.data?.before.data(),
+          afterValue:
+            event.data?.after.data(),
+          eventId:
+            event.id,
+          eventTime:
+            event.time,
+          rideId:
+            event.params.rideId,
+        },
+        {
+          enqueueTask: (
+            payload,
+            taskId,
+          ) =>
+            getFunctions()
+              .taskQueue(
+                RIDE_OFFER_HINT_TASK_QUEUE_TARGET,
+              )
+              .enqueue(
+                payload,
+                {
+                  id: taskId,
+                },
+              ),
+        },
+      );
+    },
+  );
+
+export const dispatchRideOfferHintPage =
+  onTaskDispatched(
+    {
+      region: "europe-west1",
+      retryConfig: {
+        maxAttempts:
+          RIDE_OFFER_HINT_TASK_MAX_ATTEMPTS,
+        minBackoffSeconds:
+          RIDE_OFFER_HINT_TASK_MIN_BACKOFF_SECONDS,
+        maxBackoffSeconds:
+          RIDE_OFFER_HINT_TASK_MAX_BACKOFF_SECONDS,
+      },
+      rateLimits: {
+        maxConcurrentDispatches:
+          RIDE_OFFER_HINT_TASK_MAX_CONCURRENT_DISPATCHES,
+        maxDispatchesPerSecond:
+          RIDE_OFFER_HINT_TASK_MAX_DISPATCHES_PER_SECOND,
+      },
+      timeoutSeconds:
+        RIDE_OFFER_HINT_TASK_TIMEOUT_SECONDS,
+    },
+    async (request) => {
+      await executeRideOfferHintPageTask(
+        request.data,
+        {
+          firestore,
+          getTaskQueue: () => ({
+            enqueue: (
+              payload,
+              options,
+            ) =>
+              getFunctions()
+                .taskQueue(
+                  RIDE_OFFER_HINT_TASK_QUEUE_TARGET,
+                )
+                .enqueue(
+                  payload,
+                  options,
+                ),
+          }),
+          getMessaging: () => ({
+            sendEachForMulticast: (
+              message,
+            ) =>
+              getMessaging()
+                .sendEachForMulticast(
+                  message,
+                ),
+          }),
+          warn: (message) => {
+            logger.warn(message);
+          },
+        },
+      );
+    },
+  );

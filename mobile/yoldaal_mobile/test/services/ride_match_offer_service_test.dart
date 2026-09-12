@@ -30,6 +30,12 @@ void main() {
       expect(offer.dropoff.addressLabel, 'Dropoff');
       expect(offer.expiresAt.isUtc, isTrue);
       expect(offer.expiresAt.millisecondsSinceEpoch, 1893456000000);
+      expect(offer.pickupDetourMeters, 0);
+      expect(offer.pickupDetourSeconds, 180);
+      expect(offer.dropoffDetourMeters, 1200);
+      expect(offer.dropoffDetourSeconds, 240);
+      expect(offer.passengerTripDistanceMeters, 10000);
+      expect(offer.passengerTripDurationSeconds, 1200);
     },
   );
 
@@ -225,6 +231,12 @@ Map<String, dynamic> _offerMap([String rideId = 'ride_1']) => {
     'longitude': 28.9795,
     'addressLabel': 'Dropoff',
   },
+  'pickupDetourMeters': 0,
+  'pickupDetourSeconds': 180,
+  'dropoffDetourMeters': 1200,
+  'dropoffDetourSeconds': 240,
+  'passengerTripDistanceMeters': 10000,
+  'passengerTripDurationSeconds': 1200,
   'expiresAtMillis': 1893456000000,
 };
 

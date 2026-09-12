@@ -5,10 +5,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/ride/ride_midtrip_route_change_panel.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../controllers/taxi_controller.dart';
+import '../../core/ride/secure_request_id.dart';
 import '../../application/location/location_access_gateway.dart';
+import '../../application/ride/ride_support_gateway.dart';
 import '../../controllers/passenger_ride_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
@@ -23,7 +26,15 @@ import '../../services/marker_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
 import '../../services/ride_lifecycle_service.dart';
+import '../../services/ride_live_tracking_service.dart';
+import '../../controllers/passenger_ride_live_tracking_controller.dart';
+import '../../controllers/passenger_nearby_driver_controller.dart';
+import '../../services/nearby_passenger_driver_service.dart';
+import '../../controllers/ride_midtrip_route_change_controller.dart';
+import '../../infrastructure/firestore/repositories/firestore_ride_dropoff_change_proposal_event_repository.dart';
+import '../../services/ride_midtrip_route_change_service.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
+import '../../widgets/ride/ride_active_support_panel.dart';
 import '../../widgets/cards/route_summary_card.dart';
 import '../../widgets/cards/taxi_info_card.dart';
 import '../../widgets/location/location_access_banner.dart';
@@ -43,17 +54,27 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     this.rideController,
+    this.liveTrackingController,
+    this.nearbyDriverController,
+    this.midtripRouteChangeController,
     this.routeLoader,
     this.authenticate,
     this.locationAccess,
     this.profileScreenBuilder,
+    this.activeSupportGateway,
+    this.supportRequestIdGenerator,
     this.enableSyntheticTaxis = kDebugMode,
   });
   final PassengerRideController? rideController;
+  final PassengerRideLiveTrackingController? liveTrackingController;
+  final PassengerNearbyDriverController? nearbyDriverController;
+  final RideMidtripRouteChangeController? midtripRouteChangeController;
   final HomeRouteLoader? routeLoader;
   final Future<bool> Function()? authenticate;
   final LocationAccessGateway? locationAccess;
   final WidgetBuilder? profileScreenBuilder;
+  final RideActiveSupportGateway? activeSupportGateway;
+  final String Function()? supportRequestIdGenerator;
   final bool enableSyntheticTaxis;
 
   @override
@@ -63,6 +84,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final PassengerRideController rideController;
   late final bool _ownsRideController;
+  PassengerRideLiveTrackingController? liveTrackingController;
+  bool _ownsLiveTrackingController = false;
+  PassengerNearbyDriverController? nearbyDriverController;
+  bool _ownsNearbyDriverController = false;
+  RideMidtripRouteChangeController? midtripRouteChangeController;
+  bool _ownsMidtripRouteChangeController = false;
   StreamSubscription<User?>? _authSubscription;
   GoogleMapController? mapController;
 
@@ -113,7 +140,62 @@ class _HomeScreenState extends State<HomeScreen> {
     routeLoader = widget.routeLoader ?? RouteService().getRoute;
 
     locationAccess = widget.locationAccess ?? LocationAccessService();
+
     rideController.addListener(_refreshRide);
+
+    final injectedLiveTrackingController = widget.liveTrackingController;
+
+    if (injectedLiveTrackingController != null) {
+      liveTrackingController = injectedLiveTrackingController;
+    } else if (_ownsRideController) {
+      _ownsLiveTrackingController = true;
+      liveTrackingController = PassengerRideLiveTrackingController(
+        rideListenable: rideController,
+        rideId: () => rideController.ride?.rideId,
+        rideStatus: () => rideController.ride?.status,
+        gateway: RideLiveTrackingService(),
+      );
+    }
+
+    liveTrackingController?.addListener(_refreshLiveTracking);
+    liveTrackingController?.start();
+
+    final injectedNearbyDriverController = widget.nearbyDriverController;
+
+    if (injectedNearbyDriverController != null) {
+      nearbyDriverController = injectedNearbyDriverController;
+    } else if (_ownsRideController) {
+      _ownsNearbyDriverController = true;
+      final nearbyDriverService = NearbyPassengerDriverService();
+      nearbyDriverController = PassengerNearbyDriverController(
+        rideListenable: rideController,
+        rideId: () => rideController.ride?.rideId,
+        rideStatus: () => rideController.ride?.status,
+        loader: nearbyDriverService.load,
+      );
+    }
+
+    nearbyDriverController?.addListener(_refreshNearbyDrivers);
+    nearbyDriverController?.start();
+
+    final injectedMidtripRouteChangeController =
+        widget.midtripRouteChangeController;
+
+    if (injectedMidtripRouteChangeController != null) {
+      midtripRouteChangeController = injectedMidtripRouteChangeController;
+    } else if (_ownsRideController) {
+      _ownsMidtripRouteChangeController = true;
+      midtripRouteChangeController = RideMidtripRouteChangeController(
+        rideListenable: rideController,
+        rideId: () => rideController.ride?.rideId,
+        rideStatus: () => rideController.ride?.status,
+        eventGateway: FirestoreRideDropoffChangeProposalEventRepository(),
+        routeChangeGateway: RideMidtripRouteChangeService(),
+      );
+    }
+
+    midtripRouteChangeController?.start();
+
     rideController.recover();
     if (_ownsRideController) {
       _authSubscription = FirebaseAuth.instance
@@ -147,6 +229,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     rideController.removeListener(_refreshRide);
+    liveTrackingController?.removeListener(_refreshLiveTracking);
+    if (_ownsLiveTrackingController) {
+      liveTrackingController?.dispose();
+    }
+    nearbyDriverController?.removeListener(_refreshNearbyDrivers);
+    if (_ownsNearbyDriverController) {
+      nearbyDriverController?.dispose();
+    }
+    if (_ownsMidtripRouteChangeController) {
+      midtripRouteChangeController?.dispose();
+    }
     _authSubscription?.cancel();
     if (_ownsRideController) rideController.dispose();
     taxiController.stopSimulation();
@@ -238,6 +331,111 @@ class _HomeScreenState extends State<HomeScreen> {
         destination: destinationAddress,
       ),
     );
+
+    _applyNearbyDriverMarkers();
+    _applyLiveDriverMarker();
+  }
+
+  void _refreshLiveTracking() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _applyLiveDriverMarker();
+    });
+  }
+
+  void _refreshNearbyDrivers() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _applyNearbyDriverMarkers();
+      _applyLiveDriverMarker();
+    });
+  }
+
+  void _applyNearbyDriverMarkers() {
+    _markers.removeWhere(
+      (marker) => marker.markerId.value.startsWith('nearby_driver_'),
+    );
+
+    final controller = nearbyDriverController;
+
+    if (controller == null || !controller.isActive) {
+      return;
+    }
+
+    for (var index = 0; index < controller.projections.length; index++) {
+      final projection = controller.projections[index];
+
+      _markers.add(
+        Marker(
+          markerId: MarkerId('nearby_driver_$index'),
+          position: LatLng(projection.latitude, projection.longitude),
+          infoWindow: const InfoWindow(title: 'Yakındaki sürücü'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _applyLiveDriverMarker() {
+    _markers.removeWhere(
+      (marker) => marker.markerId.value == 'active_ride_driver',
+    );
+
+    final trackingController = liveTrackingController;
+
+    if (trackingController == null) {
+      return;
+    }
+
+    final location = trackingController.driverLocation;
+
+    if (location == null) {
+      return;
+    }
+
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('active_ride_driver'),
+        position: LatLng(location.latitude, location.longitude),
+        infoWindow: const InfoWindow(title: 'Sürücünüz'),
+      ),
+    );
+  }
+
+  String? _liveTrackingStatusText() {
+    final ride = rideController.ride;
+
+    final trackingController = liveTrackingController;
+
+    if (ride == null ||
+        trackingController == null ||
+        !trackingController.isActive) {
+      return null;
+    }
+
+    if (trackingController.isUpdating) {
+      return 'Sürücü konumu güncelleniyor…';
+    }
+
+    if (ride.status == RideStatus.driverArrived) {
+      return 'Sürücü konumu güncel';
+    }
+
+    final etaSeconds = trackingController.etaSeconds;
+
+    if (etaSeconds == null) {
+      return 'Sürücü konumu güncelleniyor…';
+    }
+
+    return 'Tahmini varış: $etaSeconds sn';
   }
 
   Future<void> _getCurrentLocation() async {
@@ -583,6 +781,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<RideLocation?> _selectMidtripDropoff() async {
+    final result = await Navigator.push<AddressModel>(
+      context,
+      MaterialPageRoute(builder: (_) => const SearchAddressScreen()),
+    );
+
+    if (result == null) {
+      return null;
+    }
+
+    return RideLocation(
+      latitude: result.latitude,
+      longitude: result.longitude,
+      addressLabel: result.title,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -651,16 +866,66 @@ class _HomeScreenState extends State<HomeScreen> {
               bottom: 108,
               child: SafeArea(
                 top: false,
-                child: CanonicalRideCard(
-                  ride: ride,
-                  driver: false,
-                  loading: rideController.mutating,
-                  onCancel: ride.status.passengerCanCancel
-                      ? rideController.cancel
-                      : null,
-                  onDismiss: ride.status.isTerminal
-                      ? rideController.dismissTerminal
-                      : null,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_liveTrackingStatusText() case final statusText?)
+                      Card(
+                        key: const ValueKey('passenger-live-tracking-status'),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_on_outlined),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(statusText)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    CanonicalRideCard(
+                      ride: ride,
+                      driver: false,
+                      loading: rideController.mutating,
+                      onCancel: ride.status.passengerCanCancel
+                          ? rideController.cancel
+                          : null,
+                      onDismiss: ride.status.isTerminal
+                          ? rideController.dismissTerminal
+                          : null,
+                    ),
+                    if (ride.status == RideStatus.inProgress &&
+                        midtripRouteChangeController != null) ...[
+                      const SizedBox(height: 8),
+                      RideMidtripRouteChangePanel(
+                        key: ValueKey(
+                          'passenger-midtrip-route-change-${ride.rideId}',
+                        ),
+                        rideId: ride.rideId,
+                        controller: midtripRouteChangeController!,
+                        selectDropoff: _selectMidtripDropoff,
+                      ),
+                    ],
+                    if (ride.status == RideStatus.driverEnRoute ||
+                        ride.status == RideStatus.driverArrived ||
+                        ride.status == RideStatus.inProgress) ...[
+                      const SizedBox(height: 8),
+                      RideActiveSupportPanel(
+                        key: ValueKey(
+                          'passenger-active-support-${ride.rideId}',
+                        ),
+                        rideId: ride.rideId,
+                        gateway: widget.activeSupportGateway,
+                        requestIdGenerator:
+                            widget.supportRequestIdGenerator ??
+                            secureRideRequestId,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

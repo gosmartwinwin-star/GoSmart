@@ -223,8 +223,10 @@ class _DeviationGateway implements RouteDeviationGateway {
   @override
   Future<RouteDeviationResult> compute({
     required RouteAnchorResult anchors,
+    required GeoCoordinate pickupOrigin,
     required GeoCoordinate pickup,
     required GeoCoordinate dropoff,
+    required GeoCoordinate dropoffDestination,
   }) async {
     calls++;
 

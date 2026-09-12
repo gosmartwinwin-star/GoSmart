@@ -3,8 +3,8 @@ import {Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 
 export const RETURN_ROUTE_MATCH_MAX_DETOUR_METERS = 3000;
-export const RETURN_ROUTE_MATCH_MAX_DETOUR_SECONDS = 600;
-export const RIDE_MATCH_OFFER_POLICY_VERSION = 1;
+export const RETURN_ROUTE_MATCH_MAX_DETOUR_SECONDS = 900;
+export const RIDE_MATCH_OFFER_POLICY_VERSION = 2;
 export const RIDE_MATCH_OFFER_TTL_SECONDS = 120;
 
 export const RIDE_MATCH_OFFER_STATUSES = [
@@ -137,17 +137,19 @@ export const isRideMatchMeasurementEligible = (
 export const rideMatchOfferDocumentId = (
   driverId: string,
   rideId: string,
+  rideVersion: number,
 ): string => {
   if (
     !isNonEmptyIdentifier(driverId) ||
-    !isNonEmptyIdentifier(rideId)
+    !isNonEmptyIdentifier(rideId) ||
+    !isPositiveInteger(rideVersion)
   ) {
     throw new TypeError("Invalid ride match offer identity.");
   }
 
   return createHash("sha256")
     .update(
-      `ride-match-offer:${driverId}:${rideId}`,
+      `ride-match-offer:${driverId}:${rideId}:${rideVersion}`,
     )
     .digest("hex");
 };

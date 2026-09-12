@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../application/ride/ride_match_offer_gateway.dart';
@@ -5,18 +7,32 @@ import '../core/ride/secure_request_id.dart';
 import '../domain/ride/ride_match_offer.dart';
 import '../services/ride_match_offer_service.dart';
 
+const driverRideMatchOfferPollInterval = Duration(seconds: 15);
+
 class DriverRideMatchOfferController extends ChangeNotifier {
   DriverRideMatchOfferController({
     required RideMatchOfferGateway gateway,
     String Function()? requestIdGenerator,
     DateTime Function()? now,
+    Timer Function(Duration, void Function())? countdownTimerFactory,
+    Timer Function(Duration, void Function(Timer))? periodicTimerFactory,
   }) : _gateway = gateway,
        _requestIdGenerator = requestIdGenerator ?? secureRideRequestId,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _countdownTimerFactory =
+           countdownTimerFactory ??
+           ((delay, callback) => Timer(delay, callback)),
+       _periodicTimerFactory = periodicTimerFactory ?? Timer.periodic;
 
   final RideMatchOfferGateway _gateway;
   final String Function() _requestIdGenerator;
   final DateTime Function() _now;
+  final Timer Function(Duration, void Function()) _countdownTimerFactory;
+  final Timer Function(Duration, void Function(Timer)) _periodicTimerFactory;
+
+  Timer? _countdownTimer;
+  Timer? _pollTimer;
+  bool _disposed = false;
 
   List<RideMatchOffer> _offers = const <RideMatchOffer>[];
   final Map<String, String> _acceptRequestIds = <String, String>{};
@@ -29,13 +45,47 @@ class DriverRideMatchOfferController extends ChangeNotifier {
 
   List<RideMatchOffer> get offers => _offers;
 
+  int remainingMinutesFor(RideMatchOffer offer) {
+    final remainingMilliseconds = offer.expiresAt
+        .toUtc()
+        .difference(_now().toUtc())
+        .inMilliseconds;
+
+    if (remainingMilliseconds <= 0) {
+      return 0;
+    }
+
+    return (remainingMilliseconds + 59999) ~/ 60000;
+  }
+
   bool get accepting => acceptingRideId != null;
 
   bool get busy => loading || accepting;
 
+  bool get polling => _pollTimer?.isActive ?? false;
+
+  bool startPolling() {
+    if (_disposed || !hasListeners || polling) {
+      return false;
+    }
+
+    _pollTimer = _periodicTimerFactory(driverRideMatchOfferPollInterval, (_) {
+      if (_disposed) return;
+      unawaited(load());
+    });
+
+    return true;
+  }
+
+  void stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
   Future<void> load() async {
     if (busy) return;
 
+    _cancelCountdownTimer();
     loading = true;
     errorMessage = null;
     _notify();
@@ -58,6 +108,7 @@ class DriverRideMatchOfferController extends ChangeNotifier {
     } finally {
       hasLoaded = true;
       loading = false;
+      _scheduleCountdownTimer();
       _notify();
     }
   }
@@ -79,6 +130,7 @@ class DriverRideMatchOfferController extends ChangeNotifier {
     if (!canonicalOffer.expiresAt.isAfter(current)) {
       _removeOffer(canonicalOffer);
       _acceptRequestIds.remove(key);
+      _scheduleCountdownTimer();
 
       errorMessage = 'Bu yolculuk teklifinin süresi doldu.';
       _notify();
@@ -118,6 +170,7 @@ class DriverRideMatchOfferController extends ChangeNotifier {
       errorMessage = 'Yolculuk kabulü doğrulanamadı. Tekrar deneyin.';
     } finally {
       acceptingRideId = null;
+      _scheduleCountdownTimer();
       _notify();
     }
 
@@ -149,6 +202,90 @@ class DriverRideMatchOfferController extends ChangeNotifier {
 
     _offers = List<RideMatchOffer>.unmodifiable(
       _offers.where((candidate) => _offerKey(candidate) != key),
+    );
+  }
+
+  bool _pruneExpiredOffers() {
+    final current = _now().toUtc();
+    final liveOffers = _offers
+        .where((offer) => offer.expiresAt.toUtc().isAfter(current))
+        .toList(growable: false);
+
+    if (liveOffers.length == _offers.length) {
+      return false;
+    }
+
+    _offers = List<RideMatchOffer>.unmodifiable(liveOffers);
+
+    final liveKeys = _offers.map(_offerKey).toSet();
+    _acceptRequestIds.removeWhere((key, _) => !liveKeys.contains(key));
+
+    return true;
+  }
+
+  void _cancelCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+  }
+
+  void _scheduleCountdownTimer() {
+    _cancelCountdownTimer();
+
+    if (_disposed || !hasListeners || _offers.isEmpty) {
+      return;
+    }
+
+    _pruneExpiredOffers();
+
+    if (_offers.isEmpty) {
+      return;
+    }
+
+    final current = _now().toUtc();
+    int? nextDelayMilliseconds;
+
+    for (final offer in _offers) {
+      final remainingMilliseconds = offer.expiresAt
+          .toUtc()
+          .difference(current)
+          .inMilliseconds;
+
+      if (remainingMilliseconds <= 0) {
+        continue;
+      }
+
+      final visibleMinutes = (remainingMilliseconds + 59999) ~/ 60000;
+
+      final boundaryRemainingMilliseconds = visibleMinutes > 1
+          ? (visibleMinutes - 1) * 60000
+          : 0;
+
+      final delayMilliseconds =
+          remainingMilliseconds - boundaryRemainingMilliseconds;
+
+      if (nextDelayMilliseconds == null ||
+          delayMilliseconds < nextDelayMilliseconds) {
+        nextDelayMilliseconds = delayMilliseconds;
+      }
+    }
+
+    if (nextDelayMilliseconds == null) {
+      return;
+    }
+
+    _countdownTimer = _countdownTimerFactory(
+      Duration(milliseconds: nextDelayMilliseconds),
+      () {
+        _countdownTimer = null;
+
+        if (_disposed) {
+          return;
+        }
+
+        _pruneExpiredOffers();
+        _notify();
+        _scheduleCountdownTimer();
+      },
     );
   }
 
@@ -227,8 +364,38 @@ class DriverRideMatchOfferController extends ChangeNotifier {
     return 'Yolculuk kabulü tamamlanamadı. Tekrar deneyin.';
   }
 
+  @override
+  void addListener(VoidCallback listener) {
+    super.addListener(listener);
+
+    if (_disposed) {
+      return;
+    }
+
+    _pruneExpiredOffers();
+    _scheduleCountdownTimer();
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+
+    if (_disposed || !hasListeners) {
+      _cancelCountdownTimer();
+      stopPolling();
+    }
+  }
+
   void _notify() {
-    if (!hasListeners) return;
+    if (_disposed || !hasListeners) return;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _cancelCountdownTimer();
+    stopPolling();
+    super.dispose();
   }
 }

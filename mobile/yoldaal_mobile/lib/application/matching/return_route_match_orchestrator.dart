@@ -119,8 +119,10 @@ class ReturnRouteMatchOrchestrator {
 
     final deviation = await _deviationGateway.compute(
       anchors: anchors,
+      pickupOrigin: returnRoute.origin,
       pickup: pickup,
       dropoff: dropoff,
+      dropoffDestination: returnRoute.destination,
     );
     if (deviation.pickupRouteIndex != anchors.pickupRouteIndex ||
         deviation.dropoffRouteIndex != anchors.dropoffRouteIndex) {

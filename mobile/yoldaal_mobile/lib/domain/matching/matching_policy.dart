@@ -82,9 +82,9 @@ class MatchingEvaluationResult {
 
 class MatchingPolicy {
   static const int maximumPickupDetourMeters = 3000;
-  static const int maximumPickupDetourSeconds = 600;
+  static const int maximumPickupDetourSeconds = 900;
   static const int maximumDropoffDetourMeters = 3000;
-  static const int maximumDropoffDetourSeconds = 600;
+  static const int maximumDropoffDetourSeconds = 900;
 
   static const double driverProfitRate = 0.07;
   static const int customerPlatformFee = 0;

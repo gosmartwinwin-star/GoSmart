@@ -117,6 +117,10 @@ beforeEach(async () => {
     batch.set(doc(db, 'driverActiveReturnRoutes/driver-a'), {
       routeId: 'route-a', activatedAt: approvedAt, expiresAt,
     });
+    batch.set(doc(db, 'driverReturnRouteCorridorIndexes/driver-a'), {
+      driverId: 'driver-a', returnRouteId: 'route-a',
+      corridorPrefixes: ['sxk'], activatedAt: approvedAt, expiresAt,
+    });
     batch.set(doc(db, 'rides/ride-a'), {
       passengerId: 'user-c', driverId: 'driver-a', status: 'driverEnRoute',
       version: 2, createdAt, updatedAt: currentPurchase,
@@ -360,6 +364,30 @@ test('50 client cannot update return route', async () => {
 test('51 client cannot delete return route', async () => {
   await assertFails(deleteDoc(doc(dbFor('user-a'), 'driverReturnRoutes/route-a')));
 });
+test('corridor index is server-only for reads and queries', async () => {
+  const reference = doc(dbFor('user-a'),
+    'driverReturnRouteCorridorIndexes/driver-a');
+  await assertFails(getDoc(reference));
+  await assertFails(getDoc(doc(dbFor(),
+    'driverReturnRouteCorridorIndexes/driver-a')));
+  await assertFails(getDocs(collection(dbFor('user-a'),
+    'driverReturnRouteCorridorIndexes')));
+});
+
+test('corridor index is server-only for writes', async () => {
+  const existing = doc(dbFor('user-a'),
+    'driverReturnRouteCorridorIndexes/driver-a');
+  const fresh = doc(dbFor('user-a'),
+    'driverReturnRouteCorridorIndexes/driver-new');
+  await assertFails(setDoc(fresh, {
+    driverId: 'driver-new', returnRouteId: 'route-a',
+    corridorPrefixes: ['sxk'], activatedAt: Timestamp.now(),
+    expiresAt: Timestamp.now(),
+  }));
+  await assertFails(updateDoc(existing, {returnRouteId: 'route-b'}));
+  await assertFails(deleteDoc(existing));
+});
+
 test('52 no client can read active return route lock', async () => {
   await assertFails(getDoc(doc(dbFor('user-a'), 'driverActiveReturnRoutes/driver-a')));
   await assertFails(getDoc(doc(dbFor(), 'driverActiveReturnRoutes/driver-a')));
@@ -601,3 +629,389 @@ test('91 client cannot delete driver access config', async () => {
     ),
   );
 });
+
+test('92 ride ratings remain private backend-owned resources', async () => {
+  const rideId = 'ride-rating-private';
+  const passengerRatingPath = `rides/${rideId}/ratings/passenger`;
+  const driverRatingPath = `rides/${rideId}/ratings/driver`;
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const adminDb = context.firestore();
+
+    await setDoc(doc(adminDb, `rides/${rideId}`), {
+      passengerId: 'user-a',
+      driverId: 'driver-a',
+      status: 'completed',
+      version: 5,
+    });
+
+    await setDoc(doc(adminDb, 'driverProfiles/driver-a'), {
+      authUserId: 'user-b',
+      status: 'approved',
+    });
+
+    await setDoc(doc(adminDb, passengerRatingPath), {
+      raterRole: 'passenger',
+      raterId: 'user-a',
+      rateeId: 'driver-a',
+      rating: 5,
+    });
+
+    await setDoc(doc(adminDb, driverRatingPath), {
+      raterRole: 'driver',
+      raterId: 'driver-a',
+      rateeId: 'user-a',
+      rating: 4,
+    });
+  });
+
+  const passengerDb = dbFor('user-a');
+  const driverDb = dbFor('user-b');
+  const outsiderDb = dbFor('user-c');
+  const unauthenticatedDb = dbFor();
+
+  await assertFails(
+    getDoc(doc(passengerDb, passengerRatingPath)),
+  );
+  await assertFails(
+    getDoc(doc(passengerDb, driverRatingPath)),
+  );
+  await assertFails(
+    getDocs(collection(passengerDb, `rides/${rideId}/ratings`)),
+  );
+  await assertFails(
+    setDoc(
+      doc(passengerDb, `rides/${rideId}/ratings/attacker`),
+      {rating: 1},
+    ),
+  );
+  await assertFails(
+    updateDoc(
+      doc(passengerDb, passengerRatingPath),
+      {rating: 1},
+    ),
+  );
+  await assertFails(
+    deleteDoc(doc(passengerDb, passengerRatingPath)),
+  );
+
+  await assertFails(
+    getDoc(doc(driverDb, passengerRatingPath)),
+  );
+  await assertFails(
+    getDoc(doc(driverDb, driverRatingPath)),
+  );
+  await assertFails(
+    getDocs(collection(driverDb, `rides/${rideId}/ratings`)),
+  );
+  await assertFails(
+    setDoc(
+      doc(driverDb, `rides/${rideId}/ratings/attacker`),
+      {rating: 1},
+    ),
+  );
+  await assertFails(
+    updateDoc(
+      doc(driverDb, driverRatingPath),
+      {rating: 1},
+    ),
+  );
+  await assertFails(
+    deleteDoc(doc(driverDb, driverRatingPath)),
+  );
+
+  await assertFails(
+    getDoc(doc(outsiderDb, passengerRatingPath)),
+  );
+  await assertFails(
+    getDocs(collection(outsiderDb, `rides/${rideId}/ratings`)),
+  );
+  await assertFails(
+    setDoc(
+      doc(outsiderDb, `rides/${rideId}/ratings/outsider`),
+      {rating: 1},
+    ),
+  );
+
+  await assertFails(
+    getDoc(doc(unauthenticatedDb, passengerRatingPath)),
+  );
+  await assertFails(
+    getDocs(
+      collection(
+        unauthenticatedDb,
+        `rides/${rideId}/ratings`,
+      ),
+    ),
+  );
+});
+
+test('93 ride support cases remain private backend-owned resources', async () => {
+  const rideId = 'ride-support-private';
+  const passengerCasePath =
+    `rides/${rideId}/supportCases/passenger-case`;
+  const driverCasePath =
+    `rides/${rideId}/supportCases/driver-case`;
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const adminDb = context.firestore();
+
+    await setDoc(doc(adminDb, `rides/${rideId}`), {
+      passengerId: 'user-a',
+      driverId: 'driver-a',
+      status: 'completed',
+      version: 5,
+    });
+
+    await setDoc(doc(adminDb, 'driverProfiles/driver-a'), {
+      authUserId: 'user-b',
+      status: 'approved',
+    });
+
+    await setDoc(doc(adminDb, passengerCasePath), {
+      reporterRole: 'passenger',
+      reporterId: 'user-a',
+      counterpartyId: 'driver-a',
+      category: 'safety',
+      createdAt: Timestamp.fromMillis(1_700_300_000_000),
+    });
+
+    await setDoc(doc(adminDb, driverCasePath), {
+      reporterRole: 'driver',
+      reporterId: 'driver-a',
+      counterpartyId: 'user-a',
+      category: 'vehicle',
+      createdAt: Timestamp.fromMillis(1_700_300_001_000),
+    });
+  });
+
+  const passengerDb = dbFor('user-a');
+  const driverDb = dbFor('user-b');
+  const outsiderDb = dbFor('user-c');
+  const unauthenticatedDb = dbFor();
+
+  await assertFails(
+    getDoc(doc(passengerDb, passengerCasePath)),
+  );
+  await assertFails(
+    getDoc(doc(passengerDb, driverCasePath)),
+  );
+  await assertFails(
+    getDocs(
+      collection(
+        passengerDb,
+        `rides/${rideId}/supportCases`,
+      ),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(
+        passengerDb,
+        `rides/${rideId}/supportCases/attacker`,
+      ),
+      {
+        reporterRole: 'passenger',
+        reporterId: 'user-a',
+        counterpartyId: 'driver-a',
+        category: 'safety',
+        createdAt: Timestamp.fromMillis(1_700_300_002_000),
+      },
+    ),
+  );
+  await assertFails(
+    updateDoc(
+      doc(passengerDb, passengerCasePath),
+      {category: 'fare'},
+    ),
+  );
+  await assertFails(
+    deleteDoc(
+      doc(passengerDb, passengerCasePath),
+    ),
+  );
+
+  await assertFails(
+    getDoc(doc(driverDb, passengerCasePath)),
+  );
+  await assertFails(
+    getDoc(doc(driverDb, driverCasePath)),
+  );
+  await assertFails(
+    getDocs(
+      collection(
+        driverDb,
+        `rides/${rideId}/supportCases`,
+      ),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(
+        driverDb,
+        `rides/${rideId}/supportCases/attacker`,
+      ),
+      {
+        reporterRole: 'driver',
+        reporterId: 'driver-a',
+        counterpartyId: 'user-a',
+        category: 'vehicle',
+        createdAt: Timestamp.fromMillis(1_700_300_003_000),
+      },
+    ),
+  );
+  await assertFails(
+    updateDoc(
+      doc(driverDb, driverCasePath),
+      {category: 'technical'},
+    ),
+  );
+  await assertFails(
+    deleteDoc(
+      doc(driverDb, driverCasePath),
+    ),
+  );
+
+  await assertFails(
+    getDoc(doc(outsiderDb, passengerCasePath)),
+  );
+  await assertFails(
+    getDocs(
+      collection(
+        outsiderDb,
+        `rides/${rideId}/supportCases`,
+      ),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(
+        outsiderDb,
+        `rides/${rideId}/supportCases/outsider`,
+      ),
+      {
+        reporterRole: 'passenger',
+        reporterId: 'user-c',
+        counterpartyId: 'driver-a',
+        category: 'behavior',
+        createdAt: Timestamp.fromMillis(1_700_300_004_000),
+      },
+    ),
+  );
+
+  await assertFails(
+    getDoc(
+      doc(
+        unauthenticatedDb,
+        passengerCasePath,
+      ),
+    ),
+  );
+  await assertFails(
+    getDocs(
+      collection(
+        unauthenticatedDb,
+        `rides/${rideId}/supportCases`,
+      ),
+    ),
+  );
+});
+const seedNearbyDriverGeoIndex = async (documentId) => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(
+      doc(
+        context.firestore(),
+        `nearbyDriverGeoIndexes/${documentId}`,
+      ),
+      {
+        driverId: documentId,
+        geohash: 'sxk9',
+      },
+    );
+  });
+};
+
+// R87_NEARBY_GEO_INDEX_SERVER_ONLY_START
+test('nearby geo index signed-in get is denied', async () => {
+  await seedNearbyDriverGeoIndex('driver-r87-get');
+
+  await assertFails(
+    getDoc(
+      doc(
+        dbFor('user-a'),
+        'nearbyDriverGeoIndexes/driver-r87-get',
+      ),
+    ),
+  );
+});
+
+test('nearby geo index signed-in list is denied', async () => {
+  await seedNearbyDriverGeoIndex('driver-r87-list');
+
+  await assertFails(
+    getDocs(
+      collection(
+        dbFor('user-a'),
+        'nearbyDriverGeoIndexes',
+      ),
+    ),
+  );
+});
+
+test('nearby geo index signed-in create is denied', async () => {
+  await assertFails(
+    setDoc(
+      doc(
+        dbFor('user-a'),
+        'nearbyDriverGeoIndexes/driver-r87-create',
+      ),
+      {
+        driverId: 'driver-r87-create',
+        geohash: 'sxk9',
+      },
+    ),
+  );
+});
+
+test('nearby geo index signed-in update is denied', async () => {
+  await seedNearbyDriverGeoIndex('driver-r87-update');
+
+  await assertFails(
+    updateDoc(
+      doc(
+        dbFor('user-a'),
+        'nearbyDriverGeoIndexes/driver-r87-update',
+      ),
+      {
+        geohash: 'sxk8',
+      },
+    ),
+  );
+});
+
+test('nearby geo index signed-in delete is denied', async () => {
+  await seedNearbyDriverGeoIndex('driver-r87-delete');
+
+  await assertFails(
+    deleteDoc(
+      doc(
+        dbFor('user-a'),
+        'nearbyDriverGeoIndexes/driver-r87-delete',
+      ),
+    ),
+  );
+});
+
+test('nearby geo index unauthenticated get is denied', async () => {
+  await seedNearbyDriverGeoIndex('driver-r87-unauthenticated');
+
+  await assertFails(
+    getDoc(
+      doc(
+        dbFor(),
+        'nearbyDriverGeoIndexes/driver-r87-unauthenticated',
+      ),
+    ),
+  );
+});
+// R87_NEARBY_GEO_INDEX_SERVER_ONLY_END

@@ -20,6 +20,10 @@ import {
   buildRideMatchOffer,
   rideMatchOfferDocumentId,
 } from "./ride-match-offer-helpers.js";
+import {
+  acceptRideForDriver,
+  cancelRideForActor,
+} from "./ride-lifecycle-orchestration.js";
 
 const PROJECT_ID = "demo-gosmart";
 
@@ -238,8 +242,14 @@ const seedDriverContext = async (
       .doc(returnRouteId),
     {
       driverId,
-      origin: routePoint0,
-      destination: routePoint2,
+      origin: {
+        latitude: routePoint0.latitude + 0.0001,
+        longitude: routePoint0.longitude + 0.0001,
+      },
+      destination: {
+        latitude: routePoint2.latitude - 0.0001,
+        longitude: routePoint2.longitude - 0.0001,
+      },
       status: "active",
       createdAt: activatedAt,
       activatedAt,
@@ -299,6 +309,7 @@ type SeedRideInput = {
   };
   pointerStatus?: string;
   pointerRideId?: string;
+  createdAtOffsetMillis?: number;
   updatedAtOffsetMillis?: number;
 };
 
@@ -317,6 +328,15 @@ const seedMatchingRide = async (
 
   const now =
     Timestamp.now();
+
+  const createdAt =
+    Timestamp.fromMillis(
+      now.toMillis() +
+      (
+        input.createdAtOffsetMillis ??
+        0
+      ),
+    );
 
   const updatedAt =
     Timestamp.fromMillis(
@@ -364,7 +384,7 @@ const seedMatchingRide = async (
           "synthetic_passenger_route",
         computedAt: now,
       },
-      createdAt: now,
+      createdAt,
       updatedAt,
       acceptedAt: null,
       driverEnRouteAt: null,
@@ -467,12 +487,18 @@ test(
 
             assert.deepEqual(
               input.pickupAnchor,
-              routePoint0,
+              {
+                latitude: routePoint0.latitude + 0.0001,
+                longitude: routePoint0.longitude + 0.0001,
+              },
             );
 
             assert.deepEqual(
               input.dropoffAnchor,
-              routePoint2,
+              {
+                latitude: routePoint2.latitude - 0.0001,
+                longitude: routePoint2.longitude - 0.0001,
+              },
             );
 
             return {
@@ -506,10 +532,41 @@ test(
       1,
     );
 
+    assert.equal(
+      result.offers[0].pickupDetourMeters,
+      900,
+    );
+
+    assert.equal(
+      result.offers[0].pickupDetourSeconds,
+      180,
+    );
+
+    assert.equal(
+      result.offers[0].dropoffDetourMeters,
+      1200,
+    );
+
+    assert.equal(
+      result.offers[0].dropoffDetourSeconds,
+      240,
+    );
+
+    assert.equal(
+      result.offers[0].passengerTripDistanceMeters,
+      10000,
+    );
+
+    assert.equal(
+      result.offers[0].passengerTripDurationSeconds,
+      1200,
+    );
+
     const offerId =
       rideMatchOfferDocumentId(
         fixture.driverId,
         eligible.rideId,
+        1,
       );
 
     const offer =
@@ -592,6 +649,7 @@ test(
           rideMatchOfferDocumentId(
             fixture.driverId,
             reversed.rideId,
+            1,
           ),
         )
         .get();
@@ -814,6 +872,7 @@ test(
           rideMatchOfferDocumentId(
             fixture.driverId,
             candidate.rideId,
+            1,
           ),
         )
         .get();
@@ -837,6 +896,7 @@ test(
       rideMatchOfferDocumentId(
         fixture.driverId,
         candidate.rideId,
+        1,
       );
 
     const consumedAt =
@@ -953,6 +1013,912 @@ test(
     assert.equal(
       persistedCreatedAt.toMillis(),
       createdAt.toMillis(),
+    );
+  },
+);
+
+test(
+  "driver rematch creates a new version-scoped offer while old consumed offer stays immutable",
+  async () => {
+    const fixture =
+      await seedDriverContext();
+
+    const candidate =
+      await seedMatchingRide();
+
+    const firstDiscovery =
+      await discoverRideMatchOffersForDriver(
+        {
+          firestore,
+          measureDeviation: async () => ({
+            pickupDetourMeters: 100,
+            pickupDetourSeconds: 20,
+            dropoffDetourMeters: 100,
+            dropoffDetourSeconds: 20,
+          }),
+        },
+        fixture.driverUid,
+      );
+
+    assert.equal(
+      firstDiscovery.offers.length,
+      1,
+    );
+
+    assert.equal(
+      firstDiscovery.offers[0].rideId,
+      candidate.rideId,
+    );
+
+    const oldOfferId =
+      rideMatchOfferDocumentId(
+        fixture.driverId,
+        candidate.rideId,
+        1,
+      );
+
+    const oldOfferBeforeAccept =
+      await firestore
+        .collection("driverRideMatchOffers")
+        .doc(oldOfferId)
+        .get();
+
+    assert.equal(
+      oldOfferBeforeAccept.exists,
+      true,
+    );
+
+    assert.equal(
+      oldOfferBeforeAccept.get("status"),
+      "active",
+    );
+
+    assert.equal(
+      oldOfferBeforeAccept.get("rideVersion"),
+      1,
+    );
+
+    const accepted =
+      await acceptRideForDriver(
+        {firestore},
+        fixture.driverUid,
+        {
+          rideId: candidate.rideId,
+          requestId:
+            `${unique("gap9_integrated_accept")}_123456789`,
+          expectedVersion: 1,
+        },
+      );
+
+    assert.equal(
+      accepted.rideId,
+      candidate.rideId,
+    );
+
+    assert.equal(
+      accepted.status,
+      "driverEnRoute",
+    );
+
+    assert.equal(
+      accepted.version,
+      2,
+    );
+
+    const oldConsumed =
+      await firestore
+        .collection("driverRideMatchOffers")
+        .doc(oldOfferId)
+        .get();
+
+    assert.equal(
+      oldConsumed.exists,
+      true,
+    );
+
+    assert.equal(
+      oldConsumed.get("status"),
+      "consumed",
+    );
+
+    assert.equal(
+      oldConsumed.get("rideVersion"),
+      1,
+    );
+
+    const oldConsumedAt =
+      oldConsumed.get("consumedAt");
+
+    const oldCreatedAt =
+      oldConsumed.get("createdAt");
+
+    assert.ok(
+      oldConsumedAt instanceof Timestamp,
+    );
+
+    assert.ok(
+      oldCreatedAt instanceof Timestamp,
+    );
+
+    const rematched =
+      await cancelRideForActor(
+        {firestore},
+        fixture.driverUid,
+        {
+          rideId: candidate.rideId,
+          requestId:
+            `${unique("gap9_integrated_cancel")}_123456789`,
+          expectedVersion: 2,
+          reasonCode: "driver_cancelled",
+        },
+      );
+
+    assert.equal(
+      rematched.rideId,
+      candidate.rideId,
+    );
+
+    assert.equal(
+      rematched.status,
+      "matching",
+    );
+
+    assert.equal(
+      rematched.version,
+      3,
+    );
+
+    assert.equal(
+      rematched.matchRound,
+      2,
+    );
+
+    const rematchedRide =
+      await firestore
+        .collection("rides")
+        .doc(candidate.rideId)
+        .get();
+
+    assert.equal(
+      rematchedRide.get("status"),
+      "matching",
+    );
+
+    assert.equal(
+      rematchedRide.get("version"),
+      3,
+    );
+
+    assert.equal(
+      rematchedRide.get("matchRound"),
+      2,
+    );
+
+    assert.equal(
+      rematchedRide.get("driverId"),
+      null,
+    );
+
+    assert.equal(
+      (
+        await firestore
+          .collection("driverActiveRides")
+          .doc(fixture.driverId)
+          .get()
+      ).exists,
+      false,
+    );
+
+    const passengerPointer =
+      await firestore
+        .collection("passengerActiveRides")
+        .doc(candidate.passengerId)
+        .get();
+
+    assert.equal(
+      passengerPointer.exists,
+      true,
+    );
+
+    assert.equal(
+      passengerPointer.get("rideId"),
+      candidate.rideId,
+    );
+
+    assert.equal(
+      passengerPointer.get("status"),
+      "matching",
+    );
+
+    await assert.rejects(
+      acceptRideForDriver(
+        {firestore},
+        fixture.driverUid,
+        {
+          rideId: candidate.rideId,
+          requestId:
+            `${unique("gap9_integrated_stale_accept")}_123456789`,
+          expectedVersion: 3,
+        },
+      ),
+      (error: unknown) =>
+        error instanceof HttpsError &&
+        error.code === "failed-precondition",
+    );
+
+    const afterStaleAttempt =
+      await firestore
+        .collection("rides")
+        .doc(candidate.rideId)
+        .get();
+
+    assert.equal(
+      afterStaleAttempt.get("status"),
+      "matching",
+    );
+
+    assert.equal(
+      afterStaleAttempt.get("version"),
+      3,
+    );
+
+    const newOfferId =
+      rideMatchOfferDocumentId(
+        fixture.driverId,
+        candidate.rideId,
+        3,
+      );
+
+    assert.notEqual(
+      newOfferId,
+      oldOfferId,
+    );
+
+    assert.equal(
+      (
+        await firestore
+          .collection("driverRideMatchOffers")
+          .doc(newOfferId)
+          .get()
+      ).exists,
+      false,
+    );
+
+    const secondDiscovery =
+      await discoverRideMatchOffersForDriver(
+        {
+          firestore,
+          measureDeviation: async () => ({
+            pickupDetourMeters: 120,
+            pickupDetourSeconds: 24,
+            dropoffDetourMeters: 140,
+            dropoffDetourSeconds: 28,
+          }),
+        },
+        fixture.driverUid,
+      );
+
+    assert.equal(
+      secondDiscovery.offers.length,
+      1,
+    );
+
+    assert.equal(
+      secondDiscovery.offers[0].rideId,
+      candidate.rideId,
+    );
+
+    const newOffer =
+      await firestore
+        .collection("driverRideMatchOffers")
+        .doc(newOfferId)
+        .get();
+
+    assert.equal(
+      newOffer.exists,
+      true,
+    );
+
+    assert.equal(
+      newOffer.get("status"),
+      "active",
+    );
+
+    assert.equal(
+      newOffer.get("rideId"),
+      candidate.rideId,
+    );
+
+    assert.equal(
+      newOffer.get("driverId"),
+      fixture.driverId,
+    );
+
+    assert.equal(
+      newOffer.get("rideVersion"),
+      3,
+    );
+
+    const oldConsumedAfterRediscovery =
+      await firestore
+        .collection("driverRideMatchOffers")
+        .doc(oldOfferId)
+        .get();
+
+    assert.equal(
+      oldConsumedAfterRediscovery.exists,
+      true,
+    );
+
+    assert.equal(
+      oldConsumedAfterRediscovery.get("status"),
+      "consumed",
+    );
+
+    assert.equal(
+      oldConsumedAfterRediscovery.get("rideVersion"),
+      1,
+    );
+
+    const oldConsumedAtAfterRediscovery =
+      oldConsumedAfterRediscovery.get(
+        "consumedAt",
+      );
+
+    const oldCreatedAtAfterRediscovery =
+      oldConsumedAfterRediscovery.get(
+        "createdAt",
+      );
+
+    assert.ok(
+      oldConsumedAtAfterRediscovery instanceof Timestamp,
+    );
+
+    assert.ok(
+      oldCreatedAtAfterRediscovery instanceof Timestamp,
+    );
+
+    assert.equal(
+      oldConsumedAtAfterRediscovery.toMillis(),
+      oldConsumedAt.toMillis(),
+    );
+
+    assert.equal(
+      oldCreatedAtAfterRediscovery.toMillis(),
+      oldCreatedAt.toMillis(),
+    );
+
+    const rematchEvents =
+      (
+        await firestore
+          .collection("rides")
+          .doc(candidate.rideId)
+          .collection("events")
+          .get()
+      ).docs.filter(
+        (event) =>
+          event.get("type") ===
+          "rideDriverCancelledForRematch",
+      );
+
+    assert.equal(
+      rematchEvents.length,
+      1,
+    );
+
+    assert.equal(
+      rematchEvents[0].get("matchRound"),
+      2,
+    );
+  },
+);
+
+test(
+  "W1B Firestore candidate five reserves two aged fairness and three best route slots",
+  async () => {
+    const fixture =
+      await seedDriverContext();
+
+    const specs = [
+      {
+        label: "fair-oldest",
+        createdAtOffsetMillis:
+          -20 * 60 * 1000,
+        pickupDelta: 0.0010,
+        measurement: {
+          pickupDetourMeters: 2700,
+          pickupDetourSeconds: 810,
+          dropoffDetourMeters: 2700,
+          dropoffDetourSeconds: 810,
+        },
+      },
+      {
+        label: "fair-second",
+        createdAtOffsetMillis:
+          -18 * 60 * 1000,
+        pickupDelta: 0.0011,
+        measurement: {
+          pickupDetourMeters: 2850,
+          pickupDetourSeconds: 855,
+          dropoffDetourMeters: 2850,
+          dropoffDetourSeconds: 855,
+        },
+      },
+      {
+        label: "route-a-hard-ineligible",
+        createdAtOffsetMillis:
+          -1 * 60 * 1000,
+        pickupDelta: 0.0001,
+        measurement: {
+          pickupDetourMeters: 3001,
+          pickupDetourSeconds: 100,
+          dropoffDetourMeters: 100,
+          dropoffDetourSeconds: 100,
+        },
+      },
+      {
+        label: "route-b-best",
+        createdAtOffsetMillis:
+          -2 * 60 * 1000,
+        pickupDelta: 0.0002,
+        measurement: {
+          pickupDetourMeters: 600,
+          pickupDetourSeconds: 180,
+          dropoffDetourMeters: 600,
+          dropoffDetourSeconds: 180,
+        },
+      },
+      {
+        label: "route-c-second",
+        createdAtOffsetMillis:
+          -3 * 60 * 1000,
+        pickupDelta: 0.0003,
+        measurement: {
+          pickupDetourMeters: 900,
+          pickupDetourSeconds: 270,
+          dropoffDetourMeters: 900,
+          dropoffDetourSeconds: 270,
+        },
+      },
+      {
+        label: "route-d-not-selected",
+        createdAtOffsetMillis:
+          -4 * 60 * 1000,
+        pickupDelta: 0.0004,
+        measurement: {
+          pickupDetourMeters: 300,
+          pickupDetourSeconds: 90,
+          dropoffDetourMeters: 300,
+          dropoffDetourSeconds: 90,
+        },
+      },
+      {
+        label: "route-e-not-selected",
+        createdAtOffsetMillis:
+          -5 * 60 * 1000,
+        pickupDelta: 0.0005,
+        measurement: {
+          pickupDetourMeters: 100,
+          pickupDetourSeconds: 30,
+          dropoffDetourMeters: 100,
+          dropoffDetourSeconds: 30,
+        },
+      },
+    ];
+
+    const seeded: Array<{
+      label: string;
+      createdAtOffsetMillis: number;
+      pickupDelta: number;
+      measurement: {
+        pickupDetourMeters: number;
+        pickupDetourSeconds: number;
+        dropoffDetourMeters: number;
+        dropoffDetourSeconds: number;
+      };
+      rideId: string;
+      passengerId: string;
+      pickup: {
+        latitude: number;
+        longitude: number;
+      };
+      dropoff: {
+        latitude: number;
+        longitude: number;
+      };
+    }> = [];
+
+    for (const spec of specs) {
+      const pickup = {
+        latitude:
+          routePoint0.latitude +
+          spec.pickupDelta,
+        longitude:
+          routePoint0.longitude,
+      };
+
+      const dropoff = {
+        latitude:
+          routePoint2.latitude -
+          spec.pickupDelta,
+        longitude:
+          routePoint2.longitude,
+      };
+
+      const ride =
+        await seedMatchingRide({
+          pickup,
+          dropoff,
+          createdAtOffsetMillis:
+            spec.createdAtOffsetMillis,
+        });
+
+      seeded.push({
+        ...spec,
+        ...ride,
+        pickup,
+        dropoff,
+      });
+    }
+
+    const discoveryNow =
+      Timestamp.now();
+
+    const measuredLabels: string[] = [];
+
+    const result =
+      await discoverRideMatchOffersForDriver(
+        {
+          firestore,
+          now: () => discoveryNow,
+          measureDeviation: async (input) => {
+            const matched =
+              seeded.find(
+                (item) =>
+                  Math.abs(
+                    item.pickup.latitude -
+                    input.pickup.latitude,
+                  ) < 1e-12 &&
+                  Math.abs(
+                    item.dropoff.latitude -
+                    input.dropoff.latitude,
+                  ) < 1e-12,
+              );
+
+            assert.ok(matched);
+
+            measuredLabels.push(
+              matched.label,
+            );
+
+            return matched.measurement;
+          },
+        },
+        fixture.driverUid,
+      );
+
+    assert.deepEqual(
+      measuredLabels,
+      [
+        "fair-oldest",
+        "fair-second",
+        "route-a-hard-ineligible",
+        "route-b-best",
+        "route-c-second",
+      ],
+    );
+
+    assert.equal(
+      measuredLabels.length,
+      5,
+    );
+
+    const byLabel =
+      new Map(
+        seeded.map(
+          (item) => [
+            item.label,
+            item.rideId,
+          ],
+        ),
+      );
+
+    assert.deepEqual(
+      result.offers.map(
+        (offer) =>
+          offer.rideId,
+      ),
+      [
+        byLabel.get("fair-oldest"),
+        byLabel.get("fair-second"),
+        byLabel.get("route-b-best"),
+      ],
+    );
+
+    assert.equal(
+      result.offers.length,
+      3,
+    );
+
+    assert.equal(
+      result.offers.some(
+        (offer) =>
+          offer.rideId ===
+          byLabel.get(
+            "route-a-hard-ineligible",
+          ),
+      ),
+      false,
+    );
+
+    assert.equal(
+      measuredLabels.includes(
+        "route-d-not-selected",
+      ),
+      false,
+    );
+
+    assert.equal(
+      measuredLabels.includes(
+        "route-e-not-selected",
+      ),
+      false,
+    );
+
+    const persisted =
+      await firestore
+        .collection(
+          "driverRideMatchOffers",
+        )
+        .where(
+          "driverId",
+          "==",
+          fixture.driverId,
+        )
+        .get();
+
+    assert.equal(
+      persisted.size,
+      3,
+    );
+
+    assert.deepEqual(
+      persisted.docs
+        .map(
+          (document) =>
+            document.get("rideId"),
+        )
+        .sort(),
+      result.offers
+        .map(
+          (offer) =>
+            offer.rideId,
+        )
+        .sort(),
+    );
+  },
+);
+
+test(
+  "W1B Firestore unused fairness slot spills into fourth best route measurement slot",
+  async () => {
+    const fixture =
+      await seedDriverContext();
+
+    const specs = [
+      {
+        label: "fair-only",
+        createdAtOffsetMillis:
+          -20 * 60 * 1000,
+        pickupDelta: 0.0010,
+        measurement: {
+          pickupDetourMeters: 2700,
+          pickupDetourSeconds: 810,
+          dropoffDetourMeters: 2700,
+          dropoffDetourSeconds: 810,
+        },
+      },
+      {
+        label: "route-a",
+        createdAtOffsetMillis:
+          -1 * 60 * 1000,
+        pickupDelta: 0.0001,
+        measurement: {
+          pickupDetourMeters: 1200,
+          pickupDetourSeconds: 360,
+          dropoffDetourMeters: 1200,
+          dropoffDetourSeconds: 360,
+        },
+      },
+      {
+        label: "route-b-best",
+        createdAtOffsetMillis:
+          -2 * 60 * 1000,
+        pickupDelta: 0.0002,
+        measurement: {
+          pickupDetourMeters: 300,
+          pickupDetourSeconds: 90,
+          dropoffDetourMeters: 300,
+          dropoffDetourSeconds: 90,
+        },
+      },
+      {
+        label: "route-c-second",
+        createdAtOffsetMillis:
+          -3 * 60 * 1000,
+        pickupDelta: 0.0003,
+        measurement: {
+          pickupDetourMeters: 600,
+          pickupDetourSeconds: 180,
+          dropoffDetourMeters: 600,
+          dropoffDetourSeconds: 180,
+        },
+      },
+      {
+        label: "route-d-fourth-slot",
+        createdAtOffsetMillis:
+          -4 * 60 * 1000,
+        pickupDelta: 0.0004,
+        measurement: {
+          pickupDetourMeters: 900,
+          pickupDetourSeconds: 270,
+          dropoffDetourMeters: 900,
+          dropoffDetourSeconds: 270,
+        },
+      },
+      {
+        label: "route-e-not-selected",
+        createdAtOffsetMillis:
+          -5 * 60 * 1000,
+        pickupDelta: 0.0005,
+        measurement: {
+          pickupDetourMeters: 100,
+          pickupDetourSeconds: 30,
+          dropoffDetourMeters: 100,
+          dropoffDetourSeconds: 30,
+        },
+      },
+    ];
+
+    const seeded: Array<{
+      label: string;
+      createdAtOffsetMillis: number;
+      pickupDelta: number;
+      measurement: {
+        pickupDetourMeters: number;
+        pickupDetourSeconds: number;
+        dropoffDetourMeters: number;
+        dropoffDetourSeconds: number;
+      };
+      rideId: string;
+      passengerId: string;
+      pickup: {
+        latitude: number;
+        longitude: number;
+      };
+      dropoff: {
+        latitude: number;
+        longitude: number;
+      };
+    }> = [];
+
+    for (const spec of specs) {
+      const pickup = {
+        latitude:
+          routePoint0.latitude +
+          spec.pickupDelta,
+        longitude:
+          routePoint0.longitude,
+      };
+
+      const dropoff = {
+        latitude:
+          routePoint2.latitude -
+          spec.pickupDelta,
+        longitude:
+          routePoint2.longitude,
+      };
+
+      const ride =
+        await seedMatchingRide({
+          pickup,
+          dropoff,
+          createdAtOffsetMillis:
+            spec.createdAtOffsetMillis,
+        });
+
+      seeded.push({
+        ...spec,
+        ...ride,
+        pickup,
+        dropoff,
+      });
+    }
+
+    const discoveryNow =
+      Timestamp.now();
+
+    const measuredLabels: string[] = [];
+
+    const result =
+      await discoverRideMatchOffersForDriver(
+        {
+          firestore,
+          now: () => discoveryNow,
+          measureDeviation: async (input) => {
+            const matched =
+              seeded.find(
+                (item) =>
+                  Math.abs(
+                    item.pickup.latitude -
+                    input.pickup.latitude,
+                  ) < 1e-12 &&
+                  Math.abs(
+                    item.dropoff.latitude -
+                    input.dropoff.latitude,
+                  ) < 1e-12,
+              );
+
+            assert.ok(matched);
+
+            measuredLabels.push(
+              matched.label,
+            );
+
+            return matched.measurement;
+          },
+        },
+        fixture.driverUid,
+      );
+
+    assert.deepEqual(
+      measuredLabels,
+      [
+        "fair-only",
+        "route-a",
+        "route-b-best",
+        "route-c-second",
+        "route-d-fourth-slot",
+      ],
+    );
+
+    assert.equal(
+      measuredLabels.length,
+      5,
+    );
+
+    assert.equal(
+      measuredLabels.includes(
+        "route-e-not-selected",
+      ),
+      false,
+    );
+
+    const byLabel =
+      new Map(
+        seeded.map(
+          (item) => [
+            item.label,
+            item.rideId,
+          ],
+        ),
+      );
+
+    assert.deepEqual(
+      result.offers.map(
+        (offer) =>
+          offer.rideId,
+      ),
+      [
+        byLabel.get("fair-only"),
+        byLabel.get("route-b-best"),
+        byLabel.get("route-c-second"),
+      ],
+    );
+
+    assert.equal(
+      result.offers.length,
+      3,
     );
   },
 );

@@ -218,7 +218,7 @@ test(
 
     assert.equal(
       fake.transaction.setCalls.length,
-      1,
+      2,
     );
 
     const data =
@@ -254,6 +254,101 @@ test(
   },
 );
 
+// R89_NEARBY_GEO_INDEX_ATOMIC_DUAL_WRITE
+test(
+  "valid payload atomically writes synchronized geo index",
+  async () => {
+    const fake =
+      new FakeFirestore();
+    const trace =
+      newTrace();
+
+    await invoke(fake, trace);
+
+    assert.equal(
+      fake.runTransactionCalls,
+      1,
+    );
+    assert.equal(
+      fake.transaction.setCalls.length,
+      2,
+    );
+
+    const presenceCall =
+      fake.transaction.setCalls[0];
+    const indexCall =
+      fake.transaction.setCalls[1];
+
+    const presenceReference =
+      presenceCall.reference as
+        {path: string};
+    const indexReference =
+      indexCall.reference as
+        {path: string};
+
+    assert.equal(
+      presenceReference.path,
+      "driverLivePresences/driver-1",
+    );
+    assert.equal(
+      indexReference.path,
+      "nearbyDriverGeoIndexes/driver-1",
+    );
+
+    const presenceData =
+      presenceCall.data as
+        Record<string, unknown>;
+    const indexData =
+      indexCall.data as
+        Record<string, unknown>;
+
+    assert.deepEqual(
+      Object.keys(indexData).sort(),
+      [
+        "driverId",
+        "geohash",
+        "updatedAt",
+      ],
+    );
+    assert.equal(
+      indexData.driverId,
+      presenceData.driverId,
+    );
+    assert.equal(
+      indexData.updatedAt,
+      presenceData.updatedAt,
+    );
+    assert.equal(
+      indexData.updatedAt,
+      fixedNow,
+    );
+    assert.equal(
+      typeof indexData.geohash,
+      "string",
+    );
+    assert.equal(
+      (indexData.geohash as string).length,
+      12,
+    );
+    assert.equal(
+      "latitude" in indexData,
+      false,
+    );
+    assert.equal(
+      "longitude" in indexData,
+      false,
+    );
+    assert.equal(
+      presenceCall.argumentCount,
+      2,
+    );
+    assert.equal(
+      indexCall.argumentCount,
+      2,
+    );
+  },
+);
+
 test(
   "document path uses server-derived driver id",
   async () => {
@@ -274,12 +369,18 @@ test(
 
     assert.deepEqual(
       fake.collectionNames,
-      ["driverLivePresences"],
+      [
+        "driverLivePresences",
+        "nearbyDriverGeoIndexes",
+      ],
     );
 
     assert.deepEqual(
       fake.documentIds,
-      ["driver-authoritative"],
+      [
+        "driver-authoritative",
+        "driver-authoritative",
+      ],
     );
 
     const reference =

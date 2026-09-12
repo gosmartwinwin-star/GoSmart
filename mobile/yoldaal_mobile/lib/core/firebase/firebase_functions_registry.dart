@@ -22,7 +22,9 @@ class FirebaseFunctionsRouting {
     int? emulatorPort,
   }) {
     if ((emulatorHost == null) != (emulatorPort == null)) {
-      throw ArgumentError('Functions emulator host ve port birlikte verilmeli.');
+      throw ArgumentError(
+        'Functions emulator host ve port birlikte verilmeli.',
+      );
     }
     return FirebaseFunctionsRouting(
       projectId: projectId,
@@ -36,9 +38,19 @@ class FirebaseFunctionsRouting {
 class FirebaseFunctionsRegistry {
   static const region = 'europe-west1';
   static const getMyRideHistory = 'getMyRideHistory';
+  static const submitRideRating = 'submitRideRating';
+  static const getMyRideRatingStatus = 'getMyRideRatingStatus';
+  static const createRideSupportCase = 'createRideSupportCase';
+  static const createActiveRideSupportCase = 'createActiveRideSupportCase';
+  static const proposeRideDropoffChange = 'proposeRideDropoffChange';
+  static const getPendingRideDropoffChangeProposal =
+      'getPendingRideDropoffChangeProposal';
+  static const acknowledgeRideDropoffChange = 'acknowledgeRideDropoffChange';
+  static const getActiveRideDriverTracking = 'getActiveRideDriverTracking';
   static const searchPlaces = 'searchPlaces';
   static const resolvePlace = 'resolvePlace';
   static const getMyRideMatchOffers = 'getMyRideMatchOffers';
+  static const registerDriverPushTarget = 'registerDriverPushTarget';
   static const getMyActiveReturnRoute = 'getMyActiveReturnRoute';
   static const acceptRide = 'acceptRide';
   static FirebaseFunctions? _client;

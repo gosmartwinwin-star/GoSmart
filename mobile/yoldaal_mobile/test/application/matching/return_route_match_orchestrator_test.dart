@@ -484,20 +484,20 @@ void main() {
       expect(result.deviation?.dropoffDetourMeters, 1000);
     });
 
-    test('pickup 3000 metre ve 600 saniyede uygundur', () async {
+    test('pickup 3000 metre ve 900 saniyede uygundur', () async {
       final result = await evaluate(
-        gateway: _FakeDeviationGateway(pickupMeters: 3000, pickupSeconds: 600),
+        gateway: _FakeDeviationGateway(pickupMeters: 3000, pickupSeconds: 900),
       );
 
       expect(result.matchingEvaluation?.pickupEligible, isTrue);
       expect(result.isEligible, isTrue);
     });
 
-    test('dropoff 3000 metre ve 600 saniyede uygundur', () async {
+    test('dropoff 3000 metre ve 900 saniyede uygundur', () async {
       final result = await evaluate(
         gateway: _FakeDeviationGateway(
           dropoffMeters: 3000,
-          dropoffSeconds: 600,
+          dropoffSeconds: 900,
         ),
       );
 
@@ -510,13 +510,13 @@ void main() {
         pickupMeters: 3001,
       ),
       MatchingPolicy.pickupDurationExceededReason: _FakeDeviationGateway(
-        pickupSeconds: 601,
+        pickupSeconds: 901,
       ),
       MatchingPolicy.dropoffDistanceExceededReason: _FakeDeviationGateway(
         dropoffMeters: 3001,
       ),
       MatchingPolicy.dropoffDurationExceededReason: _FakeDeviationGateway(
-        dropoffSeconds: 601,
+        dropoffSeconds: 901,
       ),
     };
 
@@ -533,9 +533,9 @@ void main() {
       final result = await evaluate(
         gateway: _FakeDeviationGateway(
           pickupMeters: 3001,
-          pickupSeconds: 601,
+          pickupSeconds: 901,
           dropoffMeters: 3001,
-          dropoffSeconds: 601,
+          dropoffSeconds: 901,
         ),
       );
 
@@ -657,8 +657,10 @@ class _FakeDeviationGateway implements RouteDeviationGateway {
   @override
   Future<RouteDeviationResult> compute({
     required RouteAnchorResult anchors,
+    required GeoCoordinate pickupOrigin,
     required GeoCoordinate pickup,
     required GeoCoordinate dropoff,
+    required GeoCoordinate dropoffDestination,
   }) async {
     callCount++;
     this.anchors = anchors;

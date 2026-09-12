@@ -1,4 +1,4 @@
-import {protos} from "@googlemaps/routing";
+import {protos, v2} from "@googlemaps/routing";
 import {HttpsError} from "firebase-functions/v2/https";
 
 export type CoordinateInput = {
@@ -99,3 +99,152 @@ export const validateNonNegativeInteger = (
 ): number | null => typeof value === "number" &&
   Number.isInteger(value) &&
   value >= 0 ? value : null;
+export type TrafficAwareDrivingMeasurement = {
+  distanceMeters: number;
+  durationSeconds: number;
+};
+
+export const computeTrafficAwareDrivingMeasurement = async (
+  routesClient: v2.RoutesClient,
+  origin: CoordinateInput,
+  destination: CoordinateInput,
+): Promise<TrafficAwareDrivingMeasurement> => {
+  if (coordinatesEqual(origin, destination)) {
+    return {
+      distanceMeters: 0,
+      durationSeconds: 0,
+    };
+  }
+
+  const routing = protos.google.maps.routing.v2;
+
+  const toWaypoint = (coordinate: CoordinateInput) => ({
+    location: {
+      latLng: {
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+      },
+    },
+  });
+
+  const [response] = await routesClient.computeRoutes(
+    {
+      origin: toWaypoint(origin),
+      destination: toWaypoint(destination),
+      travelMode: routing.RouteTravelMode.DRIVE,
+      routingPreference:
+        routing.RoutingPreference.TRAFFIC_AWARE,
+      computeAlternativeRoutes: false,
+      languageCode: "tr-TR",
+      regionCode: "TR",
+      units: routing.Units.METRIC,
+    },
+    {
+      otherArgs: {
+        headers: {
+          "X-Goog-FieldMask":
+            "routes.duration,routes.distanceMeters",
+        },
+      },
+    },
+  );
+
+  const route = response.routes?.[0];
+
+  const distanceMeters =
+    validateNonNegativeInteger(route?.distanceMeters);
+
+  const durationSeconds =
+    durationToSeconds(route?.duration);
+
+  if (
+    distanceMeters === null ||
+    durationSeconds === null
+  ) {
+    throw new HttpsError(
+      "internal",
+      "Sürüş sapması ölçümü tamamlanamadı.",
+    );
+  }
+
+  return {
+    distanceMeters,
+    durationSeconds,
+  };
+};
+export type TrafficAwareDrivingRoute = {
+  distanceMeters: number;
+  durationSeconds: number;
+  encodedPolyline: string;
+};
+
+export const computeTrafficAwareDrivingRoute = async (
+  routesClient: v2.RoutesClient,
+  origin: CoordinateInput,
+  destination: CoordinateInput,
+): Promise<TrafficAwareDrivingRoute> => {
+  const routing = protos.google.maps.routing.v2;
+
+  const toWaypoint = (coordinate: CoordinateInput) => ({
+    location: {
+      latLng: {
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+      },
+    },
+  });
+
+  const [response] = await routesClient.computeRoutes(
+    {
+      origin: toWaypoint(origin),
+      destination: toWaypoint(destination),
+      travelMode: routing.RouteTravelMode.DRIVE,
+      routingPreference:
+        routing.RoutingPreference.TRAFFIC_AWARE,
+      computeAlternativeRoutes: false,
+      polylineQuality:
+        routing.PolylineQuality.OVERVIEW,
+      polylineEncoding:
+        routing.PolylineEncoding.ENCODED_POLYLINE,
+      languageCode: "tr-TR",
+      regionCode: "TR",
+      units: routing.Units.METRIC,
+    },
+    {
+      otherArgs: {
+        headers: {
+          "X-Goog-FieldMask":
+            "routes.duration,routes.distanceMeters," +
+            "routes.polyline.encodedPolyline",
+        },
+      },
+    },
+  );
+
+  const route = response.routes?.[0];
+
+  const distanceMeters = route?.distanceMeters;
+  const durationSeconds =
+    durationToSeconds(route?.duration);
+  const encodedPolyline =
+    route?.polyline?.encodedPolyline;
+
+  if (
+    typeof distanceMeters !== "number" ||
+    !Number.isInteger(distanceMeters) ||
+    distanceMeters <= 0 ||
+    durationSeconds === null ||
+    !Number.isInteger(durationSeconds) ||
+    durationSeconds <= 0 ||
+    typeof encodedPolyline !== "string" ||
+    encodedPolyline.length === 0
+  ) {
+    throw new Error("Invalid route response");
+  }
+
+  return {
+    distanceMeters,
+    durationSeconds,
+    encodedPolyline,
+  };
+};

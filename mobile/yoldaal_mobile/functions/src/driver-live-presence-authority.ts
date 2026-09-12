@@ -11,6 +11,9 @@ import {
   validateDriverLiveLocationInput,
 } from "./driver-live-presence-helpers.js";
 import {
+  buildNearbyDriverGeoIndexRecord,
+} from "./nearby-driver-geo-index-helpers.js";
+import {
   loadApprovedDriverIdInTransaction,
 } from "./ride-driver-identity.js";
 
@@ -102,9 +105,29 @@ export const publishDriverLivePresence = async (
             now,
           );
 
+        const geoIndexReference =
+          dependencies.firestore
+            .collection(
+              "nearbyDriverGeoIndexes",
+            )
+            .doc(driverId);
+
+        const geoIndexRecord =
+          buildNearbyDriverGeoIndexRecord(
+            driverId,
+            location,
+            now,
+            12,
+          );
+
         transaction.set(
           presenceReference,
           record,
+        );
+
+        transaction.set(
+          geoIndexReference,
+          geoIndexRecord,
         );
 
         return {

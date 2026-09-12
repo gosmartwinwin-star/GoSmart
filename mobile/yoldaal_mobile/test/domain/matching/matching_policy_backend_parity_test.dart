@@ -8,7 +8,7 @@ void main() {
   final contract = _loadContract();
 
   test('Flutter constants match shared backend parity contract', () {
-    expect(contract.version, 1);
+    expect(contract.version, 2);
 
     expect(
       MatchingPolicy.maximumPickupDetourMeters,

@@ -5,7 +5,9 @@ import '../../domain/return_route/route_anchor_result.dart';
 abstract interface class RouteDeviationGateway {
   Future<RouteDeviationResult> compute({
     required RouteAnchorResult anchors,
+    required GeoCoordinate pickupOrigin,
     required GeoCoordinate pickup,
     required GeoCoordinate dropoff,
+    required GeoCoordinate dropoffDestination,
   });
 }

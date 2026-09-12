@@ -55,6 +55,7 @@ void main() {
     await _pumpCenter(tester, center: center, rides: rides, matches: matches);
 
     expect(offerGateway.loadCalls, 1);
+    expect(matches.polling, isTrue);
 
     expect(
       find.byKey(const ValueKey('ride-match-offer-panel')),
@@ -126,6 +127,7 @@ void main() {
         find.byKey(const ValueKey('ride-match-offer-panel')),
         findsNothing,
       );
+      expect(matches.polling, isFalse);
 
       center.publishedRoute = _published(now, routeId: 'route-2');
       center.selectValidity(3600);
@@ -137,6 +139,7 @@ void main() {
         3,
         reason: 'route removal must reset the discovery marker',
       );
+      expect(matches.polling, isTrue);
     },
   );
   testWidgets('active canonical ride suppresses discovery and offer panel', (
@@ -169,6 +172,7 @@ void main() {
     await _pumpCenter(tester, center: center, rides: rides, matches: matches);
 
     expect(offerGateway.loadCalls, 0);
+    expect(matches.polling, isFalse);
 
     expect(find.text('Yolcunun konumuna gidiliyor'), findsOneWidget);
 
@@ -243,6 +247,57 @@ void main() {
     expect(find.byKey(const ValueKey('ride-match-offer-panel')), findsNothing);
   });
 
+  testWidgets(
+    'background pauses offer polling and resume refreshes immediately',
+    (tester) async {
+      final center = _center(now);
+      center.publishedRoute = _published(now);
+
+      final rideGateway = _RideGateway();
+
+      final rides = DriverRideController(
+        gateway: rideGateway,
+        repository: rideGateway,
+      );
+
+      addTearDown(rides.dispose);
+
+      final offerGateway = _OfferGateway();
+      final matches = DriverRideMatchOfferController(
+        gateway: offerGateway,
+        requestIdGenerator: () => 'request_123456789',
+        now: () => now,
+      );
+
+      addTearDown(matches.dispose);
+      addTearDown(center.dispose);
+      addTearDown(() {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+
+      await _pumpCenter(tester, center: center, rides: rides, matches: matches);
+
+      expect(offerGateway.loadCalls, 1);
+      expect(matches.polling, isTrue);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+
+      expect(matches.polling, isFalse);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(matches.polling, isTrue);
+      expect(
+        offerGateway.loadCalls,
+        2,
+        reason: 'resume must immediately refresh same-route offers',
+      );
+    },
+  );
+
   testWidgets('without active return route discovery does not run', (
     tester,
   ) async {
@@ -271,6 +326,7 @@ void main() {
     await _pumpCenter(tester, center: center, rides: rides, matches: matches);
 
     expect(offerGateway.loadCalls, 0);
+    expect(matches.polling, isFalse);
 
     expect(find.byKey(const ValueKey('ride-match-offer-panel')), findsNothing);
 
@@ -360,6 +416,12 @@ RideMatchOffer _offer(DateTime expiresAt) => RideMatchOffer(
     longitude: 29.0949,
     addressLabel: 'Bostancı',
   ),
+  pickupDetourMeters: 900,
+  pickupDetourSeconds: 180,
+  dropoffDetourMeters: 1200,
+  dropoffDetourSeconds: 240,
+  passengerTripDistanceMeters: 10000,
+  passengerTripDurationSeconds: 1200,
   expiresAt: expiresAt,
 );
 

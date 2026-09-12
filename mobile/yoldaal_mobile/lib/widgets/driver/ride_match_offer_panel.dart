@@ -131,6 +131,7 @@ class RideMatchOfferPanel extends StatelessWidget {
         for (final offer in controller.offers) ...[
           _OfferItem(
             offer: offer,
+            remainingMinutes: controller.remainingMinutesFor(offer),
             accepting: controller.acceptingRideId == offer.rideId,
             busy: controller.busy,
             onAccept: () {
@@ -147,12 +148,14 @@ class RideMatchOfferPanel extends StatelessWidget {
 class _OfferItem extends StatelessWidget {
   const _OfferItem({
     required this.offer,
+    required this.remainingMinutes,
     required this.accepting,
     required this.busy,
     required this.onAccept,
   });
 
   final RideMatchOffer offer;
+  final int remainingMinutes;
   final bool accepting;
   final bool busy;
   final VoidCallback onAccept;
@@ -175,6 +178,30 @@ class _OfferItem extends StatelessWidget {
             'Varış: ${offer.dropoff.addressLabel}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Alış sapması: '
+            '${offer.pickupDetourMeters} m / '
+            '${offer.pickupDetourSeconds} sn',
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Bırakış sapması: '
+            '${offer.dropoffDetourMeters} m / '
+            '${offer.dropoffDetourSeconds} sn',
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Yolcu yolculuğu: yaklaşık '
+            '${offer.passengerTripDistanceMeters} m / '
+            '${offer.passengerTripDurationSeconds} sn',
+          ),
+          Text(
+            'Kalan süre: $remainingMinutes dk',
+            key: ValueKey(
+              'ride-match-offer-remaining-${offer.rideId}',
+            ),
           ),
           const SizedBox(height: 10),
           Align(

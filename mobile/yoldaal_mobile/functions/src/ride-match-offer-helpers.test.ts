@@ -77,12 +77,14 @@ test(
       rideMatchOfferDocumentId(
         "driver-profile-1",
         "ride-1",
+        1,
       );
 
     const second =
       rideMatchOfferDocumentId(
         "driver-profile-1",
         "ride-1",
+        1,
       );
 
     assert.equal(first, second);
@@ -93,6 +95,16 @@ test(
       rideMatchOfferDocumentId(
         "driver-profile-2",
         "ride-1",
+        1,
+      ),
+    );
+
+    assert.notEqual(
+      first,
+      rideMatchOfferDocumentId(
+        "driver-profile-1",
+        "ride-1",
+        2,
       ),
     );
   },

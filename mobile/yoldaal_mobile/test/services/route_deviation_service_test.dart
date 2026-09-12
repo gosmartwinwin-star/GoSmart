@@ -5,10 +5,14 @@ import 'package:yoldaal_mobile/domain/return_route/route_anchor_result.dart';
 import 'package:yoldaal_mobile/services/route_deviation_service.dart';
 
 void main() {
+  final pickupOrigin =
+      GeoCoordinate(latitude: 40.999, longitude: 28.999);
   final pickupAnchor = GeoCoordinate(latitude: 41.0, longitude: 29.0);
   final pickup = GeoCoordinate(latitude: 41.001, longitude: 29.001);
   final dropoff = GeoCoordinate(latitude: 41.01, longitude: 29.01);
   final dropoffAnchor = GeoCoordinate(latitude: 41.011, longitude: 29.011);
+  final dropoffDestination =
+      GeoCoordinate(latitude: 41.012, longitude: 29.012);
 
   RouteAnchorResult anchors({int pickupIndex = 2, int dropoffIndex = 8}) {
     return RouteAnchorResult(
@@ -41,8 +45,10 @@ void main() {
     final invoker = fake ?? _FakeRouteDeviationInvoker(response);
     return RouteDeviationService(invoker: invoker).compute(
       anchors: routeAnchors ?? anchors(),
+      pickupOrigin: pickupOrigin,
       pickup: pickup,
       dropoff: dropoff,
+      dropoffDestination: dropoffDestination,
     );
   }
 
@@ -163,10 +169,10 @@ void main() {
 
       await computeWith(validResponse(), fake: fake);
 
-      expect(fake.payload?['pickupAnchor'], _coordinateMap(pickupAnchor));
+      expect(fake.payload?['pickupAnchor'], _coordinateMap(pickupOrigin));
       expect(fake.payload?['pickup'], _coordinateMap(pickup));
       expect(fake.payload?['dropoff'], _coordinateMap(dropoff));
-      expect(fake.payload?['dropoffAnchor'], _coordinateMap(dropoffAnchor));
+      expect(fake.payload?['dropoffAnchor'], _coordinateMap(dropoffDestination));
     });
 
     test('pickup ve dropoff indekslerini doğru gönderir', () async {
@@ -193,13 +199,13 @@ void main() {
   });
 
   group('MatchingPolicy bağlantısı', () {
-    test('3000 metre ve 600 saniye sınırlarında uygun sonuç üretir', () async {
+    test('3000 metre ve 900 saniye sınırlarında uygun sonuç üretir', () async {
       final deviation = await computeWith(
         validResponse(
           pickupMeters: 3000,
-          pickupSeconds: 600,
+          pickupSeconds: 900,
           dropoffMeters: 3000,
-          dropoffSeconds: 600,
+          dropoffSeconds: 900,
         ),
       );
       final evaluation = const MatchingPolicy().evaluate(
@@ -223,8 +229,8 @@ void main() {
       );
     });
 
-    test('dropoff 601 saniyede dropoff_duration_exceeded üretir', () async {
-      final deviation = await computeWith(validResponse(dropoffSeconds: 601));
+    test('dropoff 901 saniyede dropoff_duration_exceeded üretir', () async {
+      final deviation = await computeWith(validResponse(dropoffSeconds: 901));
       final evaluation = const MatchingPolicy().evaluate(
         subscriptionActive: true,
         deviation: deviation,

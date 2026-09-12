@@ -4,7 +4,7 @@
       "android": {
         "default": {
           "projectId": "gosmart-fd8f6",
-          "appId": "1:367158650760:android:98d90f44e01c1896cbfc3d",
+          "appId": "1:367158650760:android:bd511800f763be17cbfc3d",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -12,8 +12,8 @@
         "lib/firebase_options.dart": {
           "projectId": "gosmart-fd8f6",
           "configurations": {
-            "android": "1:367158650760:android:98d90f44e01c1896cbfc3d",
-            "ios": "1:367158650760:ios:89050f1838df9acfcbfc3d",
+            "android": "1:367158650760:android:bd511800f763be17cbfc3d",
+            "ios": "1:367158650760:ios:d7074a2ccb6a796acbfc3d",
             "macos": "1:367158650760:ios:89050f1838df9acfcbfc3d",
             "web": "1:367158650760:web:0e87e7c067617b41cbfc3d",
             "windows": "1:367158650760:web:1d366ddbb69be3d3cbfc3d"

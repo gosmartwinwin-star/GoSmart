@@ -1,6 +1,5 @@
 import {
   DocumentSnapshot,
-  FieldPath,
   Firestore,
   QueryDocumentSnapshot,
   Timestamp,
@@ -16,6 +15,8 @@ import {
   loadApprovedDriverIdInTransaction,
 } from "./ride-driver-identity.js";
 import {
+  RETURN_ROUTE_MATCH_MAX_DETOUR_METERS,
+  RETURN_ROUTE_MATCH_MAX_DETOUR_SECONDS,
   buildRideMatchOffer,
   isRideMatchMeasurementEligible,
   parseRideMatchOffer,
@@ -27,15 +28,24 @@ import type {
 } from "./ride-match-offer-helpers.js";
 import {
   decodeEncodedPolyline,
+  geoDistanceMeters,
   locateRouteAnchors,
   routeAnchorDirectionCompatible,
 } from "./ride-route-geometry.js";
 import type {
+  RouteAnchorPair,
   RouteCoordinate,
 } from "./ride-route-geometry.js";
 
 export const RIDE_MATCH_DISCOVERY_CANDIDATE_LIMIT = 5;
 export const RIDE_MATCH_DISCOVERY_OFFER_LIMIT = 3;
+
+export const RIDE_MATCH_DISCOVERY_AGING_THRESHOLD_SECONDS =
+  15 * 60;
+
+export const RIDE_MATCH_DISCOVERY_FAIRNESS_SLOT_LIMIT = 2;
+
+export const RIDE_MATCH_DISCOVERY_BEST_ROUTE_SLOT_LIMIT = 3;
 
 export type RideMatchDeviationInput = {
   pickupAnchor: RouteCoordinate;
@@ -71,8 +81,11 @@ export type MatchingRideCandidate = {
   rideId: string;
   passengerId: string;
   version: number;
+  createdAt: Timestamp;
   pickup: DiscoveredRideLocation;
   dropoff: DiscoveredRideLocation;
+  passengerTripDistanceMeters: number;
+  passengerTripDurationSeconds: number;
 };
 
 export type PublicDiscoveredRideOffer = {
@@ -80,6 +93,12 @@ export type PublicDiscoveredRideOffer = {
   rideVersion: number;
   pickup: DiscoveredRideLocation;
   dropoff: DiscoveredRideLocation;
+  pickupDetourMeters: number;
+  pickupDetourSeconds: number;
+  dropoffDetourMeters: number;
+  dropoffDetourSeconds: number;
+  passengerTripDistanceMeters: number;
+  passengerTripDurationSeconds: number;
   expiresAtMillis: number;
 };
 
@@ -87,10 +106,18 @@ export type RideMatchOfferDiscoveryResult = {
   offers: PublicDiscoveredRideOffer[];
 };
 
+type ValidatedReturnRoute = {
+  origin: RouteCoordinate;
+  destination: RouteCoordinate;
+  encodedPolyline: string;
+};
+
 type ActiveReturnRouteContext = {
   driverId: string;
   returnRouteId: string;
   expiresAt: Timestamp;
+  origin: RouteCoordinate;
+  destination: RouteCoordinate;
   routePoints: RouteCoordinate[];
 };
 
@@ -100,11 +127,344 @@ type ActiveReturnRouteLock = {
   expiresAt: Timestamp;
 };
 
-type EvaluatedCandidate = {
+export type PreparedRideMatchCandidate = {
   candidate: MatchingRideCandidate;
-  measurement: RideMatchMeasurement;
+  anchors: RouteAnchorPair;
 };
 
+export type SelectedRideMatchCandidate =
+  PreparedRideMatchCandidate & {
+    fairnessProtected: boolean;
+  };
+
+export type EvaluatedCandidate = {
+  candidate: MatchingRideCandidate;
+  measurement: RideMatchMeasurement;
+  fairnessProtected: boolean;
+};
+
+const compareAscendingNumber = (
+  first: number,
+  second: number,
+): number =>
+  first < second ?
+    -1 :
+    first > second ?
+      1 :
+      0;
+
+const compareAscendingString = (
+  first: string,
+  second: string,
+): number =>
+  first < second ?
+    -1 :
+    first > second ?
+      1 :
+      0;
+
+const compareCandidateFairness = (
+  first: MatchingRideCandidate,
+  second: MatchingRideCandidate,
+): number => {
+  const createdAtOrder =
+    compareAscendingNumber(
+      first.createdAt.toMillis(),
+      second.createdAt.toMillis(),
+    );
+
+  if (createdAtOrder !== 0) {
+    return createdAtOrder;
+  }
+
+  return compareAscendingString(
+    first.rideId,
+    second.rideId,
+  );
+};
+
+const cheapRouteQuality = (
+  item: PreparedRideMatchCandidate,
+): {
+  worst: number;
+  total: number;
+} => {
+  const pickupQuality =
+    item.anchors.pickupAnchorProximityMeters /
+    RETURN_ROUTE_MATCH_MAX_DETOUR_METERS;
+
+  const dropoffQuality =
+    item.anchors.dropoffAnchorProximityMeters /
+    RETURN_ROUTE_MATCH_MAX_DETOUR_METERS;
+
+  return {
+    worst: Math.max(
+      pickupQuality,
+      dropoffQuality,
+    ),
+    total:
+      pickupQuality +
+      dropoffQuality,
+  };
+};
+
+const compareCheapRouteQuality = (
+  first: PreparedRideMatchCandidate,
+  second: PreparedRideMatchCandidate,
+): number => {
+  const firstQuality =
+    cheapRouteQuality(first);
+
+  const secondQuality =
+    cheapRouteQuality(second);
+
+  const worstOrder =
+    compareAscendingNumber(
+      firstQuality.worst,
+      secondQuality.worst,
+    );
+
+  if (worstOrder !== 0) {
+    return worstOrder;
+  }
+
+  const totalOrder =
+    compareAscendingNumber(
+      firstQuality.total,
+      secondQuality.total,
+    );
+
+  if (totalOrder !== 0) {
+    return totalOrder;
+  }
+
+  return compareCandidateFairness(
+    first.candidate,
+    second.candidate,
+  );
+};
+
+const measuredRouteQuality = (
+  item: EvaluatedCandidate,
+): {
+  worst: number;
+  total: number;
+} => {
+  const pickupMetersRatio =
+    item.measurement.pickupDetourMeters /
+    RETURN_ROUTE_MATCH_MAX_DETOUR_METERS;
+
+  const pickupSecondsRatio =
+    item.measurement.pickupDetourSeconds /
+    RETURN_ROUTE_MATCH_MAX_DETOUR_SECONDS;
+
+  const dropoffMetersRatio =
+    item.measurement.dropoffDetourMeters /
+    RETURN_ROUTE_MATCH_MAX_DETOUR_METERS;
+
+  const dropoffSecondsRatio =
+    item.measurement.dropoffDetourSeconds /
+    RETURN_ROUTE_MATCH_MAX_DETOUR_SECONDS;
+
+  return {
+    worst: Math.max(
+      pickupMetersRatio,
+      pickupSecondsRatio,
+      dropoffMetersRatio,
+      dropoffSecondsRatio,
+    ),
+    total:
+      pickupMetersRatio +
+      pickupSecondsRatio +
+      dropoffMetersRatio +
+      dropoffSecondsRatio,
+  };
+};
+
+const compareMeasuredRouteQuality = (
+  first: EvaluatedCandidate,
+  second: EvaluatedCandidate,
+): number => {
+  const firstQuality =
+    measuredRouteQuality(first);
+
+  const secondQuality =
+    measuredRouteQuality(second);
+
+  const worstOrder =
+    compareAscendingNumber(
+      firstQuality.worst,
+      secondQuality.worst,
+    );
+
+  if (worstOrder !== 0) {
+    return worstOrder;
+  }
+
+  const totalOrder =
+    compareAscendingNumber(
+      firstQuality.total,
+      secondQuality.total,
+    );
+
+  if (totalOrder !== 0) {
+    return totalOrder;
+  }
+
+  return compareCandidateFairness(
+    first.candidate,
+    second.candidate,
+  );
+};
+
+export const isRideMatchCandidateAged = (
+  candidate: MatchingRideCandidate,
+  now: Timestamp,
+): boolean =>
+  now.toMillis() -
+    candidate.createdAt.toMillis() >=
+  RIDE_MATCH_DISCOVERY_AGING_THRESHOLD_SECONDS *
+    1000;
+
+export const isRideMatchCheapEndpointEligible = (
+  origin: RouteCoordinate,
+  destination: RouteCoordinate,
+  candidate: MatchingRideCandidate,
+): boolean =>
+  geoDistanceMeters(
+    origin,
+    candidate.pickup,
+  ) <=
+    RETURN_ROUTE_MATCH_MAX_DETOUR_METERS &&
+  geoDistanceMeters(
+    candidate.dropoff,
+    destination,
+  ) <=
+    RETURN_ROUTE_MATCH_MAX_DETOUR_METERS;
+
+export const selectRideMatchPromisingCandidates = (
+  candidates: PreparedRideMatchCandidate[],
+  now: Timestamp,
+): SelectedRideMatchCandidate[] => {
+  const fairnessCandidates =
+    [...candidates]
+      .filter(
+        (item) =>
+          isRideMatchCandidateAged(
+            item.candidate,
+            now,
+          ),
+      )
+      .sort(
+        (first, second) =>
+          compareCandidateFairness(
+            first.candidate,
+            second.candidate,
+          ),
+      )
+      .slice(
+        0,
+        RIDE_MATCH_DISCOVERY_FAIRNESS_SLOT_LIMIT,
+      );
+
+  const fairnessRideIds =
+    new Set(
+      fairnessCandidates.map(
+        (item) =>
+          item.candidate.rideId,
+      ),
+    );
+
+  const unusedFairnessSlots =
+    RIDE_MATCH_DISCOVERY_FAIRNESS_SLOT_LIMIT -
+    fairnessCandidates.length;
+
+  const bestRouteSlots =
+    RIDE_MATCH_DISCOVERY_BEST_ROUTE_SLOT_LIMIT +
+    unusedFairnessSlots;
+
+  const bestRouteCandidates =
+    [...candidates]
+      .filter(
+        (item) =>
+          !fairnessRideIds.has(
+            item.candidate.rideId,
+          ),
+      )
+      .sort(compareCheapRouteQuality)
+      .slice(
+        0,
+        bestRouteSlots,
+      );
+
+  return [
+    ...fairnessCandidates.map(
+      (item) => ({
+        ...item,
+        fairnessProtected: true,
+      }),
+    ),
+    ...bestRouteCandidates.map(
+      (item) => ({
+        ...item,
+        fairnessProtected: false,
+      }),
+    ),
+  ];
+};
+
+export const rankRideMatchEligibleOffers = (
+  candidates: EvaluatedCandidate[],
+): EvaluatedCandidate[] => {
+  const protectedCandidates =
+    [...candidates]
+      .filter(
+        (item) =>
+          item.fairnessProtected,
+      )
+      .sort(
+        (first, second) =>
+          compareCandidateFairness(
+            first.candidate,
+            second.candidate,
+          ),
+      )
+      .slice(
+        0,
+        RIDE_MATCH_DISCOVERY_FAIRNESS_SLOT_LIMIT,
+      );
+
+  const protectedRideIds =
+    new Set(
+      protectedCandidates.map(
+        (item) =>
+          item.candidate.rideId,
+      ),
+    );
+
+  const remainingOfferSlots =
+    RIDE_MATCH_DISCOVERY_OFFER_LIMIT -
+    protectedCandidates.length;
+
+  const routeCandidates =
+    [...candidates]
+      .filter(
+        (item) =>
+          !protectedRideIds.has(
+            item.candidate.rideId,
+          ),
+      )
+      .sort(compareMeasuredRouteQuality)
+      .slice(
+        0,
+        remainingOfferSlots,
+      );
+
+  return [
+    ...protectedCandidates,
+    ...routeCandidates,
+  ];
+};
 const failure = (
   reason: string,
 ): HttpsError =>
@@ -151,6 +511,31 @@ const isNonNegativeInteger = (
   typeof value === "number" &&
   Number.isInteger(value) &&
   value >= 0;
+
+const parseRouteCoordinate = (
+  value: unknown,
+): RouteCoordinate | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const {latitude, longitude} = value;
+
+  if (
+    typeof latitude !== "number" ||
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    typeof longitude !== "number" ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+
+  return {latitude, longitude};
+};
 
 const parseLocation = (
   value: unknown,
@@ -205,7 +590,8 @@ export const parseMatchingRideCandidate = (
     data.status !== "matching" ||
     data.driverId !== null ||
     !isIdentifier(data.passengerId) ||
-    !isPositiveInteger(data.version)
+    !isPositiveInteger(data.version) ||
+    !(data.createdAt instanceof Timestamp)
   ) {
     return null;
   }
@@ -223,12 +609,37 @@ export const parseMatchingRideCandidate = (
     return null;
   }
 
+  const routeValue = data.route;
+
+  if (
+    routeValue === null ||
+    typeof routeValue !== "object" ||
+    Array.isArray(routeValue)
+  ) {
+    return null;
+  }
+
+  const route =
+    routeValue as Record<string, unknown>;
+
+  if (
+    !isPositiveInteger(route.distanceMeters) ||
+    !isPositiveInteger(route.durationSeconds)
+  ) {
+    return null;
+  }
+
   return {
     rideId,
     passengerId: data.passengerId,
     version: data.version,
+    createdAt: data.createdAt,
     pickup,
     dropoff,
+    passengerTripDistanceMeters:
+      route.distanceMeters,
+    passengerTripDurationSeconds:
+      route.durationSeconds,
   };
 };
 
@@ -311,7 +722,7 @@ const validateReturnRoute = (
   driverId: string,
   lock: ActiveReturnRouteLock,
   now: Timestamp,
-): string => {
+): ValidatedReturnRoute => {
   if (!snapshot.exists) {
     throw failure(
       "active_return_route_invalid",
@@ -339,6 +750,16 @@ const validateReturnRoute = (
   const encodedPolyline =
     snapshot.get("encodedPolyline");
 
+  const origin =
+    parseRouteCoordinate(
+      snapshot.get("origin"),
+    );
+
+  const destination =
+    parseRouteCoordinate(
+      snapshot.get("destination"),
+    );
+
   if (
     routeDriverId !== driverId ||
     status !== "active" ||
@@ -351,7 +772,9 @@ const validateReturnRoute = (
     !isPositiveInteger(distanceMeters) ||
     !isPositiveInteger(durationSeconds) ||
     typeof encodedPolyline !== "string" ||
-    encodedPolyline.length === 0
+    encodedPolyline.length === 0 ||
+    origin === null ||
+    destination === null
   ) {
     throw failure(
       "active_return_route_invalid",
@@ -369,7 +792,11 @@ const validateReturnRoute = (
     );
   }
 
-  return encodedPolyline;
+  return {
+    origin,
+    destination,
+    encodedPolyline,
+  };
 };
 
 const decodeReturnRoute = (
@@ -446,7 +873,7 @@ const loadInitialContext = async (
       .doc(lock.routeId)
       .get();
 
-  const encodedPolyline =
+  const returnRoute =
     validateReturnRoute(
       returnRouteSnapshot,
       driverId,
@@ -458,8 +885,12 @@ const loadInitialContext = async (
     driverId,
     returnRouteId: lock.routeId,
     expiresAt: lock.expiresAt,
+    origin: returnRoute.origin,
+    destination: returnRoute.destination,
     routePoints:
-      decodeReturnRoute(encodedPolyline),
+      decodeReturnRoute(
+        returnRoute.encodedPolyline,
+      ),
   };
 };
 
@@ -566,6 +997,18 @@ export const toPublicDiscoveredRideOffer = (
   rideVersion: candidate.version,
   pickup: candidate.pickup,
   dropoff: candidate.dropoff,
+  pickupDetourMeters:
+    offer.measurement.pickupDetourMeters,
+  pickupDetourSeconds:
+    offer.measurement.pickupDetourSeconds,
+  dropoffDetourMeters:
+    offer.measurement.dropoffDetourMeters,
+  dropoffDetourSeconds:
+    offer.measurement.dropoffDetourSeconds,
+  passengerTripDistanceMeters:
+    candidate.passengerTripDistanceMeters,
+  passengerTripDurationSeconds:
+    candidate.passengerTripDurationSeconds,
   expiresAtMillis:
     offer.expiresAt.toMillis(),
 });
@@ -603,20 +1046,10 @@ export const discoverRideMatchOffersForDriver = async (
         "==",
         "matching",
       )
-      .orderBy(
-        "updatedAt",
-        "desc",
-      )
-      .orderBy(
-        FieldPath.documentId(),
-        "desc",
-      )
-      .limit(
-        RIDE_MATCH_DISCOVERY_CANDIDATE_LIMIT,
-      )
       .get();
 
-  const evaluated: EvaluatedCandidate[] = [];
+  const cheapEligibleCandidates:
+    PreparedRideMatchCandidate[] = [];
 
   for (
     const snapshot of candidateSnapshots.docs
@@ -627,6 +1060,16 @@ export const discoverRideMatchOffersForDriver = async (
     if (
       candidate === null ||
       candidate.passengerId === uid
+    ) {
+      continue;
+    }
+
+    if (
+      !isRideMatchCheapEndpointEligible(
+        context.origin,
+        context.destination,
+        candidate,
+      )
     ) {
       continue;
     }
@@ -646,15 +1089,38 @@ export const discoverRideMatchOffersForDriver = async (
       continue;
     }
 
+    cheapEligibleCandidates.push({
+      candidate,
+      anchors,
+    });
+  }
+
+  const selectedCandidates =
+    selectRideMatchPromisingCandidates(
+      cheapEligibleCandidates,
+      initialNow,
+    );
+
+  const evaluated: EvaluatedCandidate[] = [];
+
+  for (
+    const selected of selectedCandidates
+  ) {
+    const candidate =
+      selected.candidate;
+
+    const anchors =
+      selected.anchors;
+
     const deviation =
       parseDeviationMeasurement(
         await dependencies.measureDeviation({
           pickupAnchor:
-            anchors.pickupAnchor,
+            context.origin,
           pickup: candidate.pickup,
           dropoff: candidate.dropoff,
           dropoffAnchor:
-            anchors.dropoffAnchor,
+            context.destination,
           pickupRouteIndex:
             anchors.pickupRouteIndex,
           dropoffRouteIndex:
@@ -688,19 +1154,19 @@ export const discoverRideMatchOffersForDriver = async (
     evaluated.push({
       candidate,
       measurement,
+      fairnessProtected:
+        selected.fairnessProtected,
     });
-
-    if (
-      evaluated.length >=
-      RIDE_MATCH_DISCOVERY_OFFER_LIMIT
-    ) {
-      break;
-    }
   }
 
   if (evaluated.length === 0) {
     return {offers: []};
   }
+
+  const rankedOfferCandidates =
+    rankRideMatchEligibleOffers(
+      evaluated,
+    );
 
   return dependencies.firestore
     .runTransaction(
@@ -721,7 +1187,7 @@ export const discoverRideMatchOffersForDriver = async (
         const acceptedCandidates: EvaluatedCandidate[] =
           [];
 
-        for (const item of evaluated) {
+        for (const item of rankedOfferCandidates) {
           const rideSnapshot =
             await transaction.get(
               dependencies.firestore
@@ -745,6 +1211,12 @@ export const discoverRideMatchOffersForDriver = async (
               item.candidate.version ||
             currentCandidate.passengerId !==
               item.candidate.passengerId ||
+            currentCandidate.createdAt.toMillis() !==
+              item.candidate.createdAt.toMillis() ||
+            currentCandidate.passengerTripDistanceMeters !==
+              item.candidate.passengerTripDistanceMeters ||
+            currentCandidate.passengerTripDurationSeconds !==
+              item.candidate.passengerTripDurationSeconds ||
             !locationsEqual(
               currentCandidate.pickup,
               item.candidate.pickup,
@@ -787,6 +1259,7 @@ export const discoverRideMatchOffersForDriver = async (
                 rideMatchOfferDocumentId(
                   context.driverId,
                   currentCandidate.rideId,
+                  currentCandidate.version,
                 ),
               );
 
@@ -841,6 +1314,7 @@ export const discoverRideMatchOffersForDriver = async (
                 rideMatchOfferDocumentId(
                   context.driverId,
                   item.candidate.rideId,
+                  item.candidate.version,
                 ),
               );
 

@@ -77,6 +77,7 @@ export const requireRideMatchOfferAuthority = async (
       rideMatchOfferDocumentId(
         driverId,
         rideId,
+        rideVersion,
       ),
     );
 

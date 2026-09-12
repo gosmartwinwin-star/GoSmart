@@ -26,6 +26,10 @@ import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
 import 'package:yoldaal_mobile/domain/subscription/driver_pass_status.dart';
 import 'package:yoldaal_mobile/screens/driver/driver_center_screen.dart';
 
+import 'package:yoldaal_mobile/application/ride/ride_dropoff_change_proposal_event_gateway.dart';
+import 'package:yoldaal_mobile/application/ride/ride_midtrip_route_change_gateway.dart';
+import 'package:yoldaal_mobile/controllers/ride_midtrip_route_change_controller.dart';
+
 void main() {
   final now = DateTime.utc(2026, 8, 1, 12);
   final origin = GeoCoordinate(latitude: 41, longitude: 29);
@@ -59,11 +63,10 @@ void main() {
   DriverPlanPaymentStatus paymentStatus(
     DriverPlanPaymentOutcome outcome, {
     required String purchaseOperationId,
-  }) =>
-      DriverPlanPaymentStatus(
-        purchaseOperationId: purchaseOperationId,
-        outcome: outcome,
-      );
+  }) => DriverPlanPaymentStatus(
+    purchaseOperationId: purchaseOperationId,
+    outcome: outcome,
+  );
 
   DriverPlanPurchaseController purchaseController(_PurchaseGateway gateway) =>
       DriverPlanPurchaseController(
@@ -668,40 +671,39 @@ void main() {
     },
   );
 
-  testWidgets(
-    'repeated same settled operation notification is deduped',
-    (tester) async {
-      final passes = _Passes(null);
-      final center = controller(
-        loadedProfile: profile(DriverProfileStatus.approved),
-        passes: passes,
-      );
-      final gateway = _PurchaseGateway()
-        ..recoveryStatus = paymentStatus(
-          DriverPlanPaymentOutcome.pending,
-          purchaseOperationId: operationId('a'),
-        );
-      final purchase = purchaseController(gateway);
-      addTearDown(purchase.dispose);
-
-      await purchase.recoverLatestPaymentStatus();
-      await show(tester, center, purchaseController: purchase);
-
-      gateway.statusResult = paymentStatus(
-        DriverPlanPaymentOutcome.settled,
+  testWidgets('repeated same settled operation notification is deduped', (
+    tester,
+  ) async {
+    final passes = _Passes(null);
+    final center = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      passes: passes,
+    );
+    final gateway = _PurchaseGateway()
+      ..recoveryStatus = paymentStatus(
+        DriverPlanPaymentOutcome.pending,
         purchaseOperationId: operationId('a'),
       );
+    final purchase = purchaseController(gateway);
+    addTearDown(purchase.dispose);
 
-      await purchase.refreshPaymentStatus();
-      await tester.pumpAndSettle();
-      expect(passes.calls, 2);
+    await purchase.recoverLatestPaymentStatus();
+    await show(tester, center, purchaseController: purchase);
 
-      await purchase.refreshPaymentStatus();
-      await tester.pumpAndSettle();
+    gateway.statusResult = paymentStatus(
+      DriverPlanPaymentOutcome.settled,
+      purchaseOperationId: operationId('a'),
+    );
 
-      expect(passes.calls, 2);
-    },
-  );
+    await purchase.refreshPaymentStatus();
+    await tester.pumpAndSettle();
+    expect(passes.calls, 2);
+
+    await purchase.refreshPaymentStatus();
+    await tester.pumpAndSettle();
+
+    expect(passes.calls, 2);
+  });
 
   testWidgets('distinct settled operation may reload once', (tester) async {
     final passes = _Passes(null);
@@ -744,75 +746,74 @@ void main() {
     expect(passes.calls, 3);
   });
 
-  testWidgets(
-    'purchase controller replacement detaches old and observes new',
-    (tester) async {
-      final passes = _Passes(null);
-      final center = controller(
-        loadedProfile: profile(DriverProfileStatus.approved),
-        passes: passes,
-      );
+  testWidgets('purchase controller replacement detaches old and observes new', (
+    tester,
+  ) async {
+    final passes = _Passes(null);
+    final center = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      passes: passes,
+    );
 
-      final firstGateway = _PurchaseGateway()
-        ..recoveryStatus = paymentStatus(
-          DriverPlanPaymentOutcome.pending,
-          purchaseOperationId: operationId('a'),
-        );
-      final secondGateway = _PurchaseGateway()
-        ..recoveryStatus = paymentStatus(
-          DriverPlanPaymentOutcome.pending,
-          purchaseOperationId: operationId('b'),
-        );
-
-      final first = purchaseController(firstGateway);
-      final second = purchaseController(secondGateway);
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
-
-      await first.recoverLatestPaymentStatus();
-      await second.recoverLatestPaymentStatus();
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DriverCenterScreen(
-            controller: center,
-            driverPlanPurchaseController: first,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(passes.calls, 1);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DriverCenterScreen(
-            controller: center,
-            driverPlanPurchaseController: second,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      firstGateway.statusResult = paymentStatus(
-        DriverPlanPaymentOutcome.settled,
+    final firstGateway = _PurchaseGateway()
+      ..recoveryStatus = paymentStatus(
+        DriverPlanPaymentOutcome.pending,
         purchaseOperationId: operationId('a'),
       );
-      await first.refreshPaymentStatus();
-      await tester.pumpAndSettle();
-
-      expect(passes.calls, 1);
-
-      secondGateway.statusResult = paymentStatus(
-        DriverPlanPaymentOutcome.settled,
+    final secondGateway = _PurchaseGateway()
+      ..recoveryStatus = paymentStatus(
+        DriverPlanPaymentOutcome.pending,
         purchaseOperationId: operationId('b'),
       );
-      await second.refreshPaymentStatus();
-      await tester.pumpAndSettle();
 
-      expect(passes.calls, 2);
-    },
-  );
+    final first = purchaseController(firstGateway);
+    final second = purchaseController(secondGateway);
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+
+    await first.recoverLatestPaymentStatus();
+    await second.recoverLatestPaymentStatus();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverCenterScreen(
+          controller: center,
+          driverPlanPurchaseController: first,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(passes.calls, 1);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverCenterScreen(
+          controller: center,
+          driverPlanPurchaseController: second,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    firstGateway.statusResult = paymentStatus(
+      DriverPlanPaymentOutcome.settled,
+      purchaseOperationId: operationId('a'),
+    );
+    await first.refreshPaymentStatus();
+    await tester.pumpAndSettle();
+
+    expect(passes.calls, 1);
+
+    secondGateway.statusResult = paymentStatus(
+      DriverPlanPaymentOutcome.settled,
+      purchaseOperationId: operationId('b'),
+    );
+    await second.refreshPaymentStatus();
+    await tester.pumpAndSettle();
+
+    expect(passes.calls, 2);
+  });
 
   testWidgets('screen dispose detaches payment listener', (tester) async {
     final passes = _Passes(null);
@@ -833,9 +834,7 @@ void main() {
 
     expect(passes.calls, 1);
 
-    await tester.pumpWidget(
-      const MaterialApp(home: SizedBox.shrink()),
-    );
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
     await tester.pumpAndSettle();
 
     gateway.statusResult = paymentStatus(
@@ -848,46 +847,108 @@ void main() {
     expect(passes.calls, 1);
   });
 
-  testWidgets(
-    'center reload failure has no automatic retry loop',
-    (tester) async {
-      final passes = _Passes(null);
-      final center = controller(
-        loadedProfile: profile(DriverProfileStatus.approved),
-        passes: passes,
-      );
-      final gateway = _PurchaseGateway()
-        ..recoveryStatus = paymentStatus(
-          DriverPlanPaymentOutcome.pending,
-          purchaseOperationId: operationId('a'),
-        );
-      final purchase = purchaseController(gateway);
-      addTearDown(purchase.dispose);
-
-      await purchase.recoverLatestPaymentStatus();
-      await show(tester, center, purchaseController: purchase);
-
-      expect(passes.calls, 1);
-
-      passes.error = StateError('TEST_PASS_READ_FAILURE');
-      gateway.statusResult = paymentStatus(
-        DriverPlanPaymentOutcome.settled,
+  testWidgets('center reload failure has no automatic retry loop', (
+    tester,
+  ) async {
+    final passes = _Passes(null);
+    final center = controller(
+      loadedProfile: profile(DriverProfileStatus.approved),
+      passes: passes,
+    );
+    final gateway = _PurchaseGateway()
+      ..recoveryStatus = paymentStatus(
+        DriverPlanPaymentOutcome.pending,
         purchaseOperationId: operationId('a'),
       );
+    final purchase = purchaseController(gateway);
+    addTearDown(purchase.dispose);
 
-      await purchase.refreshPaymentStatus();
-      await tester.pumpAndSettle();
+    await purchase.recoverLatestPaymentStatus();
+    await show(tester, center, purchaseController: purchase);
 
-      expect(passes.calls, 2);
-      expect(center.status, DriverCenterStatus.error);
+    expect(passes.calls, 1);
 
-      await purchase.refreshPaymentStatus();
-      await tester.pumpAndSettle();
+    passes.error = StateError('TEST_PASS_READ_FAILURE');
+    gateway.statusResult = paymentStatus(
+      DriverPlanPaymentOutcome.settled,
+      purchaseOperationId: operationId('a'),
+    );
 
-      expect(passes.calls, 2);
-      expect(center.status, DriverCenterStatus.error);
-    },
-  );}
+    await purchase.refreshPaymentStatus();
+    await tester.pumpAndSettle();
+
+    expect(passes.calls, 2);
+    expect(center.status, DriverCenterStatus.error);
+
+    await purchase.refreshPaymentStatus();
+    await tester.pumpAndSettle();
+
+    expect(passes.calls, 2);
+    expect(center.status, DriverCenterStatus.error);
+  });
+  testWidgets('midtrip runtime driver key is exact inProgress only', (
+    tester,
+  ) async {
+    for (final status in <RideStatus>[
+      RideStatus.driverEnRoute,
+      RideStatus.inProgress,
+    ]) {
+      final gateway = _RideGateway()
+        ..activeRide = _midtripRuntimeRide(
+          rideId: 'driver_midtrip_runtime',
+          status: status,
+        );
+
+      final rides = DriverRideController(gateway: gateway, repository: gateway);
+
+      await rides.recover();
+
+      final midtrip = RideMidtripRouteChangeController(
+        rideListenable: rides,
+        rideId: () => rides.ride?.rideId,
+        rideStatus: () => rides.ride?.status,
+        eventGateway: _MidtripScreenEventGateway(),
+        routeChangeGateway: _MidtripScreenRouteGateway(),
+      );
+
+      final center = controller(
+        loadedProfile: profile(DriverProfileStatus.approved),
+        loadedPass: pass(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DriverCenterScreen(
+            controller: center,
+            rideController: rides,
+            midtripRouteChangeController: midtrip,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      final panel = find.byKey(
+        const ValueKey('driver-midtrip-route-change-driver_midtrip_runtime'),
+      );
+
+      if (status == RideStatus.inProgress) {
+        expect(panel, findsOneWidget);
+      } else {
+        expect(panel, findsNothing);
+      }
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      midtrip.dispose();
+      rides.dispose();
+      center.dispose();
+    }
+  });
+}
 
 const fixturePoint = RideLocation(
   latitude: 41.0082,
@@ -1147,3 +1208,41 @@ class _Publisher implements PublishReturnRouteGateway {
     required int validForSeconds,
   }) => throw UnimplementedError();
 }
+
+class _MidtripScreenEventGateway
+    implements RideDropoffChangeProposalEventGateway {
+  @override
+  Stream<List<String>> watchProposalIds({required String rideId}) =>
+      Stream<List<String>>.value(const <String>[]);
+}
+
+class _MidtripScreenRouteGateway implements RideMidtripRouteChangeGateway {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('Unexpected route-change gateway call.');
+}
+
+CanonicalRide _midtripRuntimeRide({
+  required String rideId,
+  required RideStatus status,
+}) => CanonicalRide(
+  rideId: rideId,
+  driverId: 'fixture_driver_profile',
+  status: status,
+  version: 2,
+  pickup: const RideLocation(
+    latitude: 41.0082,
+    longitude: 28.9784,
+    addressLabel: 'Fixture pickup',
+  ),
+  dropoff: const RideLocation(
+    latitude: 41.0151,
+    longitude: 28.9795,
+    addressLabel: 'Fixture dropoff',
+  ),
+  route: const RideRoute(
+    distanceMeters: 1400,
+    durationSeconds: 420,
+    encodedPolyline: 'fixture_polyline',
+  ),
+);

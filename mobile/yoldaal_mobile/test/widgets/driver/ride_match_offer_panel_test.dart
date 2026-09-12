@@ -97,6 +97,26 @@ void main() {
 
     expect(find.text('Varış: Bostancı'), findsOneWidget);
 
+    expect(
+      find.text('Alış sapması: 900 m / 180 sn'),
+      findsOneWidget,
+    );
+
+    expect(
+      find.text('Bırakış sapması: 1200 m / 240 sn'),
+      findsOneWidget,
+    );
+
+    expect(
+      find.text(
+        'Yolcu yolculuğu: yaklaşık '
+        '10000 m / 1200 sn',
+      ),
+      findsOneWidget,
+    );
+
+    expect(find.text('Kalan süre: 2 dk'), findsOneWidget);
+
     for (final forbidden in [
       'driver-secret',
       'passenger-secret',
@@ -189,6 +209,12 @@ RideMatchOffer _offer({required DateTime expiresAt}) => RideMatchOffer(
     longitude: 29.0949,
     addressLabel: 'Bostancı',
   ),
+  pickupDetourMeters: 900,
+  pickupDetourSeconds: 180,
+  dropoffDetourMeters: 1200,
+  dropoffDetourSeconds: 240,
+  passengerTripDistanceMeters: 10000,
+  passengerTripDurationSeconds: 1200,
   expiresAt: expiresAt,
 );
 

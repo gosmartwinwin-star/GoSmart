@@ -44,7 +44,7 @@ export const validateRequestId = (value: unknown): string => {
   return value;
 };
 
-const validateLocation = (value: unknown, reason: string): RideLocationInput => {
+export const validateRideLocation = (value: unknown, reason: string): RideLocationInput => {
   const input = exactObject(value, ["latitude", "longitude", "addressLabel"], reason);
   const latitude = input.latitude;
   const longitude = input.longitude;
@@ -68,8 +68,8 @@ export const validateCreateRideRequestPayload =
   (value: unknown): CreateRideRequestInput => {
     const input = exactObject(value, ["requestId", "pickup", "dropoff"],
       "invalid_create_ride_payload");
-    const pickup = validateLocation(input.pickup, "invalid_pickup");
-    const dropoff = validateLocation(input.dropoff, "invalid_dropoff");
+    const pickup = validateRideLocation(input.pickup, "invalid_pickup");
+    const dropoff = validateRideLocation(input.dropoff, "invalid_dropoff");
     if (coordinatesEqual(pickup, dropoff)) {
       throw failure("invalid-argument", "identical_ride_locations");
     }
@@ -145,7 +145,7 @@ export const requireRideTransition = (current: RideStatus,
 
 export const buildInitialRide = (passengerId: string,
   input: CreateRideRequestInput, route: RideRoute, now: Timestamp) => ({
-  passengerId, driverId: null, status: "matching" as const, version: 1,
+  passengerId, driverId: null, status: "matching" as const, version: 1, matchRound: 1,
   pickup: input.pickup, dropoff: input.dropoff,
   route: {...route, computedAt: now}, createdAt: now, updatedAt: now,
   acceptedAt: null, driverEnRouteAt: null, arrivedAt: null, startedAt: null,

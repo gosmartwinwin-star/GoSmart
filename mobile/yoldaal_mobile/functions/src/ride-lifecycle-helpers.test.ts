@@ -14,6 +14,7 @@ import {
   serializeActiveRide,
   validateCancelRidePayload,
   validateCreateRideRequestPayload,
+  validateRideLocation,
   validateRequestId,
 } from "./ride-lifecycle-helpers.js";
 
@@ -163,4 +164,42 @@ test("ride callables preserve auth, transactions, locks and events", () => {
   assert.match(orchestration, /transaction\.delete\(passengerActiveRef\)/u);
   assert.match(orchestration, /rideCancelled/u);
   assert.match(orchestration, /operationData\.result/u);
+  assert.match(
+    orchestration,
+    /transaction\.update\(rideRef, \{driverId, status: "driverEnRoute",[\s\S]{0,220}returnRouteId: matchAuthority\.returnRouteId/u,
+  );
+});
+test("shared ride location validator preserves canonical location contract", () => {
+  assert.deepEqual(
+    validateRideLocation(
+      {
+        latitude: 41.0082,
+        longitude: 28.9784,
+        addressLabel: "  Taksim  ",
+      },
+      "invalid_dropoff",
+    ),
+    {
+      latitude: 41.0082,
+      longitude: 28.9784,
+      addressLabel: "Taksim",
+    },
+  );
+
+  assert.throws(
+    () =>
+      validateRideLocation(
+        {
+          latitude: 91,
+          longitude: 28.9784,
+          addressLabel: "Taksim",
+        },
+        "invalid_dropoff",
+      ),
+    (error: unknown) =>
+      error instanceof HttpsError &&
+      error.code === "invalid-argument" &&
+      (error.details as {reason?: unknown})?.reason ===
+        "invalid_dropoff",
+  );
 });

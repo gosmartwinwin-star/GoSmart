@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../application/location/location_access_gateway.dart';
@@ -7,6 +8,7 @@ typedef LocationServiceEnabledReader = Future<bool> Function();
 typedef LocationPermissionReader = Future<LocationPermission> Function();
 
 typedef DeviceLocationLoader = Future<DeviceLocation> Function();
+typedef DeviceLocationStreamLoader = Stream<DeviceLocation> Function();
 
 typedef LocationSettingsOpener = Future<bool> Function();
 
@@ -16,6 +18,7 @@ class LocationAccessService implements LocationAccessGateway {
     LocationPermissionReader? checkPermission,
     LocationPermissionReader? requestPermission,
     DeviceLocationLoader? loadPosition,
+    DeviceLocationStreamLoader? loadPositionStream,
     LocationSettingsOpener? openAppSettings,
     LocationSettingsOpener? openLocationSettings,
   }) : _isServiceEnabled =
@@ -23,6 +26,8 @@ class LocationAccessService implements LocationAccessGateway {
        _checkPermission = checkPermission ?? Geolocator.checkPermission,
        _requestPermission = requestPermission ?? Geolocator.requestPermission,
        _loadPosition = loadPosition ?? _defaultLoadPosition,
+       _loadPositionStream =
+           loadPositionStream ?? _defaultLoadPositionStream,
        _openAppSettings = openAppSettings ?? Geolocator.openAppSettings,
        _openLocationSettings =
            openLocationSettings ?? Geolocator.openLocationSettings;
@@ -34,6 +39,8 @@ class LocationAccessService implements LocationAccessGateway {
   final LocationPermissionReader _requestPermission;
 
   final DeviceLocationLoader _loadPosition;
+
+  final DeviceLocationStreamLoader _loadPositionStream;
 
   final LocationSettingsOpener _openAppSettings;
 
@@ -107,6 +114,57 @@ class LocationAccessService implements LocationAccessGateway {
     }
   }
 
+  Stream<DeviceLocation> locationStream() => _loadPositionStream();
+
+  static Stream<DeviceLocation> _defaultLoadPositionStream() {
+    final LocationSettings settings;
+
+    if (
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.android
+    ) {
+      settings = AndroidSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 5),
+        foregroundNotificationConfig:
+            const ForegroundNotificationConfig(
+              notificationTitle: 'YoldaAl aktif yolculuk',
+              notificationText:
+                  'Aktif yolculuk sırasında konumunuz paylaşılıyor.',
+              notificationChannelName: 'YoldaAl yolculuk konumu',
+              setOngoing: true,
+            ),
+      );
+    } else if (
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.iOS
+    ) {
+      settings = AppleSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+        allowBackgroundLocationUpdates: true,
+      );
+    } else {
+      settings = const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+      );
+    }
+
+    return Geolocator.getPositionStream(
+      locationSettings: settings,
+    )
+        .map(
+          (position) => DeviceLocation(
+            latitude: position.latitude,
+            longitude: position.longitude,
+          ),
+        )
+        .where((location) => location.isValid);
+  }
   static Future<DeviceLocation> _defaultLoadPosition() async {
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),

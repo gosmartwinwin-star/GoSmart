@@ -52,18 +52,18 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDiwvUnlg_flBUVxWoRXZmd2o1yQsmLm8Y',
-    appId: '1:367158650760:android:98d90f44e01c1896cbfc3d',
+    appId: '1:367158650760:android:bd511800f763be17cbfc3d',
     messagingSenderId: '367158650760',
     projectId: 'gosmart-fd8f6',
     storageBucket: 'gosmart-fd8f6.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBm53BUi08mjQdQDLVPm_CybOPguysauvM',
-    appId: '1:367158650760:ios:89050f1838df9acfcbfc3d',
+    appId: '1:367158650760:ios:d7074a2ccb6a796acbfc3d',
     messagingSenderId: '367158650760',
     projectId: 'gosmart-fd8f6',
     storageBucket: 'gosmart-fd8f6.firebasestorage.app',
-    iosBundleId: 'com.example.gosmartMobile',
+    iosBundleId: 'com.yoldaal.app',
   );
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBm53BUi08mjQdQDLVPm_CybOPguysauvM',

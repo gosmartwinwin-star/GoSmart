@@ -85,8 +85,10 @@ class RouteDeviationService implements RouteDeviationGateway {
   @override
   Future<RouteDeviationResult> compute({
     required RouteAnchorResult anchors,
+    required GeoCoordinate pickupOrigin,
     required GeoCoordinate pickup,
     required GeoCoordinate dropoff,
+    required GeoCoordinate dropoffDestination,
   }) async {
     if (!anchors.directionCompatible) {
       throw ArgumentError(
@@ -96,10 +98,10 @@ class RouteDeviationService implements RouteDeviationGateway {
     }
 
     final payload = <String, Object?>{
-      'pickupAnchor': _coordinatePayload(anchors.pickupAnchor),
+      'pickupAnchor': _coordinatePayload(pickupOrigin),
       'pickup': _coordinatePayload(pickup),
       'dropoff': _coordinatePayload(dropoff),
-      'dropoffAnchor': _coordinatePayload(anchors.dropoffAnchor),
+      'dropoffAnchor': _coordinatePayload(dropoffDestination),
       'pickupRouteIndex': anchors.pickupRouteIndex,
       'dropoffRouteIndex': anchors.dropoffRouteIndex,
     };

@@ -11,6 +11,10 @@ import 'package:yoldaal_mobile/models/route_result_model.dart';
 import 'package:yoldaal_mobile/screens/home/home_screen.dart';
 import 'package:yoldaal_mobile/widgets/map/yoldaal_map.dart';
 
+import 'package:yoldaal_mobile/application/ride/ride_dropoff_change_proposal_event_gateway.dart';
+import 'package:yoldaal_mobile/application/ride/ride_midtrip_route_change_gateway.dart';
+import 'package:yoldaal_mobile/controllers/ride_midtrip_route_change_controller.dart';
+
 void main() {
   testWidgets('home denied forever shows app settings', (tester) async {
     final rideGateway = _FakeRideGateway();
@@ -302,6 +306,78 @@ void main() {
       expect(syntheticTaxiMarkers, isEmpty);
     },
   );
+
+  testWidgets('midtrip runtime passenger key is exact inProgress only', (
+    tester,
+  ) async {
+    for (final status in <RideStatus>[
+      RideStatus.driverEnRoute,
+      RideStatus.inProgress,
+    ]) {
+      final gateway = _MidtripPassengerRideGateway(
+        _midtripRuntimeRide(
+          rideId: 'passenger_midtrip_runtime',
+          status: status,
+        ),
+      );
+
+      final rides = PassengerRideController(
+        gateway: gateway,
+        repository: gateway,
+      );
+
+      await rides.recover();
+
+      final midtrip = RideMidtripRouteChangeController(
+        rideListenable: rides,
+        rideId: () => rides.ride?.rideId,
+        rideStatus: () => rides.ride?.status,
+        eventGateway: _MidtripScreenEventGateway(),
+        routeChangeGateway: _MidtripScreenRouteGateway(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeScreen(
+            rideController: rides,
+            midtripRouteChangeController: midtrip,
+            locationAccess: _HomeLocationGateway(
+              LocationAccessIssue.permissionDenied,
+            ),
+            authenticate: () async => true,
+            enableSyntheticTaxis: false,
+            routeLoader: ({required pickup, required destination}) async =>
+                const RouteResultModel(
+                  points: [],
+                  distanceMeters: 0,
+                  durationSeconds: 0,
+                ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump();
+
+      final panel = find.byKey(
+        const ValueKey(
+          'passenger-midtrip-route-change-passenger_midtrip_runtime',
+        ),
+      );
+
+      if (status == RideStatus.inProgress) {
+        expect(panel, findsOneWidget);
+      } else {
+        expect(panel, findsNothing);
+      }
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      midtrip.dispose();
+      rides.dispose();
+    }
+  });
 }
 
 class _FakeRideGateway implements RideGateway, RideStreamRepository {
@@ -408,3 +484,59 @@ class _FakeGoogleMapController implements GoogleMapController {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+
+class _MidtripPassengerRideGateway
+    implements RideGateway, RideStreamRepository {
+  _MidtripPassengerRideGateway(this.activeRide);
+
+  final CanonicalRide activeRide;
+
+  @override
+  Future<CanonicalRide?> getMyActiveRide() async => activeRide;
+
+  @override
+  Stream<CanonicalRide> watchRide(String rideId) =>
+      const Stream<CanonicalRide>.empty();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('Unexpected passenger ride gateway call.');
+}
+
+class _MidtripScreenEventGateway
+    implements RideDropoffChangeProposalEventGateway {
+  @override
+  Stream<List<String>> watchProposalIds({required String rideId}) =>
+      Stream<List<String>>.value(const <String>[]);
+}
+
+class _MidtripScreenRouteGateway implements RideMidtripRouteChangeGateway {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('Unexpected route-change gateway call.');
+}
+
+CanonicalRide _midtripRuntimeRide({
+  required String rideId,
+  required RideStatus status,
+}) => CanonicalRide(
+  rideId: rideId,
+  driverId: 'fixture_driver_profile',
+  status: status,
+  version: 2,
+  pickup: const RideLocation(
+    latitude: 41.0082,
+    longitude: 28.9784,
+    addressLabel: 'Fixture pickup',
+  ),
+  dropoff: const RideLocation(
+    latitude: 41.0151,
+    longitude: 28.9795,
+    addressLabel: 'Fixture dropoff',
+  ),
+  route: const RideRoute(
+    distanceMeters: 1400,
+    durationSeconds: 420,
+    encodedPolyline: 'fixture_polyline',
+  ),
+);

@@ -122,6 +122,13 @@ export const cancelRideForActor = async (
   const operationRef = firestore.collection("rideOperations")
     .doc(rideOperationId(actorUid, "cancelRide", input.requestId));
   const digest = rideRequestDigest("cancelRide", input);
+  const existing = await operationRef.get();
+  if (existing.exists) {
+    return replayOperation(
+      existing.data() ?? {},
+      digest,
+    );
+  }
   const now = dependencies.now?.() ?? Timestamp.now();
   try {
     return await firestore.runTransaction(async (transaction) => {
@@ -194,6 +201,60 @@ export const cancelRideForActor = async (
           {reason: "active_ride_pointer_inconsistent"});
       }
       const nextVersion = version + 1;
+
+      if (actorType === "driver") {
+        const currentMatchRound = data.matchRound === undefined ?
+          1 : requirePositiveVersion(data.matchRound);
+        const nextMatchRound = currentMatchRound + 1;
+        const result = {rideId: ride.id, status: "matching",
+          version: nextVersion, matchRound: nextMatchRound};
+
+        transaction.update(rideRef, {
+          driverId: null,
+          status: "matching",
+          version: nextVersion,
+          matchRound: nextMatchRound,
+          updatedAt: now,
+          acceptedAt: null,
+          driverEnRouteAt: null,
+          arrivedAt: null,
+          startedAt: null,
+          cancelledAt: null,
+          cancelledBy: null,
+          terminalReason: null,
+        });
+        transaction.update(passengerActiveRef, {
+          status: "matching",
+          updatedAt: now,
+        });
+        if (driverActiveRef && driverPointer?.exists) {
+          transaction.delete(driverActiveRef);
+        }
+        transaction.create(rideRef.collection("events").doc(
+          `rideDriverCancelledForRematch_${operationRef.id.slice(0, 32)}`),
+        {
+          type: "rideDriverCancelledForRematch",
+          fromStatus: status,
+          toStatus: "matching",
+          actorType: "driver",
+          actorId: actorUid,
+          driverId,
+          reasonCode: input.reasonCode,
+          matchRound: nextMatchRound,
+          createdAt: now,
+        });
+        transaction.create(operationRef, {
+          actorUid,
+          callableName: "cancelRide",
+          requestDigest: digest,
+          status: "completed",
+          result,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return result;
+      }
+
       const result = {rideId: ride.id, status: "cancelled",
         version: nextVersion, cancelledAtMillis: now.toMillis(),
         cancelledBy: actorType, terminalReason: input.reasonCode};
@@ -213,6 +274,31 @@ export const cancelRideForActor = async (
     });
   } catch (error: unknown) {
     if (error instanceof HttpsError) throw error;
+
+    try {
+      const recoveredOperation =
+        await operationRef.get();
+
+      const recoveredData =
+        recoveredOperation.data() ?? {};
+
+      if (
+        recoveredOperation.exists &&
+        recoveredData.status === "completed" &&
+        typeof recoveredData.result === "object" &&
+        recoveredData.result !== null
+      ) {
+        return replayOperation(
+          recoveredData,
+          digest,
+        );
+      }
+    } catch (recoveryError: unknown) {
+      if (recoveryError instanceof HttpsError) {
+        throw recoveryError;
+      }
+    }
+
     throw new HttpsError("unavailable", "Yolculuk iptal edilemedi.",
       {reason: "ride_persistence_failed"});
   }
@@ -317,7 +403,8 @@ export const acceptRideForDriver = async (
       const result = {rideId: ride.id, status: "driverEnRoute",
         version: nextVersion, updatedAtMillis: now.toMillis()};
       transaction.update(rideRef, {driverId, status: "driverEnRoute",
-        version: nextVersion, acceptedAt: now, driverEnRouteAt: now, updatedAt: now});
+        version: nextVersion, returnRouteId: matchAuthority.returnRouteId,
+        acceptedAt: now, driverEnRouteAt: now, updatedAt: now});
       transaction.update(passengerRef, {status: "driverEnRoute", updatedAt: now});
       transaction.create(driverActiveRef,
         {rideId: ride.id, status: "driverEnRoute", updatedAt: now});

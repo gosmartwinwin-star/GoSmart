@@ -94,6 +94,7 @@ const seedMatchAuthority = async (
       rideMatchOfferDocumentId(
         driverId,
         rideId,
+        rideVersion,
       ),
     );
 
@@ -620,26 +621,261 @@ test("different complete request cannot mutate terminal ride", async () => {
     type === "rideCompleted").length, 1);
 });
 
-test("driver and passenger cancel race has one terminal transition", async () => {
+test("driver cancel from driverEnRoute rematches same ride and releases driver", async () => {
+  const passenger = identity("driver_cancel_enroute_passenger");
+  const driver = identity("driver_cancel_enroute_driver");
+  const driverId = await seedDriver(driver);
+  const created = await createFor(passenger, "driver_cancel_enroute_create");
+  const accepted = await acceptForDriver(driver,
+    acceptPayload(created.rideId as string,
+      `${identity("driver_cancel_enroute_accept")}_123456789`));
+  const rideId = created.rideId as string;
+  const acceptedVersion = accepted.version as number;
+
+  const before = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(before.get("status"), "driverEnRoute");
+  assert.equal(before.get("version"), acceptedVersion);
+  assert.equal(before.get("matchRound"), 1);
+
+  const result = await cancelRideForActor({firestore}, driver, {
+    rideId,
+    requestId: `${identity("driver_cancel_enroute_request")}_123456789`,
+    expectedVersion: acceptedVersion,
+    reasonCode: "driver_cancelled",
+  });
+
+  assert.equal(result.rideId, rideId);
+  assert.equal(result.status, "matching");
+  assert.equal(result.version, acceptedVersion + 1);
+  assert.equal(result.matchRound, 2);
+
+  const ride = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(ride.get("status"), "matching");
+  assert.equal(ride.get("version"), acceptedVersion + 1);
+  assert.equal(ride.get("matchRound"), 2);
+  assert.equal(ride.get("driverId"), null);
+  assert.equal(ride.get("acceptedAt"), null);
+  assert.equal(ride.get("driverEnRouteAt"), null);
+  assert.equal(ride.get("arrivedAt"), null);
+  assert.equal(ride.get("startedAt"), null);
+  assert.equal(ride.get("cancelledAt"), null);
+  assert.equal(ride.get("cancelledBy"), null);
+  assert.equal(ride.get("terminalReason"), null);
+
+  const passengerPointer = await firestore
+    .collection("passengerActiveRides")
+    .doc(passenger)
+    .get();
+  assert.equal(passengerPointer.exists, true);
+  assert.equal(passengerPointer.get("rideId"), rideId);
+  assert.equal(passengerPointer.get("status"), "matching");
+
+  assert.equal(
+    (await firestore.collection("driverActiveRides").doc(driverId).get()).exists,
+    false,
+  );
+
+  const events = await eventsFor(rideId);
+  const rematchEvents = events.docs.filter((event) =>
+    event.get("type") === "rideDriverCancelledForRematch");
+  assert.equal(rematchEvents.length, 1);
+  assert.equal(rematchEvents[0].get("fromStatus"), "driverEnRoute");
+  assert.equal(rematchEvents[0].get("toStatus"), "matching");
+  assert.equal(rematchEvents[0].get("reasonCode"), "driver_cancelled");
+  assert.equal(rematchEvents[0].get("matchRound"), 2);
+});
+
+test("driver cancel from driverArrived rematches same ride and resets arrival", async () => {
+  const passenger = identity("driver_cancel_arrived_passenger");
+  const driver = identity("driver_cancel_arrived_driver");
+  const driverId = await seedDriver(driver);
+  const created = await createFor(passenger, "driver_cancel_arrived_create");
+  const accepted = await acceptForDriver(driver,
+    acceptPayload(created.rideId as string,
+      `${identity("driver_cancel_arrived_accept")}_123456789`));
+  const rideId = created.rideId as string;
+
+  const arrived = await transitionRideForDriver(
+    {firestore},
+    driver,
+    acceptPayload(
+      rideId,
+      `${identity("driver_cancel_arrived_transition")}_123456789`,
+      accepted.version as number,
+    ),
+    DRIVER_TRANSITIONS.markDriverArrived,
+  );
+
+  const arrivedVersion = arrived.version as number;
+
+  const before = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(before.get("status"), "driverArrived");
+  assert.equal(before.get("version"), arrivedVersion);
+  assert.equal(before.get("matchRound"), 1);
+  assert.equal(before.get("arrivedAt") !== null, true);
+
+  const result = await cancelRideForActor({firestore}, driver, {
+    rideId,
+    requestId: `${identity("driver_cancel_arrived_request")}_123456789`,
+    expectedVersion: arrivedVersion,
+    reasonCode: "driver_cancelled",
+  });
+
+  assert.equal(result.rideId, rideId);
+  assert.equal(result.status, "matching");
+  assert.equal(result.version, arrivedVersion + 1);
+  assert.equal(result.matchRound, 2);
+
+  const ride = await firestore.collection("rides").doc(rideId).get();
+  assert.equal(ride.get("status"), "matching");
+  assert.equal(ride.get("version"), arrivedVersion + 1);
+  assert.equal(ride.get("matchRound"), 2);
+  assert.equal(ride.get("driverId"), null);
+  assert.equal(ride.get("acceptedAt"), null);
+  assert.equal(ride.get("driverEnRouteAt"), null);
+  assert.equal(ride.get("arrivedAt"), null);
+  assert.equal(ride.get("startedAt"), null);
+  assert.equal(ride.get("cancelledAt"), null);
+  assert.equal(ride.get("cancelledBy"), null);
+  assert.equal(ride.get("terminalReason"), null);
+
+  const passengerPointer = await firestore
+    .collection("passengerActiveRides")
+    .doc(passenger)
+    .get();
+  assert.equal(passengerPointer.exists, true);
+  assert.equal(passengerPointer.get("rideId"), rideId);
+  assert.equal(passengerPointer.get("status"), "matching");
+
+  assert.equal(
+    (await firestore.collection("driverActiveRides").doc(driverId).get()).exists,
+    false,
+  );
+
+  const events = await eventsFor(rideId);
+  const rematchEvents = events.docs.filter((event) =>
+    event.get("type") === "rideDriverCancelledForRematch");
+  assert.equal(rematchEvents.length, 1);
+  assert.equal(rematchEvents[0].get("fromStatus"), "driverArrived");
+  assert.equal(rematchEvents[0].get("toStatus"), "matching");
+  assert.equal(rematchEvents[0].get("reasonCode"), "driver_cancelled");
+  assert.equal(rematchEvents[0].get("matchRound"), 2);
+});
+
+test("driver and passenger cancel race has one canonical winner", async () => {
   const passenger = identity("cancel_actor_race_passenger");
   const driver = identity("cancel_actor_race_driver");
-  await seedDriver(driver);
+  const driverId = await seedDriver(driver);
   const created = await createFor(passenger, "cancel_actor_race_create");
   const accepted = await acceptForDriver(driver,
-    acceptPayload(created.rideId as string, `${identity("cancel_actor_accept")}_123456789`));
+    acceptPayload(created.rideId as string,
+      `${identity("cancel_actor_accept")}_123456789`));
   const rideId = created.rideId as string;
+  const acceptedVersion = accepted.version as number;
+
   const results = await Promise.allSettled([
-    cancelRideForActor({firestore}, passenger, {...cancelPayload(rideId,
-      `${identity("cancel_actor_passenger")}_123456789`),
-    expectedVersion: accepted.version}),
-    cancelRideForActor({firestore}, driver, {rideId,
+    cancelRideForActor({firestore}, passenger, {
+      ...cancelPayload(
+        rideId,
+        `${identity("cancel_actor_passenger")}_123456789`,
+      ),
+      expectedVersion: acceptedVersion,
+    }),
+    cancelRideForActor({firestore}, driver, {
+      rideId,
       requestId: `${identity("cancel_actor_driver")}_123456789`,
-      expectedVersion: accepted.version, reasonCode: "driver_cancelled"}),
+      expectedVersion: acceptedVersion,
+      reasonCode: "driver_cancelled",
+    }),
   ]);
-  assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+
+  assert.equal(
+    results.filter((item) => item.status === "fulfilled").length,
+    1,
+  );
+
+  const rejected = results.find(
+    (item): item is PromiseRejectedResult =>
+      item.status === "rejected",
+  );
+  assert.ok(rejected);
+  const rejectedError =
+    rejected.reason as HttpsError;
+  assert.ok(
+    [
+      "failed-precondition",
+      "unavailable",
+    ].includes(rejectedError.code),
+  );
+  assert.equal(
+    (
+      rejectedError.details as {
+        reason?: string;
+      } | undefined
+    )?.reason,
+    rejectedError.code === "failed-precondition" ?
+      "stale_ride_version" :
+      "ride_persistence_failed",
+  );
+
   const ride = await firestore.collection("rides").doc(rideId).get();
-  assert.equal(ride.get("status"), "cancelled");
-  assert.equal((await eventTypes(rideId)).filter((type) => type === "rideCancelled").length, 1);
+  assert.equal(ride.get("version"), acceptedVersion + 1);
+  assert.ok(
+    ["cancelled", "matching"].includes(
+      ride.get("status") as string,
+    ),
+  );
+
+  const events = await eventsFor(rideId);
+  const cancelledEvents = events.docs.filter((event) =>
+    event.get("type") === "rideCancelled");
+  const rematchEvents = events.docs.filter((event) =>
+    event.get("type") === "rideDriverCancelledForRematch");
+
+  assert.equal(
+    cancelledEvents.length + rematchEvents.length,
+    1,
+  );
+
+  const passengerPointer = await firestore
+    .collection("passengerActiveRides")
+    .doc(passenger)
+    .get();
+
+  const driverPointer = await firestore
+    .collection("driverActiveRides")
+    .doc(driverId)
+    .get();
+
+  assert.equal(driverPointer.exists, false);
+
+  if (ride.get("status") === "cancelled") {
+    assert.equal(cancelledEvents.length, 1);
+    assert.equal(rematchEvents.length, 0);
+    assert.equal(passengerPointer.exists, false);
+  } else {
+    assert.equal(ride.get("status"), "matching");
+    assert.equal(ride.get("driverId"), null);
+    assert.equal(ride.get("matchRound"), 2);
+    assert.equal(ride.get("acceptedAt"), null);
+    assert.equal(ride.get("driverEnRouteAt"), null);
+    assert.equal(ride.get("arrivedAt"), null);
+    assert.equal(ride.get("startedAt"), null);
+    assert.equal(ride.get("cancelledAt"), null);
+    assert.equal(ride.get("cancelledBy"), null);
+    assert.equal(ride.get("terminalReason"), null);
+
+    assert.equal(cancelledEvents.length, 0);
+    assert.equal(rematchEvents.length, 1);
+    assert.equal(
+      rematchEvents[0].get("reasonCode"),
+      "driver_cancelled",
+    );
+
+    assert.equal(passengerPointer.exists, true);
+    assert.equal(passengerPointer.get("rideId"), rideId);
+    assert.equal(passengerPointer.get("status"), "matching");
+  }
 });
 
 test("pointer mismatch rejects transition without partial writes", async () => {

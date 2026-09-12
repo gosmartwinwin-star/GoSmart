@@ -43,7 +43,7 @@ const contract =
 test(
   "backend measurement policy matches shared Flutter parity contract",
   () => {
-    assert.equal(contract.version, 1);
+    assert.equal(contract.version, 2);
 
     assert.equal(
       RETURN_ROUTE_MATCH_MAX_DETOUR_METERS,

@@ -1,9 +1,18 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import '../../widgets/ride/ride_midtrip_route_change_panel.dart';
 
 import '../../application/driver_access/driver_plan_purchase_gateway.dart';
+import '../../application/ride/ride_support_gateway.dart';
 import '../../controllers/driver_center_controller.dart';
+import '../../controllers/driver_live_tracking_controller.dart';
+import '../../controllers/driver_push_target_lifecycle_controller.dart';
+import '../../controllers/ride_midtrip_route_change_controller.dart';
+import '../../infrastructure/firestore/repositories/firestore_ride_dropoff_change_proposal_event_repository.dart';
+import '../../services/ride_midtrip_route_change_service.dart';
 import '../../controllers/driver_plan_purchase_controller.dart';
 import '../../controllers/driver_ride_controller.dart';
 import '../../controllers/driver_ride_match_offer_controller.dart';
@@ -15,7 +24,9 @@ import '../../services/ride_lifecycle_service.dart';
 import '../../services/ride_match_offer_service.dart';
 import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
+import '../../widgets/ride/ride_active_support_panel.dart';
 import '../../core/branding/yoldaal_slogans.dart';
+import '../../core/ride/secure_request_id.dart';
 import '../../domain/return_route/geo_coordinate.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_mode_repository.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_access_pass_repository.dart';
@@ -25,6 +36,9 @@ import '../../services/location_access_service.dart';
 import '../../services/active_return_route_recovery_service.dart';
 import '../../services/publish_return_route_service.dart';
 import '../../services/publish_driver_live_location_service.dart';
+import '../../services/driver_offer_push_hint_service.dart';
+import '../../services/driver_notification_permission_service.dart';
+import '../../services/driver_push_target_registration_service.dart';
 import '../../domain/driver_application/driver_application_review.dart';
 import '../../services/driver_application_review_service.dart';
 import '../../services/driver_plan_catalog_service.dart';
@@ -45,8 +59,14 @@ class DriverCenterScreen extends StatefulWidget {
   final Widget Function(DriverApplicationReview review)?
   resubmissionScreenBuilder;
   final DriverRideController? rideController;
+  final RideMidtripRouteChangeController? midtripRouteChangeController;
   final DriverRideMatchOfferController? rideMatchOfferController;
   final DriverPlanPurchaseController? driverPlanPurchaseController;
+  final DriverPushTargetLifecycle? pushTargetLifecycle;
+  final DriverOfferPushHintSource? offerPushHintSource;
+  final DriverNotificationPermissionGateway? notificationPermissionGateway;
+  final RideActiveSupportGateway? activeSupportGateway;
+  final String Function()? supportRequestIdGenerator;
 
   const DriverCenterScreen({
     super.key,
@@ -54,15 +74,22 @@ class DriverCenterScreen extends StatefulWidget {
     this.applicationScreenBuilder,
     this.resubmissionScreenBuilder,
     this.rideController,
+    this.midtripRouteChangeController,
     this.rideMatchOfferController,
     this.driverPlanPurchaseController,
+    this.pushTargetLifecycle,
+    this.offerPushHintSource,
+    this.notificationPermissionGateway,
+    this.activeSupportGateway,
+    this.supportRequestIdGenerator,
   });
 
   @override
   State<DriverCenterScreen> createState() => _DriverCenterScreenState();
 }
 
-class _DriverCenterScreenState extends State<DriverCenterScreen> {
+class _DriverCenterScreenState extends State<DriverCenterScreen>
+    with WidgetsBindingObserver {
   late final DriverCenterController controller;
   late final bool _ownsController;
   DriverRideController? rideController;
@@ -71,14 +98,27 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   late final bool _ownsMatchOfferController;
   DriverPlanPurchaseController? planPurchaseController;
   bool _ownsPlanPurchaseController = false;
+  DriverPushTargetLifecycle? _pushTargetLifecycle;
+  bool _ownsPushTargetLifecycle = false;
+  DriverOfferPushHintSource? _offerPushHintSource;
+  StreamSubscription<int>? _offerPushHintSubscription;
+  int _handledOfferPushHintRevision = 0;
+  DriverNotificationPermissionGateway? _notificationPermissionGateway;
+  DriverNotificationPermissionState? _notificationPermissionState;
+  bool _notificationPermissionRequestPending = false;
   String? _matchOfferRouteId;
   bool _driverRideRecoveryRequested = false;
   final Set<String> _entitlementReloadedSettledOperationIds = <String>{};
   StreamSubscription<User?>? _authSubscription;
+  DriverLiveTrackingController? _liveTrackingController;
+  RideMidtripRouteChangeController? _midtripRouteChangeController;
+  bool _ownsMidtripRouteChangeController = false;
+  bool _appResumed = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ownsController = widget.controller == null;
     controller =
         widget.controller ??
@@ -94,6 +134,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
           applications: DriverApplicationReviewService(),
         );
     controller.addListener(_refresh);
+    _initializePushTargetLifecycle();
     _ownsRideController =
         widget.rideController == null && widget.controller == null;
     rideController =
@@ -107,6 +148,36 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
               )
             : null);
     rideController?.addListener(_refresh);
+
+    if (_ownsRideController && rideController != null) {
+      final trackingLocation = LocationAccessService();
+
+      _liveTrackingController = DriverLiveTrackingController(
+        rideStatusListenable: rideController!,
+        rideStatus: () => rideController?.ride?.status,
+        locationStream: trackingLocation.locationStream,
+        livePresence: PublishDriverLiveLocationService(),
+      )..start();
+    }
+
+    final injectedMidtripRouteChangeController =
+        widget.midtripRouteChangeController;
+
+    if (injectedMidtripRouteChangeController != null) {
+      _midtripRouteChangeController = injectedMidtripRouteChangeController;
+    } else if (_ownsRideController && rideController != null) {
+      _ownsMidtripRouteChangeController = true;
+      _midtripRouteChangeController = RideMidtripRouteChangeController(
+        rideListenable: rideController!,
+        rideId: () => rideController?.ride?.rideId,
+        rideStatus: () => rideController?.ride?.status,
+        eventGateway: FirestoreRideDropoffChangeProposalEventRepository(),
+        routeChangeGateway: RideMidtripRouteChangeService(),
+      );
+    }
+
+    _midtripRouteChangeController?.start();
+
     _ownsMatchOfferController =
         widget.rideMatchOfferController == null && widget.controller == null;
     matchOfferController =
@@ -115,6 +186,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             ? DriverRideMatchOfferController(gateway: RideMatchOfferService())
             : null);
     matchOfferController?.addListener(_refresh);
+    _initializeOfferPushHintSource();
+    _initializeDriverNotificationPermission();
+    unawaited(_refreshDriverNotificationPermissionStatus());
     planPurchaseController = _resolvePlanPurchaseController();
     controller.load();
     _attachPlanPurchaseController();
@@ -122,14 +196,93 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
       _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
         _driverRideRecoveryRequested = false;
         if (user == null) {
+          _pushTargetLifecycle?.setEligible(false);
           unawaited(rideController?.authChanged(null));
           return;
         }
+        _syncPushTargetLifecycleEligibility();
         _syncDriverRideRecovery();
       });
     } else {
       _syncDriverRideRecovery();
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final resumed = state == AppLifecycleState.resumed;
+
+    if (_appResumed == resumed) {
+      return;
+    }
+
+    _appResumed = resumed;
+    _syncPushTargetLifecycleEligibility();
+
+    if (!resumed) {
+      matchOfferController?.stopPolling();
+      return;
+    }
+
+    unawaited(_refreshDriverNotificationPermissionStatus());
+    _syncMatchOffers();
+  }
+
+  void _initializePushTargetLifecycle() {
+    final injected = widget.pushTargetLifecycle;
+
+    if (injected != null) {
+      _pushTargetLifecycle = injected;
+      _ownsPushTargetLifecycle = false;
+      return;
+    }
+
+    if (widget.controller != null) {
+      _pushTargetLifecycle = null;
+      _ownsPushTargetLifecycle = false;
+      return;
+    }
+
+    final platform = _resolveDriverPushTargetPlatform();
+
+    if (platform == null) {
+      _pushTargetLifecycle = null;
+      _ownsPushTargetLifecycle = false;
+      return;
+    }
+
+    _pushTargetLifecycle = DriverPushTargetLifecycleController(
+      registration: DriverPushTargetRegistrationService(),
+      platform: platform,
+    );
+    _ownsPushTargetLifecycle = true;
+  }
+
+  void _initializeOfferPushHintSource() {
+    final source =
+        widget.offerPushHintSource ??
+        (widget.controller == null ? driverOfferPushHintBus : null);
+
+    _offerPushHintSource = source;
+
+    if (source == null) return;
+
+    _offerPushHintSubscription = source.revisions.listen((_) {
+      if (!mounted) return;
+      _syncMatchOffers();
+    });
+
+    if (source.revision > _handledOfferPushHintRevision) {
+      scheduleMicrotask(() {
+        if (mounted) _syncMatchOffers();
+      });
+    }
+  }
+
+  void _syncPushTargetLifecycleEligibility() {
+    _pushTargetLifecycle?.setEligible(
+      _appResumed && controller.status == DriverCenterStatus.ready,
+    );
   }
 
   DriverPlanPurchaseController? _resolvePlanPurchaseController() {
@@ -211,16 +364,29 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
   void _refresh() {
     if (!mounted) return;
     setState(() {});
+    _syncPushTargetLifecycleEligibility();
     _syncDriverRideRecovery();
     _syncMatchOffers();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pushTargetLifecycle?.setEligible(false);
+    _offerPushHintSubscription?.cancel();
+    _offerPushHintSubscription = null;
+    if (_ownsPushTargetLifecycle) {
+      _pushTargetLifecycle?.dispose();
+    }
+    matchOfferController?.stopPolling();
     controller.removeListener(_refresh);
     rideController?.removeListener(_refresh);
     matchOfferController?.removeListener(_refresh);
     _detachPlanPurchaseController();
+    _liveTrackingController?.dispose();
+    if (_ownsMidtripRouteChangeController) {
+      _midtripRouteChangeController?.dispose();
+    }
     _authSubscription?.cancel();
     if (_ownsRideController) rideController?.dispose();
     if (_ownsMatchOfferController) matchOfferController?.dispose();
@@ -238,6 +404,23 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     controller.selectDestination(
       GeoCoordinate(latitude: result.latitude, longitude: result.longitude),
       result.title,
+    );
+  }
+
+  Future<RideLocation?> _selectMidtripDropoff() async {
+    final result = await Navigator.push<AddressModel>(
+      context,
+      MaterialPageRoute(builder: (_) => const SearchAddressScreen()),
+    );
+
+    if (result == null) {
+      return null;
+    }
+
+    return RideLocation(
+      latitude: result.latitude,
+      longitude: result.longitude,
+      addressLabel: result.title,
     );
   }
 
@@ -281,8 +464,138 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
             ),
             const SizedBox(height: 24),
             _content(),
+            if (controller.status == DriverCenterStatus.ready &&
+                _shouldShowDriverNotificationPermissionCard) ...[
+              const SizedBox(height: 12),
+              _driverNotificationPermissionCard(),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _initializeDriverNotificationPermission() {
+    final injected = widget.notificationPermissionGateway;
+
+    if (injected != null) {
+      _notificationPermissionGateway = injected;
+      return;
+    }
+
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      _notificationPermissionGateway = null;
+      _notificationPermissionState =
+          DriverNotificationPermissionState.unsupported;
+      return;
+    }
+
+    _notificationPermissionGateway = DriverNotificationPermissionService();
+  }
+
+  Future<void> _refreshDriverNotificationPermissionStatus() async {
+    final gateway = _notificationPermissionGateway;
+
+    if (gateway == null) return;
+
+    DriverNotificationPermissionState state;
+
+    try {
+      state = await gateway.currentStatus();
+    } catch (_) {
+      state = DriverNotificationPermissionState.failed;
+    }
+
+    if (!mounted || !identical(gateway, _notificationPermissionGateway)) {
+      return;
+    }
+
+    setState(() {
+      _notificationPermissionState = state;
+    });
+  }
+
+  Future<void> _requestDriverNotificationPermission() async {
+    final gateway = _notificationPermissionGateway;
+
+    if (gateway == null || _notificationPermissionRequestPending) {
+      return;
+    }
+
+    setState(() {
+      _notificationPermissionRequestPending = true;
+    });
+
+    DriverNotificationPermissionState state;
+
+    try {
+      state = await gateway.requestFromUserAction();
+    } catch (_) {
+      state = DriverNotificationPermissionState.failed;
+    }
+
+    if (!mounted || !identical(gateway, _notificationPermissionGateway)) {
+      return;
+    }
+
+    setState(() {
+      _notificationPermissionState = state;
+      _notificationPermissionRequestPending = false;
+    });
+  }
+
+  bool get _shouldShowDriverNotificationPermissionCard {
+    final state = _notificationPermissionState;
+
+    return state != null &&
+        state != DriverNotificationPermissionState.unsupported &&
+        state != DriverNotificationPermissionState.authorized;
+  }
+
+  Widget _driverNotificationPermissionCard() {
+    final state = _notificationPermissionState!;
+
+    final description = switch (state) {
+      DriverNotificationPermissionState.deniedPermanently =>
+        'Bildirimler cihaz ayarlar\u0131nda kapal\u0131. Teklifleri '
+            'ka\u00e7\u0131rmamak i\u00e7in YoldaAl bildirimlerini cihaz '
+            'ayarlar\u0131ndan a\u00e7\u0131n.',
+      DriverNotificationPermissionState.failed =>
+        'Bildirim durumu \u015fu anda kontrol edilemiyor. L\u00fctfen '
+            'tekrar deneyin.',
+      _ =>
+        'Yeni e\u015fle\u015fme tekliflerinden haberdar olmak i\u00e7in '
+            'bildirimlere izin verin.',
+    };
+
+    final Widget? action = switch (state) {
+      DriverNotificationPermissionState.deniedPermanently => null,
+      DriverNotificationPermissionState.failed => TextButton(
+        key: const ValueKey('driver-notification-permission-action'),
+        onPressed: _notificationPermissionRequestPending
+            ? null
+            : () {
+                unawaited(_refreshDriverNotificationPermissionStatus());
+              },
+        child: const Text('Tekrar Kontrol Et'),
+      ),
+      _ => TextButton(
+        key: const ValueKey('driver-notification-permission-action'),
+        onPressed: _notificationPermissionRequestPending
+            ? null
+            : () {
+                unawaited(_requestDriverNotificationPermission());
+              },
+        child: const Text('Bildirimleri A\u00e7'),
+      ),
+    };
+
+    return KeyedSubtree(
+      key: const ValueKey('driver-notification-permission-card'),
+      child: _StatusCard(
+        title: 'Teklif bildirimleri',
+        description: description,
+        action: action,
       ),
     );
   }
@@ -349,11 +662,6 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
         'Sürücü özelliklerini kullanmak için giriş yapmalısınız.',
         null,
       ),
-      'driver_profile_required' => (
-        'Sürücü profili gerekli',
-        'Dönüş rotası yayımlamak için onaylı bir sürücü profiliniz olmalıdır.',
-        'Sürücü başvurusu yakında',
-      ),
       'driver_approval_required' => (
         'Profiliniz inceleniyor',
         'Sürücü başvurunuz onaylandıktan sonra dönüş rotası yayımlayabilirsiniz.',
@@ -365,7 +673,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
       'subscription_required' => (
         'Aktif kontör paketi gerekli',
         'Dönüş rotası yayımlamak için aktif bir YoldaAl kontör paketiniz olmalıdır.',
-        'Kontör paketleri yakında',
+        null,
       ),
       _ => ('Bilgiler yüklenemedi', 'Lütfen tekrar deneyin.', null),
     };
@@ -489,23 +797,42 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     final matches = matchOfferController;
     final lifecycle = rideController;
     final published = controller.publishedRoute;
+    final pushHintRevision = _offerPushHintSource?.revision ?? 0;
+    final hasPendingPushHint = pushHintRevision > _handledOfferPushHintRevision;
 
     if (published == null) {
       _matchOfferRouteId = null;
+      matches?.stopPolling();
       return;
     }
 
     if (matches == null ||
         lifecycle == null ||
+        !_appResumed ||
         controller.status != DriverCenterStatus.ready ||
         lifecycle.loading ||
         lifecycle.errorMessage != null ||
         lifecycle.ride != null) {
+      matches?.stopPolling();
       return;
     }
 
-    if (matches.busy ||
-        (matches.hasLoaded && _matchOfferRouteId == published.routeId)) {
+    final pollingStarted = matches.startPolling();
+
+    if (matches.busy) {
+      return;
+    }
+
+    if (hasPendingPushHint) {
+      _handledOfferPushHintRevision = pushHintRevision;
+      _matchOfferRouteId = published.routeId;
+      unawaited(matches.load());
+      return;
+    }
+
+    if (matches.hasLoaded &&
+        _matchOfferRouteId == published.routeId &&
+        !pollingStarted) {
       return;
     }
 
@@ -678,12 +1005,44 @@ class _DriverCenterScreenState extends State<DriverCenterScreen> {
     final canCancel =
         activeRide.status == RideStatus.driverEnRoute ||
         activeRide.status == RideStatus.driverArrived;
-    return CanonicalRideCard(
-      ride: activeRide,
-      driver: true,
-      loading: lifecycle.mutating,
-      onPrimary: primary,
-      onCancel: canCancel ? () => lifecycle.act(DriverRideAction.cancel) : null,
+    final canUseSupport =
+        activeRide.status == RideStatus.driverEnRoute ||
+        activeRide.status == RideStatus.driverArrived ||
+        activeRide.status == RideStatus.inProgress;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CanonicalRideCard(
+          ride: activeRide,
+          driver: true,
+          loading: lifecycle.mutating,
+          onPrimary: primary,
+          onCancel: canCancel
+              ? () => lifecycle.act(DriverRideAction.cancel)
+              : null,
+        ),
+        if (activeRide.status == RideStatus.inProgress &&
+            _midtripRouteChangeController != null) ...[
+          const SizedBox(height: 8),
+          RideMidtripRouteChangePanel(
+            key: ValueKey('driver-midtrip-route-change-${activeRide.rideId}'),
+            rideId: activeRide.rideId,
+            controller: _midtripRouteChangeController!,
+            selectDropoff: _selectMidtripDropoff,
+          ),
+        ],
+        if (canUseSupport) ...[
+          const SizedBox(height: 8),
+          RideActiveSupportPanel(
+            key: ValueKey('driver-active-support-${activeRide.rideId}'),
+            rideId: activeRide.rideId,
+            gateway: widget.activeSupportGateway,
+            requestIdGenerator:
+                widget.supportRequestIdGenerator ?? secureRideRequestId,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -723,6 +1082,18 @@ class _StatusCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+DriverPushTargetPlatform? _resolveDriverPushTargetPlatform() {
+  if (kIsWeb) {
+    return null;
+  }
+
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.android => DriverPushTargetPlatform.android,
+    TargetPlatform.iOS => DriverPushTargetPlatform.ios,
+    _ => null,
+  };
 }
 
 class _FirebaseDriverCenterAuth implements DriverCenterAuthGateway {

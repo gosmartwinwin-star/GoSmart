@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/firebase_sandbox_options.dart';
 
@@ -6,7 +7,6 @@ void main() {
     final options = [
       FirebaseSandboxOptions.web,
       FirebaseSandboxOptions.android,
-      FirebaseSandboxOptions.ios,
       FirebaseSandboxOptions.windows,
     ];
 
@@ -19,15 +19,22 @@ void main() {
     }
   });
 
+  test('iOS sandbox fails closed without registration', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    expect(
+      () => FirebaseSandboxOptions.currentPlatform,
+      throwsA(isA<UnsupportedError>()),
+    );
+  });
+
   test('sandbox app IDs match the registered Firebase apps', () {
     expect(
       FirebaseSandboxOptions.android.appId,
       '1:428312240805:android:14c826254f9185b74ea34c',
-    );
-
-    expect(
-      FirebaseSandboxOptions.ios.appId,
-      '1:428312240805:ios:49720560db2e8a584ea34c',
     );
 
     expect(

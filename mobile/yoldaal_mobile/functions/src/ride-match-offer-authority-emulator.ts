@@ -146,6 +146,7 @@ const seedScenario = async (
     rideMatchOfferDocumentId(
       driverId,
       rideId,
+      1,
     );
 
   const now = Timestamp.now();

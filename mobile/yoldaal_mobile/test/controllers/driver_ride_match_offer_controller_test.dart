@@ -261,6 +261,159 @@ void main() {
 
     expect(controller.acceptedRideId, isNull);
   });
+  test(
+    'foreground polling refreshes every 15 seconds and start is idempotent',
+    () async {
+      final gateway = _Gateway();
+      final timerFactory = _ManualPeriodicTimerFactory();
+
+      final controller = DriverRideMatchOfferController(
+        gateway: gateway,
+        now: () => now,
+        periodicTimerFactory: timerFactory.create,
+      );
+
+      void listener() {}
+      controller.addListener(listener);
+
+      addTearDown(() {
+        controller.removeListener(listener);
+        controller.dispose();
+      });
+
+      expect(controller.startPolling(), isTrue);
+      expect(controller.startPolling(), isFalse);
+      expect(controller.polling, isTrue);
+      expect(timerFactory.timers, hasLength(1));
+      expect(timerFactory.latest.interval, driverRideMatchOfferPollInterval);
+      expect(gateway.loadCalls, 0);
+
+      gateway.loaded = [
+        _offer(
+          rideId: 'polled',
+          expiresAt: now.add(const Duration(minutes: 2)),
+        ),
+      ];
+
+      timerFactory.latest.fire();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(gateway.loadCalls, 1);
+      expect(controller.offers.map((offer) => offer.rideId), ['polled']);
+      expect(controller.polling, isTrue);
+
+      controller.stopPolling();
+
+      expect(controller.polling, isFalse);
+      expect(timerFactory.latest.isActive, isFalse);
+    },
+  );
+
+  test(
+    'countdown advances 2 to 1 minute and removes offer at exact expiry without refetch',
+    () async {
+      final base = DateTime.utc(2026, 8, 15, 16);
+      var current = base;
+
+      final gateway = _Gateway()
+        ..loaded = [
+          _offer(
+            rideId: 'ride-countdown',
+            expiresAt: base.add(const Duration(minutes: 2)),
+          ),
+        ];
+
+      final timerFactory = _ManualCountdownTimerFactory();
+
+      final controller = DriverRideMatchOfferController(
+        gateway: gateway,
+        now: () => current,
+        countdownTimerFactory: timerFactory.create,
+      );
+
+      void listener() {}
+      controller.addListener(listener);
+
+      addTearDown(() {
+        controller.removeListener(listener);
+        controller.dispose();
+      });
+
+      await controller.load();
+
+      expect(controller.offers, hasLength(1));
+      expect(controller.remainingMinutesFor(controller.offers.single), 2);
+      expect(timerFactory.timers, hasLength(1));
+      expect(timerFactory.latest.delay, const Duration(minutes: 1));
+      expect(gateway.loadCalls, 1);
+
+      current = base.add(const Duration(minutes: 1));
+      timerFactory.latest.fire();
+
+      expect(controller.offers, hasLength(1));
+      expect(controller.remainingMinutesFor(controller.offers.single), 1);
+      expect(timerFactory.timers, hasLength(2));
+      expect(timerFactory.latest.delay, const Duration(minutes: 1));
+      expect(gateway.loadCalls, 1);
+
+      current = base.add(const Duration(minutes: 2));
+      timerFactory.latest.fire();
+
+      expect(controller.offers, isEmpty);
+      expect(timerFactory.timers, hasLength(2));
+      expect(gateway.loadCalls, 1);
+    },
+  );
+
+  test('dispose cancels active countdown and polling timers', () async {
+    final base = DateTime.utc(2026, 8, 15, 16);
+
+    final gateway = _Gateway()
+      ..loaded = [
+        _offer(
+          rideId: 'ride-countdown-dispose',
+          expiresAt: base.add(const Duration(minutes: 2)),
+        ),
+      ];
+
+    final countdownTimerFactory = _ManualCountdownTimerFactory();
+    final periodicTimerFactory = _ManualPeriodicTimerFactory();
+
+    final controller = DriverRideMatchOfferController(
+      gateway: gateway,
+      now: () => base,
+      countdownTimerFactory: countdownTimerFactory.create,
+      periodicTimerFactory: periodicTimerFactory.create,
+    );
+
+    var disposed = false;
+    void listener() {}
+
+    controller.addListener(listener);
+
+    addTearDown(() {
+      if (!disposed) {
+        controller.removeListener(listener);
+        controller.dispose();
+      }
+    });
+
+    await controller.load();
+    expect(controller.startPolling(), isTrue);
+
+    final countdownTimer = countdownTimerFactory.latest;
+    final pollingTimer = periodicTimerFactory.latest;
+
+    expect(countdownTimer.isActive, isTrue);
+    expect(pollingTimer.isActive, isTrue);
+
+    controller.removeListener(listener);
+    controller.dispose();
+    disposed = true;
+
+    expect(countdownTimer.isActive, isFalse);
+    expect(pollingTimer.isActive, isFalse);
+  });
 }
 
 RideMatchOffer _offer({
@@ -280,8 +433,107 @@ RideMatchOffer _offer({
     longitude: 28.9795,
     addressLabel: 'Dropoff',
   ),
+  pickupDetourMeters: 900,
+  pickupDetourSeconds: 180,
+  dropoffDetourMeters: 1200,
+  dropoffDetourSeconds: 240,
+  passengerTripDistanceMeters: 10000,
+  passengerTripDurationSeconds: 1200,
   expiresAt: expiresAt,
 );
+
+class _ManualCountdownTimerFactory {
+  final List<_ManualCountdownTimer> timers = <_ManualCountdownTimer>[];
+
+  Timer create(Duration delay, void Function() callback) {
+    final timer = _ManualCountdownTimer(delay: delay, callback: callback);
+
+    timers.add(timer);
+    return timer;
+  }
+
+  _ManualCountdownTimer get latest => timers.last;
+}
+
+class _ManualCountdownTimer implements Timer {
+  _ManualCountdownTimer({
+    required this.delay,
+    required void Function() callback,
+  }) : _callback = callback;
+
+  final Duration delay;
+  final void Function() _callback;
+
+  bool _active = true;
+  int _tick = 0;
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => _tick;
+
+  @override
+  void cancel() {
+    _active = false;
+  }
+
+  void fire() {
+    if (!_active) {
+      return;
+    }
+
+    _active = false;
+    _tick = 1;
+    _callback();
+  }
+}
+
+class _ManualPeriodicTimerFactory {
+  final List<_ManualPeriodicTimer> timers = <_ManualPeriodicTimer>[];
+
+  Timer create(Duration interval, void Function(Timer) callback) {
+    final timer = _ManualPeriodicTimer(interval: interval, callback: callback);
+
+    timers.add(timer);
+    return timer;
+  }
+
+  _ManualPeriodicTimer get latest => timers.last;
+}
+
+class _ManualPeriodicTimer implements Timer {
+  _ManualPeriodicTimer({
+    required this.interval,
+    required void Function(Timer) callback,
+  }) : _callback = callback;
+
+  final Duration interval;
+  final void Function(Timer) _callback;
+
+  bool _active = true;
+  int _tick = 0;
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => _tick;
+
+  @override
+  void cancel() {
+    _active = false;
+  }
+
+  void fire() {
+    if (!_active) {
+      return;
+    }
+
+    _tick++;
+    _callback(this);
+  }
+}
 
 class _Gateway implements RideMatchOfferGateway {
   List<RideMatchOffer> loaded = <RideMatchOffer>[];

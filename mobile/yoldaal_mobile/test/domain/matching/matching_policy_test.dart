@@ -46,10 +46,10 @@ void main() {
       );
     });
 
-    test('601 saniye pickup sapmasını reddeder', () {
+    test('901 saniye pickup sapmasını reddeder', () {
       final result = policy.evaluate(
         subscriptionActive: true,
-        deviation: deviation(pickupSeconds: 601),
+        deviation: deviation(pickupSeconds: 901),
       );
 
       expect(result.isEligible, isFalse);
@@ -72,10 +72,10 @@ void main() {
       );
     });
 
-    test('601 saniye dropoff sapmasını reddeder', () {
+    test('901 saniye dropoff sapmasını reddeder', () {
       final result = policy.evaluate(
         subscriptionActive: true,
-        deviation: deviation(dropoffSeconds: 601),
+        deviation: deviation(dropoffSeconds: 901),
       );
 
       expect(result.isEligible, isFalse);
@@ -145,9 +145,9 @@ void main() {
         subscriptionActive: false,
         deviation: deviation(
           pickupMeters: 3001,
-          pickupSeconds: 601,
+          pickupSeconds: 901,
           dropoffMeters: 3001,
-          dropoffSeconds: 601,
+          dropoffSeconds: 901,
           pickupIndex: 10,
           dropoffIndex: 10,
         ),
