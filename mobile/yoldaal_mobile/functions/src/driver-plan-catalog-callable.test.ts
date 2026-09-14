@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import test from "node:test";
 
-const source = readFileSync("src/index.ts", "utf8");
+const source = readFileSync("src/driver-plan-payment-functions.ts", "utf8");
 
 const callableSource = (name: string): string => {
   const marker = `export const ${name} = onCall`;

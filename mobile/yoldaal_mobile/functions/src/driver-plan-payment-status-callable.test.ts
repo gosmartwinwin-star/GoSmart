@@ -5,7 +5,7 @@ import test from "node:test";
 
 const source =
   readFileSync(
-    "src/index.ts",
+    "src/driver-plan-payment-functions.ts",
     "utf8",
   );
 
