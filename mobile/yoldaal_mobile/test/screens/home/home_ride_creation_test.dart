@@ -200,7 +200,6 @@ void main() {
         home: HomeScreen(
           rideController: controller,
           authenticate: () async => true,
-          enableSyntheticTaxis: false,
           routeLoader: ({required pickup, required destination}) {
             routeCalls++;
             return routeCompleter.future;
@@ -267,7 +266,7 @@ void main() {
   });
 
   testWidgets(
-    'sentetik taksiler kapaliyken haritada taksi markeri olusturmaz',
+    'legacy taksi markerlarini haritada olusturmaz',
     (tester) async {
       final gateway = _FakeRideGateway();
       final controller = PassengerRideController(
@@ -286,7 +285,6 @@ void main() {
             rideController: controller,
             locationAccess: location,
             authenticate: () async => true,
-            enableSyntheticTaxis: false,
             routeLoader: ({required pickup, required destination}) async =>
                 const RouteResultModel(
                   points: [],
@@ -299,11 +297,11 @@ void main() {
       await tester.pump();
 
       final map = tester.widget<YoldaAlMap>(find.byType(YoldaAlMap));
-      final syntheticTaxiMarkers = map.markers.where(
+      final legacyTaxiMarkers = map.markers.where(
         (marker) => marker.markerId.value.startsWith('taxi_'),
       );
 
-      expect(syntheticTaxiMarkers, isEmpty);
+      expect(legacyTaxiMarkers, isEmpty);
     },
   );
 
@@ -345,7 +343,6 @@ void main() {
               LocationAccessIssue.permissionDenied,
             ),
             authenticate: () async => true,
-            enableSyntheticTaxis: false,
             routeLoader: ({required pickup, required destination}) async =>
                 const RouteResultModel(
                   points: [],

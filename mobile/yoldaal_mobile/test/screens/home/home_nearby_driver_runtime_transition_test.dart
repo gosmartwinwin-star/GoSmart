@@ -69,7 +69,6 @@ void main() {
                   distanceMeters: 0,
                   durationSeconds: 0,
                 ),
-            enableSyntheticTaxis: false,
           ),
         ),
       );

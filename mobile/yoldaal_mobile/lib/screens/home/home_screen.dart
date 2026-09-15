@@ -3,12 +3,10 @@ import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/ride/ride_midtrip_route_change_panel.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../controllers/taxi_controller.dart';
 import '../../core/ride/secure_request_id.dart';
 import '../../application/location/location_access_gateway.dart';
 import '../../application/ride/ride_support_gateway.dart';
@@ -17,12 +15,10 @@ import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../models/address_model.dart';
 import '../../models/route_result_model.dart';
-import '../../models/taxi_model.dart';
 import '../../screens/search/search_address_screen.dart';
 import '../../screens/driver/driver_center_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 import '../../services/location_access_service.dart';
-import '../../services/marker_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
 import '../../services/ride_lifecycle_service.dart';
@@ -36,7 +32,6 @@ import '../../services/ride_midtrip_route_change_service.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../widgets/ride/ride_active_support_panel.dart';
 import '../../widgets/cards/route_summary_card.dart';
-import '../../widgets/cards/taxi_info_card.dart';
 import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/map/yoldaal_map.dart';
 import '../../widgets/panels/home_bottom_panel.dart';
@@ -63,7 +58,6 @@ class HomeScreen extends StatefulWidget {
     this.profileScreenBuilder,
     this.activeSupportGateway,
     this.supportRequestIdGenerator,
-    this.enableSyntheticTaxis = kDebugMode,
   });
   final PassengerRideController? rideController;
   final PassengerRideLiveTrackingController? liveTrackingController;
@@ -75,7 +69,6 @@ class HomeScreen extends StatefulWidget {
   final WidgetBuilder? profileScreenBuilder;
   final RideActiveSupportGateway? activeSupportGateway;
   final String Function()? supportRequestIdGenerator;
-  final bool enableSyntheticTaxis;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -93,9 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<User?>? _authSubscription;
   GoogleMapController? mapController;
 
-  final TaxiController taxiController = TaxiController();
 
-  final MarkerService markerService = MarkerService();
 
   final RouteMarkerService routeMarkerService = RouteMarkerService();
 
@@ -114,7 +105,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _routeDistanceMeters;
   int? _routeDurationSeconds;
 
-  TaxiModel? selectedTaxi;
 
   AddressModel? pickupAddress;
 
@@ -204,26 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .listen((user) => rideController.authChanged(user?.uid));
     }
 
-    if (widget.enableSyntheticTaxis) {
-      _initializeTaxis();
 
-      taxiController.startSimulation(() {
-        if (!mounted) return;
-
-        setState(() {
-          final selectedTaxiId = selectedTaxi?.id;
-          if (selectedTaxiId != null) {
-            for (final taxi in taxiController.taxis) {
-              if (taxi.id == selectedTaxiId) {
-                selectedTaxi = taxi;
-                break;
-              }
-            }
-          }
-          _refreshMarkers();
-        });
-      });
-    }
   }
 
   @override
@@ -242,7 +213,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     _authSubscription?.cancel();
     if (_ownsRideController) rideController.dispose();
-    taxiController.stopSimulation();
     super.dispose();
   }
 
@@ -262,28 +232,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _initializeTaxis() {
-    taxiController.loadTaxisAround(
-      latitude: _initialPosition.target.latitude,
-      longitude: _initialPosition.target.longitude,
-    );
-    _refreshMarkers();
-  }
-
-  void _reloadTaxisAround({
-    required double latitude,
-    required double longitude,
-  }) {
-    if (!widget.enableSyntheticTaxis) return;
-
-    taxiController.loadTaxisAround(latitude: latitude, longitude: longitude);
-
-    if (!mounted) return;
-
-    setState(() {
-      _refreshMarkers();
-    });
-  }
 
   void _refreshMarkers() {
     Marker? userMarker;
@@ -304,25 +252,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _markers.add(userMarker);
     }
 
-    // Taksi markerlarını ekle
-    if (widget.enableSyntheticTaxis) {
-      final taxiMarkers = markerService.createTaxiMarkers(
-        taxis: taxiController.taxis,
-        onTap: (TaxiModel taxi) {
-          setState(() {
-            selectedTaxi = taxi;
-          });
-
-          debugPrint("${taxi.driverName} seçildi");
-        },
-      );
-      _markers.addAll(taxiMarkers);
-
-      if (kDebugMode) {
-        debugPrint("Taksi modeli sayısı: ${taxiController.taxis.length}");
-        debugPrint("Taksi marker sayısı: ${taxiMarkers.length}");
-      }
-    }
 
     // Pickup & Destination markerlarını ekle
     _markers.addAll(
@@ -471,10 +400,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final userLocation = LatLng(location.latitude, location.longitude);
 
     if (pickupAddress == null) {
-      _reloadTaxisAround(
-        latitude: userLocation.latitude,
-        longitude: userLocation.longitude,
-      );
     }
 
     if (!mounted) return;
@@ -665,18 +590,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (controller == null) return;
 
     final points = List<LatLng>.from(routePoints);
-    final pickup = pickupAddress;
-    final pickupPoint = pickup == null
-        ? routePoints.first
-        : LatLng(pickup.latitude, pickup.longitude);
-
-    for (final taxi in taxiController.taxis) {
-      if (taxi.online &&
-          (taxi.latitude - pickupPoint.latitude).abs() <= 0.02 &&
-          (taxi.longitude - pickupPoint.longitude).abs() <= 0.02) {
-        points.add(LatLng(taxi.latitude, taxi.longitude));
-      }
-    }
 
     var minLatitude = points.first.latitude;
     var maxLatitude = points.first.latitude;
@@ -736,11 +649,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       pickupAddress = result;
-      selectedTaxi = null;
       _updateRoutePreview();
     });
 
-    _reloadTaxisAround(latitude: result.latitude, longitude: result.longitude);
 
     if (destinationAddress == null) {
       await mapController?.animateCamera(
@@ -808,19 +719,14 @@ class _HomeScreenState extends State<HomeScreen> {
             initialPosition: _initialPosition,
             markers: _markers,
             polylines: _polylines,
-            onTap: (_) {
-              setState(() {
-                selectedTaxi = null;
-              });
-            },
+            onTap: (_) {},
+
             onMapCreated: (GoogleMapController controller) async {
               mapController = controller;
               await _getCurrentLocation();
             },
           ),
-          if (!rideController.loading &&
-              rideController.ride == null &&
-              selectedTaxi == null)
+          if (!rideController.loading && rideController.ride == null)
             RideRequestPanel(
               pickupText: pickupAddress?.title,
               destinationText: destinationAddress?.title,
@@ -830,22 +736,9 @@ class _HomeScreenState extends State<HomeScreen> {
               isLoading: _isRouteLoading || rideController.mutating,
             ),
 
-          if (!rideController.loading &&
-              rideController.ride == null &&
-              selectedTaxi != null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 110,
-              child: TaxiInfoCard(
-                taxi: selectedTaxi!,
-                onRequestTaxi: _searchTaxi,
-              ),
-            ),
 
           if (_routeDistanceMeters != null &&
-              _routeDurationSeconds != null &&
-              selectedTaxi == null)
+              _routeDurationSeconds != null)
             Positioned(
               left: 16,
               right: 16,
