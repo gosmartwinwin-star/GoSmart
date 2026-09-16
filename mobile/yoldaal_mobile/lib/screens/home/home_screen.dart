@@ -45,6 +45,37 @@ typedef HomeRouteLoader =
       required LatLng destination,
     });
 
+String? passengerActiveRideArrivalContextText({
+  required RideStatus status,
+  required bool isUpdating,
+  required int? etaSeconds,
+}) {
+  if (status == RideStatus.driverArrived) {
+    return 'Sürücünüz geldi';
+  }
+
+  if (status == RideStatus.driverEnRoute) {
+    if (isUpdating) {
+      return 'Sürücünüz yaklaşıyor • Konum güncelleniyor…';
+    }
+
+    if (etaSeconds == null) {
+      return 'Sürücünüz yaklaşıyor';
+    }
+
+    return 'Sürücünüz yaklaşıyor • Tahmini varış: $etaSeconds sn';
+  }
+
+  if (status == RideStatus.inProgress) {
+    if (isUpdating || etaSeconds == null) {
+      return 'Sürücü konumu güncelleniyor…';
+    }
+
+    return 'Tahmini varış: $etaSeconds sn';
+  }
+
+  return null;
+}
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -341,7 +372,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String? _liveTrackingStatusText() {
     final ride = rideController.ride;
-
     final trackingController = liveTrackingController;
 
     if (ride == null ||
@@ -350,21 +380,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return null;
     }
 
-    if (trackingController.isUpdating) {
-      return 'Sürücü konumu güncelleniyor…';
-    }
-
-    if (ride.status == RideStatus.driverArrived) {
-      return 'Sürücü konumu güncel';
-    }
-
-    final etaSeconds = trackingController.etaSeconds;
-
-    if (etaSeconds == null) {
-      return 'Sürücü konumu güncelleniyor…';
-    }
-
-    return 'Tahmini varış: $etaSeconds sn';
+    return passengerActiveRideArrivalContextText(
+      status: ride.status,
+      isUpdating: trackingController.isUpdating,
+      etaSeconds: trackingController.etaSeconds,
+    );
   }
 
   Future<void> _getCurrentLocation() async {
