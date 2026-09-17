@@ -133,6 +133,13 @@ beforeEach(async () => {
       type: 'rideRequestCreated', fromStatus: null, toStatus: 'matching',
       actorType: 'passenger', actorId: 'user-c', createdAt,
     });
+    batch.set(doc(db, 'rides/ride-a/messages/chat-existing'), {
+      kind: 'text', senderRole: 'passenger', assignmentRound: 2,
+      text: 'server-only chat fixture', createdAt, expiresAt,
+    });
+    batch.set(doc(db, 'rideChatRateLimits/opaque-chat-rate'), {
+      tokens: 9, lastRefillAt: createdAt, expiresAt,
+    });
     batch.set(doc(db, 'passengerActiveRides/user-c'), {
       rideId: 'ride-a', status: 'driverEnRoute', updatedAt: currentPurchase,
     });
@@ -1015,3 +1022,99 @@ test('nearby geo index unauthenticated get is denied', async () => {
   );
 });
 // R87_NEARBY_GEO_INDEX_SERVER_ONLY_END
+
+const chatDirectAccessActors = [
+  ['passenger', 'user-c'],
+  ['current driver', 'user-a'],
+  ['nonparticipant', 'user-b'],
+];
+
+for (const [actorName, uid] of chatDirectAccessActors) {
+  test(`ride chat direct Firestore access is denied to ${actorName}`, async () => {
+    const db = dbFor(uid);
+    const existing = doc(db, 'rides/ride-a/messages/chat-existing');
+    const created = doc(db, `rides/ride-a/messages/chat-create-${uid}`);
+
+    await assertFails(getDoc(existing));
+    await assertFails(getDocs(collection(db, 'rides/ride-a/messages')));
+    await assertFails(setDoc(created, {
+      kind: 'text',
+      senderRole: 'passenger',
+      assignmentRound: 2,
+      text: 'client write must fail',
+      createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    }));
+    await assertFails(updateDoc(existing, {
+      text: 'client update must fail',
+    }));
+    await assertFails(deleteDoc(existing));
+  });
+}
+
+test('unauthenticated client cannot directly access ride chat', async () => {
+  const db = dbFor();
+  const existing = doc(db, 'rides/ride-a/messages/chat-existing');
+
+  await assertFails(getDoc(existing));
+  await assertFails(getDocs(collection(db, 'rides/ride-a/messages')));
+  await assertFails(setDoc(
+    doc(db, 'rides/ride-a/messages/chat-create-anonymous'),
+    {
+      kind: 'text',
+      senderRole: 'passenger',
+      assignmentRound: 2,
+      text: 'client write must fail',
+      createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    },
+  ));
+  await assertFails(updateDoc(existing, {
+    text: 'client update must fail',
+  }));
+  await assertFails(deleteDoc(existing));
+});
+
+for (const [actorName, uid] of [
+  ['passenger', 'user-c'],
+  ['current driver', 'user-a'],
+  ['nonparticipant', 'user-b'],
+]) {
+  test(`rideChatRateLimits direct Firestore access is denied to ${actorName}`, async () => {
+    const db = dbFor(uid);
+    const existing = doc(db, 'rideChatRateLimits/opaque-chat-rate');
+    const created = doc(db, `rideChatRateLimits/client-created-${uid}`);
+
+    await assertFails(getDoc(existing));
+    await assertFails(getDocs(collection(db, 'rideChatRateLimits')));
+    await assertFails(setDoc(created, {
+      tokens: 10,
+      lastRefillAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    }));
+    await assertFails(updateDoc(existing, {
+      tokens: 10,
+    }));
+    await assertFails(deleteDoc(existing));
+  });
+}
+
+test('unauthenticated client cannot directly access rideChatRateLimits', async () => {
+  const db = dbFor();
+  const existing = doc(db, 'rideChatRateLimits/opaque-chat-rate');
+
+  await assertFails(getDoc(existing));
+  await assertFails(getDocs(collection(db, 'rideChatRateLimits')));
+  await assertFails(setDoc(
+    doc(db, 'rideChatRateLimits/client-created-anonymous'),
+    {
+      tokens: 10,
+      lastRefillAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    },
+  ));
+  await assertFails(updateDoc(existing, {
+    tokens: 10,
+  }));
+  await assertFails(deleteDoc(existing));
+});

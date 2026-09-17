@@ -88,6 +88,10 @@ service cloud.firestore {
           );
         allow create, update, delete: if false;
       }
+
+      match /messages/{messageId} {
+        allow read, write: if false;
+      }
     }
 
     match /passengerActiveRides/{passengerId} {
@@ -99,6 +103,10 @@ service cloud.firestore {
     }
 
     match /rideOperations/{operationId} {
+      allow read, write: if false;
+    }
+
+    match /rideChatRateLimits/{rateLimitId} {
       allow read, write: if false;
     }
 

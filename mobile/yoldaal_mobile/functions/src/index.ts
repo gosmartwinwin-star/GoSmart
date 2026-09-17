@@ -109,6 +109,10 @@ import {
   createActiveRideSupportCaseForActor,
 } from "./ride-active-support-authority.js";
 import {
+  listRideChatMessagesForActor,
+  sendRideChatMessageForActor,
+} from "./ride-chat-authority.js";
+import {
   acknowledgeRideDropoffChangeForActor,
   getPendingRideDropoffChangeProposalForActor,
   proposeRideDropoffChangeForActor,
@@ -949,6 +953,53 @@ export const createActiveRideSupportCase = onCall(
     }
 
     return createActiveRideSupportCaseForActor(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+export const sendRideChatMessage = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride chat send requires authentication.",
+      );
+    }
+
+    return sendRideChatMessageForActor(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
+export const listRideChatMessages = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride chat read requires authentication.",
+      );
+    }
+
+    return listRideChatMessagesForActor(
       {firestore},
       request.auth.uid,
       request.data,
