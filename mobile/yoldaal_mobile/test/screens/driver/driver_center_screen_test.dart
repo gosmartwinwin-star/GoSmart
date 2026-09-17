@@ -29,6 +29,7 @@ import 'package:yoldaal_mobile/screens/driver/driver_center_screen.dart';
 import 'package:yoldaal_mobile/application/ride/ride_dropoff_change_proposal_event_gateway.dart';
 import 'package:yoldaal_mobile/application/ride/ride_midtrip_route_change_gateway.dart';
 import 'package:yoldaal_mobile/controllers/ride_midtrip_route_change_controller.dart';
+import 'package:yoldaal_mobile/application/ride/ride_chat_gateway.dart';
 
 void main() {
   final now = DateTime.utc(2026, 8, 1, 12);
@@ -179,6 +180,7 @@ void main() {
             loadedPass: pass(),
           ),
           rideController: rides,
+          chatGateway: const _NoopRideChatGateway(),
         ),
       ),
     );
@@ -922,6 +924,7 @@ void main() {
             controller: center,
             rideController: rides,
             midtripRouteChangeController: midtrip,
+            chatGateway: const _NoopRideChatGateway(),
           ),
         ),
       );
@@ -1246,3 +1249,28 @@ CanonicalRide _midtripRuntimeRide({
     encodedPolyline: 'fixture_polyline',
   ),
 );
+
+class _NoopRideChatGateway implements RideChatGateway {
+  const _NoopRideChatGateway();
+
+  @override
+  Future<RideChatPage> listMessages({
+    required String rideId,
+    int pageSize = 50,
+    RideChatCursor? cursor,
+  }) async =>
+      RideChatPage(
+        rideId: rideId,
+        messages: const <RideChatMessage>[],
+        nextCursor: null,
+      );
+
+  @override
+  Future<RideChatMessage> sendMessage({
+    required String rideId,
+    required String requestId,
+    required String text,
+  }) async {
+    throw StateError('Unexpected ride chat send in legacy fixture.');
+  }
+}

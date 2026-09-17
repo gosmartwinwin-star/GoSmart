@@ -10,6 +10,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../core/ride/secure_request_id.dart';
 import '../../application/location/location_access_gateway.dart';
 import '../../application/ride/ride_support_gateway.dart';
+import '../../application/ride/ride_chat_gateway.dart';
 import '../../controllers/passenger_ride_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
@@ -31,6 +32,7 @@ import '../../infrastructure/firestore/repositories/firestore_ride_dropoff_chang
 import '../../services/ride_midtrip_route_change_service.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../widgets/ride/ride_active_support_panel.dart';
+import '../../widgets/ride/ride_chat_panel.dart';
 import '../../widgets/cards/route_summary_card.dart';
 import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/map/yoldaal_map.dart';
@@ -76,6 +78,7 @@ String? passengerActiveRideArrivalContextText({
 
   return null;
 }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -89,6 +92,8 @@ class HomeScreen extends StatefulWidget {
     this.profileScreenBuilder,
     this.activeSupportGateway,
     this.supportRequestIdGenerator,
+    this.chatGateway,
+    this.chatRequestIdGenerator,
   });
   final PassengerRideController? rideController;
   final PassengerRideLiveTrackingController? liveTrackingController;
@@ -100,6 +105,8 @@ class HomeScreen extends StatefulWidget {
   final WidgetBuilder? profileScreenBuilder;
   final RideActiveSupportGateway? activeSupportGateway;
   final String Function()? supportRequestIdGenerator;
+  final RideChatGateway? chatGateway;
+  final String Function()? chatRequestIdGenerator;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -117,8 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<User?>? _authSubscription;
   GoogleMapController? mapController;
 
-
-
   final RouteMarkerService routeMarkerService = RouteMarkerService();
 
   late final HomeRouteLoader routeLoader;
@@ -135,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int? _routeDistanceMeters;
   int? _routeDurationSeconds;
-
 
   AddressModel? pickupAddress;
 
@@ -224,8 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
           .skip(1)
           .listen((user) => rideController.authChanged(user?.uid));
     }
-
-
   }
 
   @override
@@ -263,7 +265,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   void _refreshMarkers() {
     Marker? userMarker;
 
@@ -282,7 +283,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (userMarker != null) {
       _markers.add(userMarker);
     }
-
 
     // Pickup & Destination markerlarını ekle
     _markers.addAll(
@@ -419,8 +419,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final userLocation = LatLng(location.latitude, location.longitude);
 
-    if (pickupAddress == null) {
-    }
+    if (pickupAddress == null) {}
 
     if (!mounted) return;
 
@@ -672,7 +671,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _updateRoutePreview();
     });
 
-
     if (destinationAddress == null) {
       await mapController?.animateCamera(
         CameraUpdate.newLatLngZoom(
@@ -756,9 +754,7 @@ class _HomeScreenState extends State<HomeScreen> {
               isLoading: _isRouteLoading || rideController.mutating,
             ),
 
-
-          if (_routeDistanceMeters != null &&
-              _routeDurationSeconds != null)
+          if (_routeDistanceMeters != null && _routeDurationSeconds != null)
             Positioned(
               left: 16,
               right: 16,
@@ -811,6 +807,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? rideController.dismissTerminal
                           : null,
                     ),
+                    if (ride.status == RideStatus.driverEnRoute ||
+                        ride.status == RideStatus.driverArrived ||
+                        ride.status == RideStatus.inProgress ||
+                        ride.status.isTerminal) ...[
+                      const SizedBox(height: 8),
+                      RideChatPanel(
+                        key: ValueKey('passenger-ride-chat-${ride.rideId}'),
+                        rideId: ride.rideId,
+                        status: ride.status,
+                        viewerRole: RideChatSenderRole.passenger,
+                        gateway: widget.chatGateway,
+                        requestIdGenerator:
+                            widget.chatRequestIdGenerator ??
+                            secureRideRequestId,
+                      ),
+                    ],
                     if (ride.status == RideStatus.inProgress &&
                         midtripRouteChangeController != null) ...[
                       const SizedBox(height: 8),

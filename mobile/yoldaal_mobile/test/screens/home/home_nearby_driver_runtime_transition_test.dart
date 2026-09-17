@@ -13,6 +13,7 @@ import 'package:yoldaal_mobile/models/route_result_model.dart';
 import 'package:yoldaal_mobile/screens/home/home_screen.dart';
 import 'package:yoldaal_mobile/services/nearby_passenger_driver_service.dart';
 import 'package:yoldaal_mobile/widgets/map/yoldaal_map.dart';
+import 'package:yoldaal_mobile/application/ride/ride_chat_gateway.dart';
 
 void main() {
   testWidgets(
@@ -62,6 +63,7 @@ void main() {
             rideController: rideController,
             nearbyDriverController: nearbyController,
             liveTrackingController: liveTrackingController,
+            chatGateway: const _NoopRideChatGateway(),
             authenticate: () async => true,
             routeLoader: ({required pickup, required destination}) async =>
                 const RouteResultModel(
@@ -288,5 +290,30 @@ class _ManualTimer implements Timer {
   @override
   void cancel() {
     _active = false;
+  }
+}
+
+class _NoopRideChatGateway implements RideChatGateway {
+  const _NoopRideChatGateway();
+
+  @override
+  Future<RideChatPage> listMessages({
+    required String rideId,
+    int pageSize = 50,
+    RideChatCursor? cursor,
+  }) async =>
+      RideChatPage(
+        rideId: rideId,
+        messages: const <RideChatMessage>[],
+        nextCursor: null,
+      );
+
+  @override
+  Future<RideChatMessage> sendMessage({
+    required String rideId,
+    required String requestId,
+    required String text,
+  }) async {
+    throw StateError('Unexpected ride chat send in legacy fixture.');
   }
 }

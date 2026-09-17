@@ -7,6 +7,7 @@ import '../../widgets/ride/ride_midtrip_route_change_panel.dart';
 
 import '../../application/driver_access/driver_plan_purchase_gateway.dart';
 import '../../application/ride/ride_support_gateway.dart';
+import '../../application/ride/ride_chat_gateway.dart';
 import '../../controllers/driver_center_controller.dart';
 import '../../controllers/driver_live_tracking_controller.dart';
 import '../../controllers/driver_push_target_lifecycle_controller.dart';
@@ -25,6 +26,7 @@ import '../../services/ride_match_offer_service.dart';
 import '../../widgets/location/location_access_banner.dart';
 import '../../widgets/ride/canonical_ride_card.dart';
 import '../../widgets/ride/ride_active_support_panel.dart';
+import '../../widgets/ride/ride_chat_panel.dart';
 import '../../core/branding/yoldaal_slogans.dart';
 import '../../core/ride/secure_request_id.dart';
 import '../../domain/return_route/geo_coordinate.dart';
@@ -67,6 +69,8 @@ class DriverCenterScreen extends StatefulWidget {
   final DriverNotificationPermissionGateway? notificationPermissionGateway;
   final RideActiveSupportGateway? activeSupportGateway;
   final String Function()? supportRequestIdGenerator;
+  final RideChatGateway? chatGateway;
+  final String Function()? chatRequestIdGenerator;
 
   const DriverCenterScreen({
     super.key,
@@ -82,6 +86,8 @@ class DriverCenterScreen extends StatefulWidget {
     this.notificationPermissionGateway,
     this.activeSupportGateway,
     this.supportRequestIdGenerator,
+    this.chatGateway,
+    this.chatRequestIdGenerator,
   });
 
   @override
@@ -1022,6 +1028,21 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
               ? () => lifecycle.act(DriverRideAction.cancel)
               : null,
         ),
+        if (activeRide.status == RideStatus.driverEnRoute ||
+            activeRide.status == RideStatus.driverArrived ||
+            activeRide.status == RideStatus.inProgress ||
+            activeRide.status.isTerminal) ...[
+          const SizedBox(height: 8),
+          RideChatPanel(
+            key: ValueKey('driver-ride-chat-${activeRide.rideId}'),
+            rideId: activeRide.rideId,
+            status: activeRide.status,
+            viewerRole: RideChatSenderRole.driver,
+            gateway: widget.chatGateway,
+            requestIdGenerator:
+                widget.chatRequestIdGenerator ?? secureRideRequestId,
+          ),
+        ],
         if (activeRide.status == RideStatus.inProgress &&
             _midtripRouteChangeController != null) ...[
           const SizedBox(height: 8),

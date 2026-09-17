@@ -21,6 +21,7 @@ import 'package:yoldaal_mobile/domain/subscription/driver_access_pass.dart';
 import 'package:yoldaal_mobile/domain/subscription/driver_pass_plan.dart';
 import 'package:yoldaal_mobile/domain/subscription/driver_pass_status.dart';
 import 'package:yoldaal_mobile/screens/driver/driver_center_screen.dart';
+import 'package:yoldaal_mobile/application/ride/ride_chat_gateway.dart';
 
 void main() {
   final now = DateTime.utc(2026, 8, 15, 16);
@@ -346,6 +347,7 @@ Future<void> _pumpCenter(
         controller: center,
         rideController: rides,
         rideMatchOfferController: matches,
+        chatGateway: const _NoopRideChatGateway(),
       ),
     ),
   );
@@ -573,4 +575,29 @@ class _Publisher implements PublishReturnRouteGateway {
     required GeoCoordinate destination,
     required int validForSeconds,
   }) => throw UnimplementedError();
+}
+
+class _NoopRideChatGateway implements RideChatGateway {
+  const _NoopRideChatGateway();
+
+  @override
+  Future<RideChatPage> listMessages({
+    required String rideId,
+    int pageSize = 50,
+    RideChatCursor? cursor,
+  }) async =>
+      RideChatPage(
+        rideId: rideId,
+        messages: const <RideChatMessage>[],
+        nextCursor: null,
+      );
+
+  @override
+  Future<RideChatMessage> sendMessage({
+    required String rideId,
+    required String requestId,
+    required String text,
+  }) async {
+    throw StateError('Unexpected ride chat send in legacy fixture.');
+  }
 }
