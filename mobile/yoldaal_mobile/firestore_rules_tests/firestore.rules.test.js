@@ -1118,3 +1118,25 @@ test('unauthenticated client cannot directly access rideChatRateLimits', async (
   }));
   await assertFails(deleteDoc(existing));
 });
+test('passengerPushTargets remain private backend-owned resources', async () => {
+  for (const uid of [undefined, 'user-c', 'user-a', 'user-b']) {
+    const db = dbFor(uid);
+    const reference = doc(db, 'passengerPushTargets/user-c');
+
+    await assertFails(getDoc(reference));
+    await assertFails(getDocs(collection(db, 'passengerPushTargets')));
+
+    await assertFails(setDoc(reference, {
+      passengerId: 'user-c',
+      fid: 'opaque-fid-0001',
+      platform: 'android',
+      updatedAt: Timestamp.now(),
+    }));
+
+    await assertFails(updateDoc(reference, {
+      platform: 'ios',
+    }));
+
+    await assertFails(deleteDoc(reference));
+  }
+});

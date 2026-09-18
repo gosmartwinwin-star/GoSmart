@@ -11,7 +11,10 @@ import {
 } from "firebase-functions/v2/https";
 import {getFunctions} from "firebase-admin/functions";
 import {getMessaging} from "firebase-admin/messaging";
-import {onDocumentWritten} from "firebase-functions/v2/firestore";
+import {
+  onDocumentCreated,
+  onDocumentWritten,
+} from "firebase-functions/v2/firestore";
 import {onTaskDispatched} from "firebase-functions/v2/tasks";
 import * as logger from "firebase-functions/logger";
 import {defineSecret} from "firebase-functions/params";
@@ -91,6 +94,9 @@ import {
   registerDriverPushTarget as registerDriverPushTargetAuthority,
 } from "./driver-push-target-authority.js";
 import {
+  registerPassengerPushTarget as registerPassengerPushTargetAuthority,
+} from "./passenger-push-target-authority.js";
+import {
   getActiveRideDriverTrackingForActor,
 } from "./ride-live-tracking-authority.js";
 import {getRideLiveTrackingEta} from "./ride-live-tracking-eta.js";
@@ -112,6 +118,9 @@ import {
   listRideChatMessagesForActor,
   sendRideChatMessageForActor,
 } from "./ride-chat-authority.js";
+import {
+  dispatchRideChatPushHint,
+} from "./ride-chat-push-hint-authority.js";
 import {
   acknowledgeRideDropoffChangeForActor,
   getPendingRideDropoffChangeProposalForActor,
@@ -2178,6 +2187,30 @@ export const publishDriverLiveLocation = onCall(
     );
   },
 );
+export const registerPassengerPushTarget = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Passenger push target requires authentication.",
+      );
+    }
+
+    return registerPassengerPushTargetAuthority(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
 export const registerDriverPushTarget = onCall(
   {
     region: "europe-west1",
@@ -2281,6 +2314,63 @@ export const resolvePlace = onCall(
     );
   },
 );
+
+export const onRideChatMessageCreated =
+  onDocumentCreated(
+    {
+      document: "rides/{rideId}/messages/{messageId}",
+      region: "europe-west1",
+    },
+    async (event) => {
+      const snapshot =
+        event.data;
+
+      if (snapshot === undefined) {
+        return;
+      }
+
+      await dispatchRideChatPushHint(
+        {
+          firestore,
+          getMessaging: () => ({
+            sendEachForMulticast: async (message) => {
+              const response =
+                await getMessaging()
+                  .sendEachForMulticast({
+                    tokens: message.fids,
+                    data: {
+                      ...message.data,
+                    },
+                  });
+
+              return {
+                successCount: response.successCount,
+                failureCount: response.failureCount,
+                responses: response.responses.map(
+                  (item) => ({
+                    success: item.success,
+                    error: item.error === undefined ?
+                      undefined :
+                      {
+                        code: item.error.code,
+                      },
+                  }),
+                ),
+              };
+            },
+          }),
+          warn: (message) => {
+            logger.warn(message);
+          },
+        },
+        {
+          rideId: event.params.rideId,
+          messageId: event.params.messageId,
+          messageData: snapshot.data(),
+        },
+      );
+    },
+  );
 
 const RIDE_OFFER_HINT_TASK_QUEUE_TARGET =
   "locations/europe-west1/functions/dispatchRideOfferHintPage";
