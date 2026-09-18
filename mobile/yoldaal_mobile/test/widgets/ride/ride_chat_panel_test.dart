@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,6 +10,26 @@ import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 import 'package:yoldaal_mobile/widgets/ride/ride_chat_panel.dart';
 
 void main() {
+  test('panel maps generic push wake hints only to canonical chat refresh', () {
+    final source = File(
+      'lib/widgets/ride/ride_chat_panel.dart',
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains("import '../../services/ride_chat_push_hint_service.dart';"),
+    );
+    expect(source, contains('this.pushHintSource,'));
+    expect(source, contains('final RideChatPushHintSource? pushHintSource;'));
+    expect(source, contains('widget.pushHintSource ?? rideChatPushHintBus'));
+    expect(source, contains('source.revisions.listen('));
+    expect(source, contains('unawaited(_controller.refresh());'));
+    expect(source, contains('_pushHintSubscription'));
+    expect(source, contains('_unbindPushHintSource();'));
+    expect(source, isNot(contains('FirebaseMessaging')));
+    expect(source, isNot(contains("collection('messages')")));
+    expect(source, isNot(contains('.snapshots()')));
+  });
   Future<void> pumpActive(
     WidgetTester tester, {
     required _Gateway gateway,

@@ -51,6 +51,7 @@ class FirebaseFunctionsRegistry {
   static const resolvePlace = 'resolvePlace';
   static const getMyRideMatchOffers = 'getMyRideMatchOffers';
   static const registerDriverPushTarget = 'registerDriverPushTarget';
+  static const registerPassengerPushTarget = 'registerPassengerPushTarget';
   static const getMyActiveReturnRoute = 'getMyActiveReturnRoute';
   static const acceptRide = 'acceptRide';
   static FirebaseFunctions? _client;

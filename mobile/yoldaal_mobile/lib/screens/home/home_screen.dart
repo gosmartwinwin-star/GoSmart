@@ -12,6 +12,7 @@ import '../../application/location/location_access_gateway.dart';
 import '../../application/ride/ride_support_gateway.dart';
 import '../../application/ride/ride_chat_gateway.dart';
 import '../../controllers/passenger_ride_controller.dart';
+import '../../controllers/passenger_push_target_lifecycle_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_repository.dart';
 import '../../models/address_model.dart';
@@ -27,6 +28,7 @@ import '../../services/ride_live_tracking_service.dart';
 import '../../controllers/passenger_ride_live_tracking_controller.dart';
 import '../../controllers/passenger_nearby_driver_controller.dart';
 import '../../services/nearby_passenger_driver_service.dart';
+import '../../services/passenger_push_target_registration_service.dart';
 import '../../controllers/ride_midtrip_route_change_controller.dart';
 import '../../infrastructure/firestore/repositories/firestore_ride_dropoff_change_proposal_event_repository.dart';
 import '../../services/ride_midtrip_route_change_service.dart';
@@ -122,6 +124,8 @@ class _HomeScreenState extends State<HomeScreen> {
   RideMidtripRouteChangeController? midtripRouteChangeController;
   bool _ownsMidtripRouteChangeController = false;
   StreamSubscription<User?>? _authSubscription;
+  PassengerPushTargetLifecycle? _passengerPushTargetLifecycle;
+  bool _ownsPassengerPushTargetLifecycle = false;
   GoogleMapController? mapController;
 
   final RouteMarkerService routeMarkerService = RouteMarkerService();
@@ -167,6 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
     locationAccess = widget.locationAccess ?? LocationAccessService();
 
     rideController.addListener(_refreshRide);
+    _initializePassengerPushTargetLifecycle();
 
     final injectedLiveTrackingController = widget.liveTrackingController;
 
@@ -223,10 +228,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
     rideController.recover();
     if (_ownsRideController) {
-      _authSubscription = FirebaseAuth.instance
-          .userChanges()
-          .skip(1)
-          .listen((user) => rideController.authChanged(user?.uid));
+      _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((
+        user,
+      ) {
+        unawaited(rideController.authChanged(user?.uid));
+        _passengerPushTargetLifecycle?.setEligible(user != null);
+      });
+    }
+  }
+
+  void _initializePassengerPushTargetLifecycle() {
+    if (!_ownsRideController) {
+      return;
+    }
+
+    try {
+      final platform = resolvePassengerPushTargetPlatform();
+
+      if (platform == null) {
+        return;
+      }
+
+      final lifecycle = PassengerPushTargetLifecycleController(
+        registration: PassengerPushTargetRegistrationService(),
+        platform: platform,
+      );
+
+      _passengerPushTargetLifecycle = lifecycle;
+      _ownsPassengerPushTargetLifecycle = true;
+
+      lifecycle.setEligible(FirebaseAuth.instance.currentUser != null);
+    } catch (_) {
+      // Push registration is only a wake-up optimization. Home startup and
+      // canonical ride polling must remain available when registration fails.
+      _passengerPushTargetLifecycle = null;
+      _ownsPassengerPushTargetLifecycle = false;
     }
   }
 
@@ -243,6 +279,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (_ownsMidtripRouteChangeController) {
       midtripRouteChangeController?.dispose();
+    }
+    _passengerPushTargetLifecycle?.setEligible(false);
+    if (_ownsPassengerPushTargetLifecycle) {
+      _passengerPushTargetLifecycle?.dispose();
     }
     _authSubscription?.cancel();
     if (_ownsRideController) rideController.dispose();

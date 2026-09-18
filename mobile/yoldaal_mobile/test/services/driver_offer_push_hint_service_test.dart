@@ -2,8 +2,53 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/services/driver_offer_push_hint_service.dart';
+import 'package:yoldaal_mobile/services/ride_chat_push_hint_service.dart';
 
 void main() {
+  test(
+    'shared push bridge forwards chat availability hints without offer authority',
+    () async {
+      final offerBus = DriverOfferPushHintBus();
+      final chatBus = RideChatPushHintBus();
+      final foreground = StreamController<DriverOfferPushHintData>.broadcast();
+      final opened = StreamController<DriverOfferPushHintData>.broadcast();
+
+      final bridge = DriverOfferPushHintBridge(
+        sink: offerBus,
+        chatSink: chatBus,
+        foregroundMessages: foreground.stream,
+        openedMessages: opened.stream,
+        initialMessageLoader: () async => const <String, dynamic>{
+          'type': rideChatMessageAvailablePushHintType,
+        },
+      );
+
+      await bridge.start();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(chatBus.revision, 1);
+      expect(offerBus.revision, 0);
+
+      foreground.add(const <String, dynamic>{
+        'type': rideChatMessageAvailablePushHintType,
+      });
+
+      opened.add(const <String, dynamic>{
+        'type': rideChatMessageAvailablePushHintType,
+      });
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(chatBus.revision, 3);
+      expect(offerBus.revision, 0);
+
+      await bridge.dispose();
+      await foreground.close();
+      await opened.close();
+      await offerBus.dispose();
+      await chatBus.dispose();
+    },
+  );
   test('hint classifier accepts only ride offer available type', () {
     expect(
       isDriverOfferPushHintData(const <String, dynamic>{

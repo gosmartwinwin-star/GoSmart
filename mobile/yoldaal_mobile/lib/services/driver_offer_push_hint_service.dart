@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import 'ride_chat_push_hint_service.dart';
+
 const driverRideOfferAvailablePushHintType = 'ride_offer_available';
 
 typedef DriverOfferPushHintData = Map<String, dynamic>;
@@ -44,12 +46,15 @@ class DriverOfferPushHintBridge {
     required Stream<DriverOfferPushHintData> foregroundMessages,
     required Stream<DriverOfferPushHintData> openedMessages,
     required DriverOfferPushInitialDataLoader initialMessageLoader,
+    RideChatPushHintBus? chatSink,
   }) : _sink = sink,
+       _chatSink = chatSink,
        _foregroundMessages = foregroundMessages,
        _openedMessages = openedMessages,
        _initialMessageLoader = initialMessageLoader;
 
   final DriverOfferPushHintBus _sink;
+  final RideChatPushHintBus? _chatSink;
   final Stream<DriverOfferPushHintData> _foregroundMessages;
   final Stream<DriverOfferPushHintData> _openedMessages;
   final DriverOfferPushInitialDataLoader _initialMessageLoader;
@@ -88,9 +93,16 @@ class DriverOfferPushHintBridge {
   }
 
   void _handleData(DriverOfferPushHintData data) {
-    if (_disposed || !isDriverOfferPushHintData(data)) return;
+    if (_disposed) return;
 
-    _sink.publish();
+    if (isDriverOfferPushHintData(data)) {
+      _sink.publish();
+      return;
+    }
+
+    if (isRideChatPushHintData(data)) {
+      _chatSink?.publish();
+    }
   }
 
   Future<void> dispose() async {
@@ -129,6 +141,7 @@ Future<void> initializeDriverOfferPushHintBridge() async {
 
   final bridge = DriverOfferPushHintBridge(
     sink: driverOfferPushHintBus,
+    chatSink: rideChatPushHintBus,
     foregroundMessages: FirebaseMessaging.onMessage.map(
       (message) => message.data,
     ),

@@ -7,6 +7,7 @@ import '../../application/ride/ride_gateway.dart';
 import '../../controllers/ride_chat_controller.dart';
 import '../../domain/ride/canonical_ride.dart';
 import '../../services/ride_chat_service.dart';
+import '../../services/ride_chat_push_hint_service.dart';
 
 class RideChatPanel extends StatefulWidget {
   const RideChatPanel({
@@ -17,6 +18,7 @@ class RideChatPanel extends StatefulWidget {
     required this.gateway,
     required this.requestIdGenerator,
     this.periodicTimerFactory,
+    this.pushHintSource,
   });
 
   final String rideId;
@@ -25,6 +27,7 @@ class RideChatPanel extends StatefulWidget {
   final RideChatGateway? gateway;
   final String Function() requestIdGenerator;
   final RideChatPeriodicTimerFactory? periodicTimerFactory;
+  final RideChatPushHintSource? pushHintSource;
 
   @override
   State<RideChatPanel> createState() => _RideChatPanelState();
@@ -34,6 +37,9 @@ class _RideChatPanelState extends State<RideChatPanel> {
   final TextEditingController _textController = TextEditingController();
 
   late RideChatController _controller;
+  StreamSubscription<int>? _pushHintSubscription;
+  RideChatPushHintSource? _pushHintSource;
+  int _handledPushHintRevision = 0;
 
   String? _requestId;
   String? _requestText;
@@ -45,6 +51,7 @@ class _RideChatPanelState extends State<RideChatPanel> {
 
     _textController.addListener(_handleDraftChanged);
     _createController();
+    _bindPushHintSource();
   }
 
   void _createController() {
@@ -58,9 +65,57 @@ class _RideChatPanelState extends State<RideChatPanel> {
     _controller.updateContext(rideId: widget.rideId, status: widget.status);
   }
 
+  void _bindPushHintSource() {
+    final source = widget.pushHintSource ?? rideChatPushHintBus;
+
+    _pushHintSource = source;
+    _handledPushHintRevision = 0;
+
+    _pushHintSubscription = source.revisions.listen(
+      _handlePushHintRevision,
+      onError: (_, _) {},
+    );
+
+    final revision = source.revision;
+
+    if (revision > 0) {
+      scheduleMicrotask(() {
+        _handlePushHintRevision(revision);
+      });
+    }
+  }
+
+  void _unbindPushHintSource() {
+    final subscription = _pushHintSubscription;
+
+    _pushHintSubscription = null;
+    _pushHintSource = null;
+    _handledPushHintRevision = 0;
+
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+  }
+
+  void _handlePushHintRevision(int revision) {
+    if (!mounted ||
+        revision <= _handledPushHintRevision ||
+        _pushHintSource == null) {
+      return;
+    }
+
+    _handledPushHintRevision = revision;
+    unawaited(_controller.refresh());
+  }
+
   @override
   void didUpdateWidget(covariant RideChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.pushHintSource != widget.pushHintSource) {
+      _unbindPushHintSource();
+      _bindPushHintSource();
+    }
 
     if (oldWidget.gateway != widget.gateway ||
         oldWidget.periodicTimerFactory != widget.periodicTimerFactory) {
@@ -171,6 +226,8 @@ class _RideChatPanelState extends State<RideChatPanel> {
 
   @override
   void dispose() {
+    _unbindPushHintSource();
+
     _textController.removeListener(_handleDraftChanged);
     _textController.dispose();
 
