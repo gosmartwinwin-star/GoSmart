@@ -2,20 +2,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/account_deletion_request_service.dart';
 import '../ride/ride_history_screen.dart';
 
 typedef SignOutCallback = Future<void> Function();
+typedef AccountDeletionRequestCallback = Future<void> Function();
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
     required this.phoneNumber,
     this.signOut,
+    this.requestAccountDeletion,
     this.historyScreenBuilder,
   });
 
   final String? phoneNumber;
   final SignOutCallback? signOut;
+  final AccountDeletionRequestCallback? requestAccountDeletion;
   final WidgetBuilder? historyScreenBuilder;
 
   static String maskedPhoneNumber(String? phoneNumber) {
@@ -32,6 +36,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _signingOut = false;
+  bool _requestingDeletion = false;
   String? _errorMessage;
 
   Future<void> _confirmSignOut() async {
@@ -76,6 +81,106 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         setState(() {
           _signingOut = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _confirmAccountDeletion() async {
+    if (_signingOut || _requestingDeletion) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Hesabı Sil',
+        ),
+        content: const Text(
+          'Hesap silme talebi göndermek istediğinizden emin misiniz? '
+          'Bu adım hesabınızı hemen silmez. '
+          'Talebiniz güvenli silme sürecine alınır.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(
+              context,
+              false,
+            ),
+            child: const Text(
+              'İptal',
+            ),
+          ),
+          FilledButton(
+            key: const ValueKey(
+              'profile-delete-account-confirm',
+            ),
+            onPressed: () => Navigator.pop(
+              context,
+              true,
+            ),
+            child: const Text(
+              'Silme Talebi Gönder',
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _requestingDeletion = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final requestDeletion =
+          widget.requestAccountDeletion ??
+          () => AccountDeletionRequestService()
+              .requestDeletion();
+
+      await requestDeletion();
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text(
+            'Talebiniz Alındı',
+          ),
+          content: const Text(
+            'Hesap silme talebiniz alındı. '
+            'Hesabınız henüz silinmedi; '
+            'silme işlemi ayrıca tamamlanacaktır.',
+          ),
+          actions: [
+            FilledButton(
+              key: const ValueKey(
+                'account-deletion-request-success-close',
+              ),
+              onPressed: () => Navigator.pop(
+                context,
+              ),
+              child: const Text(
+                'Tamam',
+              ),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage =
+            'Hesap silme talebi gönderilemedi. '
+            'Bağlantınızı kontrol edip tekrar deneyin.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _requestingDeletion = false;
         });
       }
     }
@@ -138,6 +243,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              const SizedBox(height: 16),
+              Card(
+                child: ListTile(
+                  key: const ValueKey(
+                    'profile-delete-account',
+                  ),
+                  leading: const Icon(
+                    Icons.delete_outline_rounded,
+                  ),
+                  title: const Text(
+                    'Hesabı Sil',
+                  ),
+                  subtitle: const Text(
+                    'Hesap silme talebi oluşturun.',
+                  ),
+                  enabled:
+                      !_signingOut &&
+                      !_requestingDeletion,
+                  onTap:
+                      _signingOut ||
+                          _requestingDeletion
+                      ? null
+                      : _confirmAccountDeletion,
+                ),
+              ),
               const Spacer(),
               OutlinedButton.icon(
                 onPressed: _signingOut ? null : _confirmSignOut,

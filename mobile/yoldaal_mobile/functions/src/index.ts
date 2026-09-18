@@ -1,3 +1,4 @@
+import {requestAccountDeletionForUser} from "./account-deletion-request-authority.js";
 import {protos, v2} from "@googlemaps/routing";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
@@ -644,6 +645,28 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
 );
 
 /* eslint-disable max-len */
+export const requestAccountDeletion = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Hesap silme talebi için oturum açmanız gereklidir.",
+      );
+    }
+
+    return requestAccountDeletionForUser(
+      {firestore},
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
 export const getMyRideMatchOffers = onCall(
   {
     region: "europe-west1",
