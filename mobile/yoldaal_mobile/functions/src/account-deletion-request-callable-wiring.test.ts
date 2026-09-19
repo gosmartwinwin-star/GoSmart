@@ -13,7 +13,12 @@ test(
 
     assert.match(
       source,
-      /import \{requestAccountDeletionForUser\} from "\.\/account-deletion-request-authority\.js";/u,
+      new RegExp(
+        String.raw`import\s*\{\s*requestAccountDeletionForUser,?\s*\}` +
+          String.raw`\s*from\s*` +
+          String.raw`"\.\/account-deletion-request-authority\.js";`,
+        "u",
+      ),
     );
 
     assert.match(
@@ -28,7 +33,12 @@ test(
 
     assert.match(
       source,
-      /requestAccountDeletionForUser\(\s*\{firestore\},\s*request\.auth\.uid,\s*request\.data,\s*\)/u,
+      new RegExp(
+        String.raw`requestAccountDeletionForUser\(` +
+          String.raw`\s*\{firestore\},\s*request\.auth\.uid,` +
+          String.raw`\s*request\.data,\s*\)`,
+        "u",
+      ),
     );
   },
 );

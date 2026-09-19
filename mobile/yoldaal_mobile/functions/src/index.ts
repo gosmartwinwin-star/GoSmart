@@ -1,4 +1,6 @@
-import {requestAccountDeletionForUser} from "./account-deletion-request-authority.js";
+import {
+  requestAccountDeletionForUser,
+} from "./account-deletion-request-authority.js";
 import {protos, v2} from "@googlemaps/routing";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
