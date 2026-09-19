@@ -3,6 +3,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../application/auth/auth_transition_hold.dart';
+import '../../application/auth/google_sign_in_coordinator.dart';
+import '../../services/google_sign_in_service.dart';
+
 import '../../theme/app_colors.dart';
 import '../../widgets/primary_button.dart';
 
@@ -15,12 +19,23 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instanceFor(app: Firebase.app());
+  late final GoogleSignInCoordinator _googleSignInCoordinator;
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController codeController = TextEditingController();
 
   String? _verificationId;
   bool _isSendingCode = false;
   bool _isCompletingSignIn = false;
+  bool _isGoogleSignIn = false;
+  bool _googlePhoneLinkPending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _googleSignInCoordinator = buildProductionGoogleSignInCoordinator(
+      auth: _auth,
+    );
+  }
 
   @override
   void dispose() {
@@ -30,7 +45,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> verifyPhone() async {
-    if (_isSendingCode || _isCompletingSignIn) return;
+    if (_isSendingCode || _isCompletingSignIn || _isGoogleSignIn) {
+      return;
+    }
 
     final phoneNumber = _normalizePhoneNumber(phoneController.text);
     if (phoneNumber == null) {
@@ -103,6 +120,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _completeSignIn(PhoneAuthCredential credential) async {
     if (_isCompletingSignIn) return;
+
+    final googleLinkWasPending = _googlePhoneLinkPending;
+
+    var phoneSessionOpened = false;
+
     _isCompletingSignIn = true;
 
     if (mounted) {
@@ -111,24 +133,142 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await _auth.signInWithCredential(credential);
+      phoneSessionOpened = true;
+
       final user = _auth.currentUser;
+
       if (user == null) {
         throw FirebaseAuthException(
           code: 'user-not-found',
           message: 'Oturum açılamadı.',
         );
       }
+
+      if (googleLinkWasPending) {
+        await _googleSignInCoordinator.linkPendingAfterPhoneSignIn();
+        _googlePhoneLinkPending = false;
+      }
+
       await user.getIdToken(true);
-      // authStateChanges üst düzey yönlendirmeyi güvenli biçimde yapar.
-    } on FirebaseAuthException catch (error) {
-      _showMessage(_messageForAuthError(error));
+
+      if (googleLinkWasPending) {
+        authTransitionHold.release();
+      }
+    } on GoogleSignInFlowException catch (error) {
+      if (googleLinkWasPending && phoneSessionOpened) {
+        await _abortGooglePhoneLink();
+      }
+
+      if (mounted) {
+        _showMessage(_messageForGoogleError(error));
+      }
+
       _isCompletingSignIn = false;
+
+      if (mounted) setState(() {});
+    } on FirebaseAuthException catch (error) {
+      if (googleLinkWasPending && phoneSessionOpened) {
+        await _abortGooglePhoneLink();
+      }
+
+      if (mounted) {
+        _showMessage(_messageForAuthError(error));
+      }
+
+      _isCompletingSignIn = false;
+
       if (mounted) setState(() {});
     } catch (_) {
-      _showMessage('Giriş sırasında beklenmeyen bir sorun oluştu.');
+      if (googleLinkWasPending && phoneSessionOpened) {
+        await _abortGooglePhoneLink();
+      }
+
+      if (mounted) {
+        _showMessage('Giriş sırasında beklenmeyen bir sorun oluştu.');
+      }
+
       _isCompletingSignIn = false;
+
       if (mounted) setState(() {});
     }
+  }
+
+  Future<void> _abortGooglePhoneLink() async {
+    try {
+      await _auth.signOut();
+    } catch (_) {
+      // Keep the global transition hold active.
+      // If sign-out cannot be proven, authenticated landing
+      // must remain fail-closed until process restart/recovery.
+      return;
+    }
+
+    _googlePhoneLinkPending = false;
+    _googleSignInCoordinator.clearPendingLink();
+    authTransitionHold.release();
+  }
+
+  Future<void> _startGoogleSignIn() async {
+    if (_isSendingCode ||
+        _isCompletingSignIn ||
+        _isGoogleSignIn ||
+        _googlePhoneLinkPending ||
+        authTransitionHold.isHeld) {
+      return;
+    }
+
+    _googlePhoneLinkPending = false;
+
+    setState(() => _isGoogleSignIn = true);
+
+    try {
+      final result = await _googleSignInCoordinator.start();
+
+      if (!mounted) return;
+
+      switch (result.disposition) {
+        case GoogleSignInStartDisposition.signedIn:
+          _googlePhoneLinkPending = false;
+          break;
+        case GoogleSignInStartDisposition.phoneVerificationRequired:
+          authTransitionHold.begin();
+          _googlePhoneLinkPending = true;
+          _verificationId = null;
+          codeController.clear();
+          _showMessage(
+            'Google hesabınızı YoldaAl hesabınıza '
+            'bağlamak için telefon numaranızı doğrulayın.',
+          );
+          break;
+      }
+    } on GoogleSignInFlowException catch (error) {
+      if (mounted) {
+        _showMessage(_messageForGoogleError(error));
+      }
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Google ile giriş şu anda kullanılamıyor.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGoogleSignIn = false);
+      }
+    }
+  }
+
+  String _messageForGoogleError(GoogleSignInFlowException error) {
+    return switch (error.code) {
+      'google_signin_cancelled' => 'Google ile giriş iptal edildi.',
+      'google_auth_unavailable' =>
+        'Google ile giriş bu cihazda kullanılamıyor.',
+      'google_provider_unavailable' => 'Google hesabına bağlanılamadı.',
+      'google_link_state_unavailable' =>
+        'Google ile giriş henüz kullanılamıyor.',
+      'google_account_link_failed' =>
+        'Google hesabı telefon hesabınıza bağlanamadı.',
+      'phone_session_missing' => 'Telefon doğrulama oturumu bulunamadı.',
+      _ => 'Google ile giriş tamamlanamadı.',
+    };
   }
 
   String? _normalizePhoneNumber(String rawValue) {
@@ -196,7 +336,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final isCodeSent = _verificationId != null;
-    final isBusy = _isSendingCode || _isCompletingSignIn;
+    final isBusy = _isSendingCode || _isCompletingSignIn || _isGoogleSignIn;
 
     return Scaffold(
       body: SafeArea(
@@ -284,8 +424,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 OutlinedButton.icon(
-                  onPressed: null,
-                  icon: const Icon(Icons.login),
+                  onPressed: isBusy || _googlePhoneLinkPending
+                      ? null
+                      : _startGoogleSignIn,
+                  icon: const Icon(Icons.account_circle_outlined),
                   label: const Text('Google ile Giriş Yap'),
                 ),
                 const SizedBox(height: 40),

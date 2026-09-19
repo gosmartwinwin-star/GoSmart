@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../application/auth/authenticated_landing_resolver.dart';
+import '../../application/auth/auth_transition_hold.dart';
 import '../../core/branding/yoldaal_slogans.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 
@@ -16,32 +17,44 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instanceFor(app: Firebase.app()).authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _SplashLoadingView();
-        }
+    return ListenableBuilder(
+      listenable: authTransitionHold,
+      builder: (context, _) {
+        return StreamBuilder<User?>(
+          stream: FirebaseAuth.instanceFor(
+            app: Firebase.app(),
+          ).authStateChanges(),
+          builder: (context, snapshot) {
+            final decision = resolveAuthRootGateDecision(
+              connectionWaiting:
+                  snapshot.connectionState == ConnectionState.waiting,
+              transitionHeld: authTransitionHold.isHeld,
+              hasError: snapshot.hasError,
+              hasUser: snapshot.data != null,
+            );
 
-        if (snapshot.hasError) {
-          if (kDebugMode) {
-            debugPrint('Kimlik doğrulama durumu okunamadı.');
-          }
-          return const LoginScreen();
-        }
+            switch (decision) {
+              case AuthRootGateDecision.loading:
+                return const _SplashLoadingView();
 
-        final isSignedIn = snapshot.data != null;
-        if (kDebugMode) {
-          debugPrint(
-            isSignedIn
-                ? 'Kimlik doğrulama durumu: oturum açık.'
-                : 'Kimlik doğrulama durumu: oturum kapalı.',
-          );
-        }
+              case AuthRootGateDecision.login:
+                if (snapshot.hasError && kDebugMode) {
+                  debugPrint('Kimlik doğrulama durumu okunamadı.');
+                } else if (kDebugMode) {
+                  debugPrint('Kimlik doğrulama durumu: oturum kapalı.');
+                }
 
-        return isSignedIn
-            ? _AuthenticatedSessionGate(user: snapshot.data!)
-            : const LoginScreen();
+                return const LoginScreen();
+
+              case AuthRootGateDecision.authenticated:
+                if (kDebugMode) {
+                  debugPrint('Kimlik doğrulama durumu: oturum açık.');
+                }
+
+                return _AuthenticatedSessionGate(user: snapshot.data!);
+            }
+          },
+        );
       },
     );
   }

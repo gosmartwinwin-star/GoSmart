@@ -20,7 +20,10 @@ import {
 } from "firebase-functions/v2/firestore";
 import {onTaskDispatched} from "firebase-functions/v2/tasks";
 import * as logger from "firebase-functions/logger";
-import {defineSecret} from "firebase-functions/params";
+import {defineSecret, defineString} from "firebase-functions/params";
+import {
+  resolveGoogleSignInLinkStateForToken,
+} from "./google-signin-link-state-service.js";
 import {
   CoordinateInput,
   computeTrafficAwareDrivingMeasurement,
@@ -231,6 +234,10 @@ const googlePlacesApiKey = defineSecret(
   "GOOGLE_PLACES_API_KEY",
 );
 
+
+const googleSignInAllowedAudiences = defineString(
+  "GOOGLE_SIGNIN_ALLOWED_AUDIENCES",
+);
 
 const routesClient = new v2.RoutesClient();
 const routing = protos.google.maps.routing.v2;
@@ -2497,3 +2504,18 @@ export const dispatchRideOfferHintPage =
       );
     },
   );
+
+export const resolveGoogleSignInLinkState = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) =>
+    resolveGoogleSignInLinkStateForToken(
+      request.data,
+      googleSignInAllowedAudiences.value(),
+    ),
+);
