@@ -12,7 +12,20 @@
           "package_name": "com.example.gosmart_mobile"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "367158650760-j2057di4sqf28dnk0nc4sd86c9jbpbha.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.gosmart_mobile",
+            "certificate_hash": "63ed54e2f79f8c0b8a22cb1c81ec6375917895a0"
+          }
+        },
+        {
+          "client_id": "367158650760-0ql2hebk3cucl53u8k4drs0u6n9q50pj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDiwvUnlg_flBUVxWoRXZmd2o1yQsmLm8Y"
@@ -23,7 +36,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "367158650760-0ql2hebk3cucl53u8k4drs0u6n9q50pj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "367158650760-ff2crtu4k2lhmc4fdc6mdupibeik77k0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.gosmartMobile"
+              }
+            }
+          ]
         }
       }
     },
@@ -34,7 +59,28 @@
           "package_name": "com.yoldaal.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "367158650760-51ued9151fkfm1e2qt7k8d5snhfi21c7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yoldaal.app",
+            "certificate_hash": "5b1ffd0bf42e6c49e8f90d41f24ecf9aeaef1ec5"
+          }
+        },
+        {
+          "client_id": "367158650760-76faj80ogvvqukbk008cduqdaplk628u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yoldaal.app",
+            "certificate_hash": "63ed54e2f79f8c0b8a22cb1c81ec6375917895a0"
+          }
+        },
+        {
+          "client_id": "367158650760-0ql2hebk3cucl53u8k4drs0u6n9q50pj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDiwvUnlg_flBUVxWoRXZmd2o1yQsmLm8Y"
@@ -45,7 +91,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "367158650760-0ql2hebk3cucl53u8k4drs0u6n9q50pj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "367158650760-ff2crtu4k2lhmc4fdc6mdupibeik77k0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.gosmartMobile"
+              }
+            }
+          ]
         }
       }
     }

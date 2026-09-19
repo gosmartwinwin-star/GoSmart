@@ -137,5 +137,13 @@
         ]
       }
     ]
+  },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "YoldaAl",
+        "supportEmail": "yoldaal.app@gmail.com"
+      }
+    }
   }
 }
