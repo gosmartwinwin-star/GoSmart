@@ -2507,6 +2507,7 @@ export const dispatchRideOfferHintPage =
 
 export const resolveGoogleSignInLinkState = onCall(
   {
+    enforceAppCheck: true,
     region: "europe-west1",
     timeoutSeconds: 15,
     memory: "256MiB",

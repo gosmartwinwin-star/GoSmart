@@ -131,6 +131,10 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isSendingCode = false);
     }
 
+    if (googleLinkWasPending) {
+      authTransitionHold.begin();
+    }
+
     try {
       await _auth.signInWithCredential(credential);
       phoneSessionOpened = true;
@@ -155,8 +159,15 @@ class _LoginScreenState extends State<LoginScreen> {
         authTransitionHold.release();
       }
     } on GoogleSignInFlowException catch (error) {
-      if (googleLinkWasPending && phoneSessionOpened) {
-        await _abortGooglePhoneLink();
+      if (googleLinkWasPending) {
+        if (phoneSessionOpened) {
+          await _abortGooglePhoneLink();
+        } else {
+          // No authenticated phone session exists yet.
+          // Release the root gate but keep the pending Google
+          // credential so the user can retry phone verification.
+          authTransitionHold.release();
+        }
       }
 
       if (mounted) {
@@ -167,8 +178,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) setState(() {});
     } on FirebaseAuthException catch (error) {
-      if (googleLinkWasPending && phoneSessionOpened) {
-        await _abortGooglePhoneLink();
+      if (googleLinkWasPending) {
+        if (phoneSessionOpened) {
+          await _abortGooglePhoneLink();
+        } else {
+          // No authenticated phone session exists yet.
+          // Release the root gate but keep the pending Google
+          // credential so the user can retry phone verification.
+          authTransitionHold.release();
+        }
       }
 
       if (mounted) {
@@ -179,8 +197,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) setState(() {});
     } catch (_) {
-      if (googleLinkWasPending && phoneSessionOpened) {
-        await _abortGooglePhoneLink();
+      if (googleLinkWasPending) {
+        if (phoneSessionOpened) {
+          await _abortGooglePhoneLink();
+        } else {
+          // No authenticated phone session exists yet.
+          // Release the root gate but keep the pending Google
+          // credential so the user can retry phone verification.
+          authTransitionHold.release();
+        }
       }
 
       if (mounted) {
@@ -231,7 +256,6 @@ class _LoginScreenState extends State<LoginScreen> {
           _googlePhoneLinkPending = false;
           break;
         case GoogleSignInStartDisposition.phoneVerificationRequired:
-          authTransitionHold.begin();
           _googlePhoneLinkPending = true;
           _verificationId = null;
           codeController.clear();
