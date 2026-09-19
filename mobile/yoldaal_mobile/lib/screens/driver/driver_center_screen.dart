@@ -163,7 +163,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
         rideStatus: () => rideController?.ride?.status,
         locationStream: trackingLocation.locationStream,
         livePresence: PublishDriverLiveLocationService(),
-      )..start();
+      )
+        ..setAppResumed(_appResumed)
+        ..start();
     }
 
     final injectedMidtripRouteChangeController =
@@ -223,6 +225,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
     }
 
     _appResumed = resumed;
+    _liveTrackingController?.setAppResumed(resumed);
     _syncPushTargetLifecycleEligibility();
 
     if (!resumed) {

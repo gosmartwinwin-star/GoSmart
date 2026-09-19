@@ -57,6 +57,7 @@ class DriverLiveTrackingController {
   bool _active = false;
   bool _publishing = false;
   bool _disposed = false;
+  bool _appResumed = true;
   int _generation = 0;
 
   bool get isTracking => _active && !_disposed;
@@ -71,6 +72,18 @@ class DriverLiveTrackingController {
     _syncRideState();
   }
 
+  void setAppResumed(bool resumed) {
+    if (_disposed || _appResumed == resumed) {
+      return;
+    }
+
+    _appResumed = resumed;
+
+    if (resumed) {
+      _syncRideState();
+    }
+  }
+
   void _syncRideState() {
     if (_disposed) {
       return;
@@ -80,7 +93,7 @@ class DriverLiveTrackingController {
         _activeStatuses.contains(_rideStatus());
 
     if (shouldTrack) {
-      if (!_active) {
+      if (!_active && _appResumed) {
         _startTracking();
       }
       return;
@@ -92,7 +105,7 @@ class DriverLiveTrackingController {
   }
 
   void _startTracking() {
-    if (_disposed || _active) {
+    if (_disposed || _active || !_appResumed) {
       return;
     }
 

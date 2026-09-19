@@ -13,6 +13,102 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   }
 
+  test('active ride does not start tracking while app is backgrounded', () async {
+    final ride = _RideStatusState(RideStatus.driverEnRoute);
+    final locations =
+        StreamController<DeviceLocation>.broadcast(sync: true);
+    final controller = DriverLiveTrackingController(
+      rideStatusListenable: ride,
+      rideStatus: () => ride.status,
+      locationStream: () => locations.stream,
+      livePresence: _PresencePublisher(),
+      timerFactory: _ManualTimerFactory().create,
+    );
+
+    controller.setAppResumed(false);
+    controller.start();
+
+    expect(controller.isTracking, isFalse);
+    expect(locations.hasListener, isFalse);
+
+    controller.dispose();
+    await locations.close();
+  });
+
+  test('resume starts tracking deferred while backgrounded', () async {
+    final ride = _RideStatusState(RideStatus.driverEnRoute);
+    final locations =
+        StreamController<DeviceLocation>.broadcast(sync: true);
+    final controller = DriverLiveTrackingController(
+      rideStatusListenable: ride,
+      rideStatus: () => ride.status,
+      locationStream: () => locations.stream,
+      livePresence: _PresencePublisher(),
+      timerFactory: _ManualTimerFactory().create,
+    );
+
+    controller.setAppResumed(false);
+    controller.start();
+    expect(controller.isTracking, isFalse);
+
+    controller.setAppResumed(true);
+
+    expect(controller.isTracking, isTrue);
+    expect(locations.hasListener, isTrue);
+
+    controller.dispose();
+    await locations.close();
+  });
+
+  test('backgrounding does not stop already-running active tracking', () async {
+    final ride = _RideStatusState(RideStatus.driverEnRoute);
+    final locations =
+        StreamController<DeviceLocation>.broadcast(sync: true);
+    final controller = DriverLiveTrackingController(
+      rideStatusListenable: ride,
+      rideStatus: () => ride.status,
+      locationStream: () => locations.stream,
+      livePresence: _PresencePublisher(),
+      timerFactory: _ManualTimerFactory().create,
+    )..start();
+
+    expect(controller.isTracking, isTrue);
+    expect(locations.hasListener, isTrue);
+
+    controller.setAppResumed(false);
+
+    expect(controller.isTracking, isTrue);
+    expect(locations.hasListener, isTrue);
+
+    controller.dispose();
+    await locations.close();
+  });
+
+  test('terminal ride stops running tracking while backgrounded', () async {
+    final ride = _RideStatusState(RideStatus.inProgress);
+    final locations =
+        StreamController<DeviceLocation>.broadcast(sync: true);
+    final controller = DriverLiveTrackingController(
+      rideStatusListenable: ride,
+      rideStatus: () => ride.status,
+      locationStream: () => locations.stream,
+      livePresence: _PresencePublisher(),
+      timerFactory: _ManualTimerFactory().create,
+    )..start();
+
+    expect(controller.isTracking, isTrue);
+
+    controller.setAppResumed(false);
+    ride.setStatus(RideStatus.completed);
+    await settle();
+
+    expect(controller.isTracking, isFalse);
+    expect(locations.hasListener, isFalse);
+
+    controller.dispose();
+    await locations.close();
+  });
+
   test('tracking starts only for active ride statuses and terminal stops it', () async {
     final ride = _RideStatusState();
     final locations =
