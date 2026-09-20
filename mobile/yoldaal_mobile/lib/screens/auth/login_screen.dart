@@ -7,7 +7,7 @@ import '../../application/auth/auth_transition_hold.dart';
 import '../../application/auth/google_sign_in_coordinator.dart';
 import '../../services/google_sign_in_service.dart';
 
-import '../../theme/app_colors.dart';
+import '../../core/colors/yoldaal_colors.dart';
 import '../../widgets/primary_button.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -543,7 +543,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const Icon(
                   Icons.local_taxi,
                   size: 80,
-                  color: AppColors.primary,
+                  color: YoldaAlColors.primary,
                 ),
                 const SizedBox(height: 20),
                 const Text(
@@ -553,7 +553,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Ortak Yol Ortak Kazanç',
-                  style: TextStyle(fontSize: 18, color: AppColors.grey),
+                  style: TextStyle(fontSize: 18, color: YoldaAlColors.textSecondary),
                 ),
                 const SizedBox(height: 40),
                 TextField(
@@ -596,7 +596,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontSize: 10,
-                                color: AppColors.grey,
+                                color: YoldaAlColors.textSecondary,
                               ),
                             ),
                           ],
@@ -666,7 +666,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 40),
                 const Text(
                   '© 2026 YoldaAl',
-                  style: TextStyle(color: AppColors.grey),
+                  style: TextStyle(color: YoldaAlColors.textSecondary),
                 ),
                 if (kDebugMode) ...[
                   const SizedBox(height: 8),
