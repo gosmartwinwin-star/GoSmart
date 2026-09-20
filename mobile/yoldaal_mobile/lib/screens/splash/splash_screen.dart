@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../../application/auth/authenticated_landing_resolver.dart';
 import '../../application/auth/auth_transition_hold.dart';
+import '../../core/branding/yoldaal_brand_mark.dart';
 import '../../core/branding/yoldaal_slogans.dart';
+import '../../core/colors/yoldaal_colors.dart';
 import '../../infrastructure/firestore/repositories/firestore_driver_profile_repository.dart';
 
 import '../auth/login_screen.dart';
@@ -158,24 +160,43 @@ class _SplashLoadingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
+      backgroundColor: YoldaAlColors.primary,
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.local_taxi, size: 90, color: Colors.amber),
-            SizedBox(height: 20),
-            Text(
-              'YoldaAl',
-              style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 10),
-            Text(
-              YoldaAlSlogans.brand,
-              style: TextStyle(fontSize: 18, color: Colors.grey),
-            ),
-            SizedBox(height: 40),
-            CircularProgressIndicator(),
-          ],
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              YoldaAlBrandMark(size: 132),
+              SizedBox(height: 16),
+              Text(
+                'YoldaAl',
+                style: TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.bold,
+                  color: YoldaAlColors.secondary,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                YoldaAlSlogans.brand,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  color: YoldaAlColors.secondary,
+                ),
+              ),
+              SizedBox(height: 36),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: YoldaAlColors.secondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -7,7 +7,10 @@ import '../../application/auth/auth_transition_hold.dart';
 import '../../application/auth/google_sign_in_coordinator.dart';
 import '../../services/google_sign_in_service.dart';
 
+import '../../core/branding/yoldaal_brand_mark.dart';
+import '../../core/branding/yoldaal_slogans.dart';
 import '../../core/colors/yoldaal_colors.dart';
+import '../../core/radius/yoldaal_radius.dart';
 import '../../widgets/primary_button.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -530,9 +533,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final googlePhoneLinkRuntimeMessage = _googlePhoneLinkRuntimeMessage();
 
     return Scaffold(
+      backgroundColor: YoldaAlColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               minHeight: MediaQuery.sizeOf(context).height - 96,
@@ -540,34 +547,115 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.local_taxi,
-                  size: 80,
-                  color: YoldaAlColors.primary,
-                ),
-                const SizedBox(height: 20),
+                const YoldaAlBrandMark(size: 116),
+                const SizedBox(height: 14),
                 const Text(
                   'YoldaAl',
-                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: YoldaAlColors.secondary,
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 const Text(
-                  'Ortak Yol Ortak Kazanç',
-                  style: TextStyle(fontSize: 18, color: YoldaAlColors.textSecondary),
+                  YoldaAlSlogans.brand,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: YoldaAlColors.textSecondary,
+                  ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 10),
+                const Text(
+                  'Devam etmek i\u00e7in giri\u015f yap\u0131n.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: YoldaAlColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(YoldaAlRadius.md),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: YoldaAlColors.shadow,
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        isBusy ||
+                            _googlePhoneLinkPending ||
+                            _phoneVerificationThrottled
+                        ? null
+                        : _startGoogleSignIn,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: YoldaAlColors.surface,
+                      foregroundColor: YoldaAlColors.textPrimary,
+                      disabledBackgroundColor:
+                          YoldaAlColors.surface.withValues(alpha: 0.75),
+                      side: const BorderSide(
+                        color: YoldaAlColors.divider,
+                        width: 1.25,
+                      ),
+                      minimumSize: const Size(double.infinity, 54),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          YoldaAlRadius.md,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.account_circle_outlined),
+                    label: const Text(
+                      'Google ile devam et',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 22),
+                const Row(
+                  children: [
+                    Expanded(child: Divider()),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'veya',
+                        style: TextStyle(
+                          color: YoldaAlColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider()),
+                  ],
+                ),
+                const SizedBox(height: 22),
+
                 TextField(
                   controller: phoneController,
                   enabled: !isBusy && !isCodeSent,
                   keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
+                    labelText: 'Telefon numaras\u0131',
                     hintText: '5XXXXXXXXX',
-                    prefixIcon: const Icon(Icons.phone),
+                    prefixIcon: const Icon(Icons.phone_outlined),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(
+                        YoldaAlRadius.md,
+                      ),
                     ),
                   ),
                 ),
+
                 if (googlePhoneLinkRuntimeMessage != null) ...[
                   const SizedBox(height: 16),
                   Card(
@@ -579,14 +667,18 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
                             ),
                             const SizedBox(height: 10),
                           ],
                           Text(
                             googlePhoneLinkRuntimeMessage,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           if (kDebugMode &&
                               _googlePhoneLinkRuntimeCode != null) ...[
@@ -605,6 +697,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ],
+
                 if (isCodeSent) ...[
                   const SizedBox(height: 16),
                   TextField(
@@ -613,24 +706,34 @@ class _LoginScreenState extends State<LoginScreen> {
                     keyboardType: TextInputType.number,
                     maxLength: 6,
                     decoration: InputDecoration(
-                      hintText: 'SMS doğrulama kodu',
+                      hintText: 'SMS do\u011frulama kodu',
                       prefixIcon: const Icon(Icons.lock_outline),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(
+                          YoldaAlRadius.md,
+                        ),
                       ),
                     ),
                   ),
                 ],
+
                 const SizedBox(height: 20),
+
                 if (isBusy)
                   const CircularProgressIndicator()
                 else
                   PrimaryButton(
-                    text: isCodeSent ? 'Giriş Yap' : 'Devam Et',
+                    text: isCodeSent
+                        ? 'Giri\u015f Yap'
+                        : 'Telefon ile devam et',
+                    icon: isCodeSent
+                        ? Icons.lock_open_rounded
+                        : Icons.phone_rounded,
                     onPressed: isCodeSent
                         ? _verifyCode
                         : (_phoneVerificationThrottled ? null : verifyPhone),
                   ),
+
                 if (isCodeSent && !isBusy)
                   TextButton(
                     onPressed: () {
@@ -639,39 +742,23 @@ class _LoginScreenState extends State<LoginScreen> {
                         codeController.clear();
                       });
                     },
-                    child: const Text('Telefon numarasını değiştir'),
-                  ),
-                const SizedBox(height: 20),
-                const Row(
-                  children: [
-                    Expanded(child: Divider()),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Text('veya'),
+                    child: const Text(
+                      'Telefon numaras\u0131n\u0131 de\u011fi\u015ftir',
                     ),
-                    Expanded(child: Divider()),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                OutlinedButton.icon(
-                  onPressed:
-                      isBusy ||
-                          _googlePhoneLinkPending ||
-                          _phoneVerificationThrottled
-                      ? null
-                      : _startGoogleSignIn,
-                  icon: const Icon(Icons.account_circle_outlined),
-                  label: const Text('Google ile Giriş Yap'),
-                ),
-                const SizedBox(height: 40),
+                  ),
+
+                const SizedBox(height: 36),
                 const Text(
-                  '© 2026 YoldaAl',
-                  style: TextStyle(color: YoldaAlColors.textSecondary),
+                  '\u00a9 2026 YoldaAl',
+                  style: TextStyle(
+                    color: YoldaAlColors.textSecondary,
+                  ),
                 ),
+
                 if (kDebugMode) ...[
                   const SizedBox(height: 8),
                   const Text(
-                    'Auth tanılama v2',
+                    'Auth tan\u0131lama v2',
                     style: TextStyle(fontSize: 10),
                   ),
                 ],
