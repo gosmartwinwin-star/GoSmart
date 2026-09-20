@@ -118,8 +118,42 @@ class FirebaseGoogleAuthAdapter {
       await user.linkWithCredential(_credential(idToken));
 
       await user.getIdToken(true);
-    } on FirebaseAuthException {
-      throw const GoogleSignInFlowException('google_account_link_failed');
+    } on FirebaseAuthException catch (error) {
+      late final String safeCode;
+
+      switch (error.code) {
+        case 'credential-already-in-use':
+          safeCode = 'google_account_link_credential_in_use';
+          break;
+        case 'account-exists-with-different-credential':
+          safeCode = 'google_account_link_account_conflict';
+          break;
+        case 'provider-already-linked':
+          safeCode = 'google_account_already_linked';
+          break;
+        case 'network-request-failed':
+          safeCode = 'google_account_link_network_failed';
+          break;
+        case 'operation-not-allowed':
+          safeCode = 'google_account_link_not_allowed';
+          break;
+        case 'invalid-credential':
+          safeCode = 'google_account_link_invalid_credential';
+          break;
+        case 'requires-recent-login':
+          safeCode = 'google_account_link_reauth_required';
+          break;
+        case 'user-disabled':
+          safeCode = 'google_account_link_user_disabled';
+          break;
+        case 'internal-error':
+          safeCode = 'google_account_link_internal';
+          break;
+        default:
+          safeCode = 'google_account_link_failed';
+      }
+
+      throw GoogleSignInFlowException(safeCode);
     }
   }
 }

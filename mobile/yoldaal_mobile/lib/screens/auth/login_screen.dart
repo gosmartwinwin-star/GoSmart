@@ -28,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isCompletingSignIn = false;
   bool _isGoogleSignIn = false;
   bool _googlePhoneLinkPending = false;
+  bool _googleAutoVerificationInProgress = false;
 
   @override
   void initState() {
@@ -61,7 +62,23 @@ class _LoginScreenState extends State<LoginScreen> {
       await _auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
         verificationCompleted: (credential) async {
-          await _completeSignIn(credential);
+          final googleAutoVerification = _googlePhoneLinkPending;
+
+          if (mounted && googleAutoVerification) {
+            setState(() {
+              _googleAutoVerificationInProgress = true;
+            });
+          }
+
+          try {
+            await _completeSignIn(credential);
+          } finally {
+            if (mounted && googleAutoVerification) {
+              setState(() {
+                _googleAutoVerificationInProgress = false;
+              });
+            }
+          }
         },
         verificationFailed: (error) {
           if (mounted) {
@@ -171,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (mounted) {
-        _showMessage(_messageForGoogleError(error));
+        _showMessage(_messageForGoogleLinkRuntimeError(error));
       }
 
       _isCompletingSignIn = false;
@@ -215,6 +232,31 @@ class _LoginScreenState extends State<LoginScreen> {
       _isCompletingSignIn = false;
 
       if (mounted) setState(() {});
+    }
+  }
+
+  String _messageForGoogleLinkRuntimeError(GoogleSignInFlowException error) {
+    switch (error.code) {
+      case 'google_account_link_credential_in_use':
+        return 'Bu Google hesabı başka bir YoldaAl hesabına bağlı.';
+      case 'google_account_link_account_conflict':
+        return 'Bu Google hesabı farklı bir oturum yöntemiyle kullanılıyor.';
+      case 'google_account_already_linked':
+        return 'Google hesabı zaten bağlı görünüyor. Google ile yeniden giriş yapın.';
+      case 'google_account_link_network_failed':
+        return 'Google hesabı bağlanırken ağ bağlantısı kesildi. Tekrar deneyin.';
+      case 'google_account_link_not_allowed':
+        return 'Google hesabı bağlantısı şu anda kullanılamıyor.';
+      case 'google_account_link_invalid_credential':
+        return 'Google oturumu geçersizleşti. Google ile yeniden devam edin.';
+      case 'google_account_link_reauth_required':
+        return 'Hesap bağlantısını tamamlamak için yeniden giriş gerekiyor.';
+      case 'google_account_link_user_disabled':
+        return 'Bu YoldaAl hesabı kullanıma kapalı.';
+      case 'google_account_link_internal':
+        return 'Google hesabı bağlanırken geçici bir hata oluştu.';
+      default:
+        return _messageForGoogleError(error);
     }
   }
 
@@ -401,6 +443,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+                if (_googleAutoVerificationInProgress) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Telefon numaranız otomatik doğrulandı. '
+                    'Google hesabınız bağlanıyor.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
                 if (isCodeSent) ...[
                   const SizedBox(height: 16),
                   TextField(
