@@ -29,6 +29,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isGoogleSignIn = false;
   bool _googlePhoneLinkPending = false;
   bool _googleAutoVerificationInProgress = false;
+  bool _phoneVerificationThrottled = false;
+  String? _googlePhoneLinkRuntimeCode;
 
   @override
   void initState() {
@@ -50,23 +52,41 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (_phoneVerificationThrottled) {
+      _recordGooglePhoneLinkRuntimeState('phone_verification_throttled');
+      if (mounted) setState(() {});
+      _showMessage(_googlePhoneLinkRuntimeMessage()!);
+      return;
+    }
+
     final phoneNumber = _normalizePhoneNumber(phoneController.text);
     if (phoneNumber == null) {
       _showMessage('Geçerli bir telefon numarası giriniz.');
       return;
     }
 
-    setState(() => _isSendingCode = true);
+    final googlePhoneLinkRequest = _googlePhoneLinkPending;
+
+    setState(() {
+      _isSendingCode = true;
+
+      if (googlePhoneLinkRequest) {
+        _recordGooglePhoneLinkRuntimeState('phone_verification_requesting');
+      }
+    });
 
     try {
       await _auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
         verificationCompleted: (credential) async {
-          final googleAutoVerification = _googlePhoneLinkPending;
+          if (googlePhoneLinkRequest && !_googlePhoneLinkPending) return;
+
+          final googleAutoVerification = googlePhoneLinkRequest;
 
           if (mounted && googleAutoVerification) {
             setState(() {
               _googleAutoVerificationInProgress = true;
+              _recordGooglePhoneLinkRuntimeState('auto_verification_linking');
             });
           }
 
@@ -81,30 +101,52 @@ class _LoginScreenState extends State<LoginScreen> {
           }
         },
         verificationFailed: (error) {
-          if (mounted) {
-            setState(() => _isSendingCode = false);
-            _handleVerificationError(error);
-          }
+          if (!mounted) return;
+          if (googlePhoneLinkRequest && !_googlePhoneLinkPending) return;
+
+          setState(() {
+            _isSendingCode = false;
+            _recordPhoneVerificationFailure(error);
+          });
+
+          _handleVerificationError(error);
         },
         codeSent: (verificationId, resendToken) {
           if (!mounted || _isCompletingSignIn) return;
+          if (googlePhoneLinkRequest && !_googlePhoneLinkPending) return;
+
           setState(() {
             _verificationId = verificationId;
             _isSendingCode = false;
+
+            if (googlePhoneLinkRequest) {
+              _recordGooglePhoneLinkRuntimeState('manual_code_required');
+            }
           });
+
           _showMessage('Doğrulama kodu gönderildi.');
         },
         codeAutoRetrievalTimeout: (verificationId) {
           if (!mounted || _isCompletingSignIn) return;
+          if (googlePhoneLinkRequest && !_googlePhoneLinkPending) return;
+
           setState(() {
             _verificationId = verificationId;
             _isSendingCode = false;
+
+            if (googlePhoneLinkRequest) {
+              _recordGooglePhoneLinkRuntimeState('manual_code_required');
+            }
           });
         },
       );
     } on FirebaseAuthException catch (error) {
       if (mounted) {
-        setState(() => _isSendingCode = false);
+        setState(() {
+          _isSendingCode = false;
+          _recordPhoneVerificationFailure(error);
+        });
+
         _handleVerificationError(error);
       }
     } catch (_) {
@@ -173,10 +215,12 @@ class _LoginScreenState extends State<LoginScreen> {
       await user.getIdToken(true);
 
       if (googleLinkWasPending) {
+        _recordGooglePhoneLinkRuntimeState('link_succeeded');
         authTransitionHold.release();
       }
     } on GoogleSignInFlowException catch (error) {
       if (googleLinkWasPending) {
+        _recordGooglePhoneLinkRuntimeState(error.code);
         if (phoneSessionOpened) {
           await _abortGooglePhoneLink();
         } else {
@@ -196,6 +240,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() {});
     } on FirebaseAuthException catch (error) {
       if (googleLinkWasPending) {
+        _recordGooglePhoneLinkRuntimeState('phone_sign_in_failed');
+
         if (phoneSessionOpened) {
           await _abortGooglePhoneLink();
         } else {
@@ -215,6 +261,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() {});
     } catch (_) {
       if (googleLinkWasPending) {
+        _recordGooglePhoneLinkRuntimeState('link_unexpected');
+
         if (phoneSessionOpened) {
           await _abortGooglePhoneLink();
         } else {
@@ -232,6 +280,66 @@ class _LoginScreenState extends State<LoginScreen> {
       _isCompletingSignIn = false;
 
       if (mounted) setState(() {});
+    }
+  }
+
+  void _recordGooglePhoneLinkRuntimeState(String code) {
+    _googlePhoneLinkRuntimeCode = code;
+
+    if (kDebugMode) {
+      debugPrint('Google phone-link safe state: $code');
+    }
+  }
+
+  void _recordPhoneVerificationFailure(FirebaseAuthException error) {
+    if (error.code == 'too-many-requests') {
+      _phoneVerificationThrottled = true;
+      _recordGooglePhoneLinkRuntimeState('phone_verification_throttled');
+      return;
+    }
+
+    if (_googlePhoneLinkPending) {
+      _recordGooglePhoneLinkRuntimeState('phone_verification_failed');
+    }
+  }
+
+  String? _googlePhoneLinkRuntimeMessage() {
+    final code = _googlePhoneLinkRuntimeCode;
+
+    if (code == null) return null;
+
+    switch (code) {
+      case 'phone_verification_required':
+        return 'Google hesabınızı bağlamak için mevcut YoldaAl telefon '
+            'hesabınızı doğrulayın.';
+      case 'phone_verification_requesting':
+        return 'Telefon doğrulaması başlatılıyor.';
+      case 'manual_code_required':
+        return 'SMS doğrulama kodunu girerek Google hesabı bağlantısını '
+            'tamamlayın.';
+      case 'auto_verification_linking':
+        return 'Telefon numaranız otomatik doğrulandı. '
+            'Google hesabınız bağlanıyor.';
+      case 'link_succeeded':
+        return 'Telefon hesabınız doğrulandı ve Google hesabınız bağlandı.';
+      case 'direct_google_signed_in':
+        return 'Google hesabınız zaten bağlı. Giriş tamamlanıyor.';
+      case 'phone_verification_throttled':
+        return 'Çok fazla doğrulama isteği gönderildi. '
+            'Yeni SMS isteği bu oturumda durduruldu. '
+            'Lütfen daha sonra uygulamayı yeniden açıp tekrar deneyin.';
+      case 'phone_verification_failed':
+        return 'Telefon doğrulaması tamamlanamadı. '
+            'Gösterilen hata mesajını kontrol edin.';
+      case 'phone_sign_in_failed':
+        return 'Telefon oturumu tamamlanamadı. '
+            'Google hesabı bağlantısı yapılmadı.';
+      case 'link_unexpected':
+        return 'Google hesabı bağlanırken beklenmeyen bir sorun oluştu.';
+      default:
+        return _messageForGoogleLinkRuntimeError(
+          GoogleSignInFlowException(code),
+        );
     }
   }
 
@@ -270,12 +378,21 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    _verificationId = null;
+    codeController.clear();
     _googlePhoneLinkPending = false;
     _googleSignInCoordinator.clearPendingLink();
     authTransitionHold.release();
   }
 
   Future<void> _startGoogleSignIn() async {
+    if (_phoneVerificationThrottled) {
+      _recordGooglePhoneLinkRuntimeState('phone_verification_throttled');
+      if (mounted) setState(() {});
+      _showMessage(_googlePhoneLinkRuntimeMessage()!);
+      return;
+    }
+
     if (_isSendingCode ||
         _isCompletingSignIn ||
         _isGoogleSignIn ||
@@ -286,7 +403,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     _googlePhoneLinkPending = false;
 
-    setState(() => _isGoogleSignIn = true);
+    setState(() {
+      _isGoogleSignIn = true;
+      _googlePhoneLinkRuntimeCode = null;
+    });
 
     try {
       final result = await _googleSignInCoordinator.start();
@@ -296,11 +416,13 @@ class _LoginScreenState extends State<LoginScreen> {
       switch (result.disposition) {
         case GoogleSignInStartDisposition.signedIn:
           _googlePhoneLinkPending = false;
+          _recordGooglePhoneLinkRuntimeState('direct_google_signed_in');
           break;
         case GoogleSignInStartDisposition.phoneVerificationRequired:
           _googlePhoneLinkPending = true;
           _verificationId = null;
           codeController.clear();
+          _recordGooglePhoneLinkRuntimeState('phone_verification_required');
           _showMessage(
             'Google hesabınızı YoldaAl hesabınıza '
             'bağlamak için telefon numaranızı doğrulayın.',
@@ -308,6 +430,8 @@ class _LoginScreenState extends State<LoginScreen> {
           break;
       }
     } on GoogleSignInFlowException catch (error) {
+      _recordGooglePhoneLinkRuntimeState(error.code);
+
       if (mounted) {
         _showMessage(_messageForGoogleError(error));
       }
@@ -403,6 +527,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final isCodeSent = _verificationId != null;
     final isBusy = _isSendingCode || _isCompletingSignIn || _isGoogleSignIn;
+    final googlePhoneLinkRuntimeMessage = _googlePhoneLinkRuntimeMessage();
 
     return Scaffold(
       body: SafeArea(
@@ -443,12 +568,41 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                if (_googleAutoVerificationInProgress) ...[
+                if (googlePhoneLinkRuntimeMessage != null) ...[
                   const SizedBox(height: 16),
-                  const Text(
-                    'Telefon numaranız otomatik doğrulandı. '
-                    'Google hesabınız bağlanıyor.',
-                    textAlign: TextAlign.center,
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        children: [
+                          if (_googleAutoVerificationInProgress) ...[
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          Text(
+                            googlePhoneLinkRuntimeMessage,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (kDebugMode &&
+                              _googlePhoneLinkRuntimeCode != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Güvenli durum: $_googlePhoneLinkRuntimeCode',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.grey,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ],
                 if (isCodeSent) ...[
@@ -473,7 +627,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 else
                   PrimaryButton(
                     text: isCodeSent ? 'Giriş Yap' : 'Devam Et',
-                    onPressed: isCodeSent ? _verifyCode : verifyPhone,
+                    onPressed: isCodeSent
+                        ? _verifyCode
+                        : (_phoneVerificationThrottled ? null : verifyPhone),
                   ),
                 if (isCodeSent && !isBusy)
                   TextButton(
@@ -498,7 +654,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 OutlinedButton.icon(
-                  onPressed: isBusy || _googlePhoneLinkPending
+                  onPressed:
+                      isBusy ||
+                          _googlePhoneLinkPending ||
+                          _phoneVerificationThrottled
                       ? null
                       : _startGoogleSignIn,
                   icon: const Icon(Icons.account_circle_outlined),

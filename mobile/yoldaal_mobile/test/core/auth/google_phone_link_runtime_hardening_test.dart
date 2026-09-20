@@ -11,7 +11,11 @@ void main() {
     expect(source, contains('_googleAutoVerificationInProgress'));
     expect(
       source,
-      contains('final googleAutoVerification = _googlePhoneLinkPending;'),
+      contains('final googlePhoneLinkRequest = _googlePhoneLinkPending;'),
+    );
+    expect(
+      source,
+      contains('final googleAutoVerification = googlePhoneLinkRequest;'),
     );
     expect(source, contains('Telefon numaranız otomatik doğrulandı.'));
     expect(source, contains('Google hesabınız bağlanıyor.'));
@@ -74,4 +78,82 @@ void main() {
 
     expect(source, contains('authTransitionHold.release();'));
   });
+  test('runtime state persists safe outcomes beyond transient snackbars', () {
+    final source = File(
+      'lib/screens/auth/login_screen.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('String? _googlePhoneLinkRuntimeCode;'));
+    expect(source, contains('_recordGooglePhoneLinkRuntimeState(error.code);'));
+    expect(source, contains(r'Google phone-link safe state: $code'));
+    expect(source, contains('final googlePhoneLinkRuntimeMessage ='));
+    expect(source, contains(r'Güvenli durum: $_googlePhoneLinkRuntimeCode'));
+
+    for (final value in <String>[
+      'phone_verification_required',
+      'phone_verification_requesting',
+      'manual_code_required',
+      'auto_verification_linking',
+      'link_succeeded',
+      'phone_verification_failed',
+      'phone_sign_in_failed',
+      'link_unexpected',
+    ]) {
+      expect(source, contains(value));
+    }
+
+    expect(source, isNot(contains('error.message')));
+  });
+
+  test(
+    'too-many-requests creates a process-local no-auto-retry throttle guard',
+    () {
+      final source = File(
+        'lib/screens/auth/login_screen.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('_phoneVerificationThrottled'));
+      expect(source, contains("error.code == 'too-many-requests'"));
+      expect(source, contains('_phoneVerificationThrottled = true;'));
+      expect(source, contains('phone_verification_throttled'));
+      expect(source, contains('Yeni SMS isteği bu oturumda durduruldu.'));
+
+      expect(source, isNot(contains('Timer(')));
+      expect(source, isNot(contains('Future.delayed(')));
+    },
+  );
+
+  test(
+    'stale phone callbacks cannot overwrite a terminal Google-link result',
+    () {
+      final source = File(
+        'lib/screens/auth/login_screen.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('final googlePhoneLinkRequest = _googlePhoneLinkPending;'),
+      );
+
+      expect(
+        RegExp(
+          r'googlePhoneLinkRequest\s*&&\s*!_googlePhoneLinkPending',
+        ).allMatches(source).length,
+        greaterThanOrEqualTo(4),
+      );
+
+      final abortStart = source.indexOf('Future<void> _abortGooglePhoneLink()');
+      final googleStart = source.indexOf('Future<void> _startGoogleSignIn()');
+
+      expect(abortStart, greaterThanOrEqualTo(0));
+      expect(googleStart, greaterThan(abortStart));
+
+      final abort = source.substring(abortStart, googleStart);
+
+      expect(abort, contains('_verificationId = null;'));
+      expect(abort, contains('codeController.clear();'));
+      expect(abort, contains('await _auth.signOut();'));
+      expect(abort, contains('_googleSignInCoordinator.clearPendingLink();'));
+    },
+  );
 }
