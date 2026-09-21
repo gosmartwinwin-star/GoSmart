@@ -1,10 +1,13 @@
 import {getAuth} from "firebase-admin/auth";
 import {HttpsError} from "firebase-functions/v2/https";
 import {OAuth2Client} from "google-auth-library";
+import {resolveGoogleEmailConflictForToken} from
+  "./google-signin-email-conflict-service.js";
 
 type JsonRecord = Record<string, unknown>;
 
 export type GoogleSignInLinkStateDependencies = {
+
   verifyGoogleIdToken: (
     idToken: string,
     audiences: readonly string[],
@@ -12,10 +15,16 @@ export type GoogleSignInLinkStateDependencies = {
   providerUidIsLinked: (
     providerUid: string,
   ) => Promise<boolean>;
+  resolveEmailOwnerConflict?: (
+    idToken: string,
+    allowedAudiences: readonly string[],
+  ) => Promise<boolean>;
 };
 
 export type GoogleSignInLinkStateResponse = {
+
   linked: boolean;
+  accountConflict?: true;
 };
 
 const googleOAuthClient = new OAuth2Client();
@@ -180,11 +189,12 @@ const providerUidIsLinked = async (
   }
 };
 
-const productionDependencies:
-  GoogleSignInLinkStateDependencies = {
-    verifyGoogleIdToken,
-    providerUidIsLinked,
-  };
+const productionDependencies: GoogleSignInLinkStateDependencies = {
+
+  verifyGoogleIdToken,
+  providerUidIsLinked,
+  resolveEmailOwnerConflict: resolveGoogleEmailConflictForToken,
+};
 
 export const resolveGoogleSignInLinkStateForToken =
 async (
@@ -233,6 +243,21 @@ async (
       await dependencies.providerUidIsLinked(
         providerUid,
       );
+
+    if (
+      !linked &&
+    dependencies.resolveEmailOwnerConflict !== undefined
+    ) {
+      const accountConflict =
+      await dependencies.resolveEmailOwnerConflict(
+        idToken,
+        audiences,
+      );
+
+      if (accountConflict) {
+        return {linked: false, accountConflict: true};
+      }
+    }
 
     return {linked};
   } catch (error: unknown) {

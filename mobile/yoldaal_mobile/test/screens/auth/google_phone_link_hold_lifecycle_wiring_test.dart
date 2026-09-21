@@ -111,15 +111,31 @@ void main() {
     final link = complete.indexOf(
       'await _googleSignInCoordinator.linkPendingAfterPhoneSignIn();',
     );
-    final refresh = complete.indexOf('await user.getIdToken(true);');
+    final pendingClear = complete.indexOf(
+      '_googlePhoneLinkPending = false;',
+      link,
+    );
     final successRelease = complete.indexOf(
       'authTransitionHold.release();',
-      refresh,
+      pendingClear,
     );
+    final successMarker = complete.indexOf(
+      "_recordGooglePhoneLinkRuntimeState('link_succeeded');",
+      successRelease,
+    );
+    final refresh = complete.indexOf('await user.getIdToken(true);');
 
     expect(link, greaterThan(signIn));
-    expect(refresh, greaterThan(link));
-    expect(successRelease, greaterThan(refresh));
+    expect(pendingClear, greaterThan(link));
+    expect(successRelease, greaterThan(pendingClear));
+    expect(successMarker, greaterThan(successRelease));
+    expect(
+      refresh,
+      -1,
+      reason:
+          'Persistent Google link success must not depend on a post-link '
+          'token refresh inside _completeSignIn.',
+    );
 
     expect(
       RegExp(

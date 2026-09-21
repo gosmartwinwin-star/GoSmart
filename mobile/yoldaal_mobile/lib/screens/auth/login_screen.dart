@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../application/auth/auth_transition_hold.dart';
+import '../../application/auth/google_phone_link_runtime_trace.dart';
 import '../../application/auth/google_sign_in_coordinator.dart';
 import '../../services/google_sign_in_service.dart';
 
@@ -41,6 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _googleSignInCoordinator = buildProductionGoogleSignInCoordinator(
       auth: _auth,
     );
+    _googlePhoneLinkRuntimeCode = googlePhoneLinkRuntimeTrace.latestCode;
   }
 
   @override
@@ -213,13 +215,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (googleLinkWasPending) {
         await _googleSignInCoordinator.linkPendingAfterPhoneSignIn();
         _googlePhoneLinkPending = false;
-      }
 
-      await user.getIdToken(true);
-
-      if (googleLinkWasPending) {
-        _recordGooglePhoneLinkRuntimeState('link_succeeded');
+        // linkPendingAfterPhoneSignIn only returns after the persistent
+        // Firebase provider link succeeds. Release the global root gate
+        // before any widget-local diagnostic/UI work can fail.
         authTransitionHold.release();
+        _recordGooglePhoneLinkRuntimeState('link_succeeded');
       }
     } on GoogleSignInFlowException catch (error) {
       if (googleLinkWasPending) {
@@ -288,8 +289,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _recordGooglePhoneLinkRuntimeState(String code) {
     _googlePhoneLinkRuntimeCode = code;
+    final recorded = googlePhoneLinkRuntimeTrace.record(code);
 
-    if (kDebugMode) {
+    if (kDebugMode && recorded) {
       debugPrint('Google phone-link safe state: $code');
     }
   }
@@ -382,10 +384,17 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     _verificationId = null;
-    codeController.clear();
     _googlePhoneLinkPending = false;
     _googleSignInCoordinator.clearPendingLink();
+
+    // signOut has been proven above. Release the process-wide root gate
+    // before touching widget-owned controllers: this State may already
+    // have been disposed by the Firebase auth-state root rebuild.
     authTransitionHold.release();
+
+    if (mounted) {
+      codeController.clear();
+    }
   }
 
   Future<void> _startGoogleSignIn() async {
@@ -405,6 +414,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     _googlePhoneLinkPending = false;
+    googlePhoneLinkRuntimeTrace.clear();
 
     setState(() {
       _isGoogleSignIn = true;
@@ -536,10 +546,7 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: YoldaAlColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: 24,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               minHeight: MediaQuery.sizeOf(context).height - 96,
@@ -598,17 +605,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: OutlinedButton.styleFrom(
                       backgroundColor: YoldaAlColors.surface,
                       foregroundColor: YoldaAlColors.textPrimary,
-                      disabledBackgroundColor:
-                          YoldaAlColors.surface.withValues(alpha: 0.75),
+                      disabledBackgroundColor: YoldaAlColors.surface.withValues(
+                        alpha: 0.75,
+                      ),
                       side: const BorderSide(
                         color: YoldaAlColors.divider,
                         width: 1.25,
                       ),
                       minimumSize: const Size(double.infinity, 54),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          YoldaAlRadius.md,
-                        ),
+                        borderRadius: BorderRadius.circular(YoldaAlRadius.md),
                       ),
                     ),
                     icon: const Icon(Icons.account_circle_outlined),
@@ -630,9 +636,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: EdgeInsets.symmetric(horizontal: 12),
                       child: Text(
                         'veya',
-                        style: TextStyle(
-                          color: YoldaAlColors.textSecondary,
-                        ),
+                        style: TextStyle(color: YoldaAlColors.textSecondary),
                       ),
                     ),
                     Expanded(child: Divider()),
@@ -649,9 +653,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     hintText: '5XXXXXXXXX',
                     prefixIcon: const Icon(Icons.phone_outlined),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        YoldaAlRadius.md,
-                      ),
+                      borderRadius: BorderRadius.circular(YoldaAlRadius.md),
                     ),
                   ),
                 ),
@@ -667,18 +669,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                             const SizedBox(height: 10),
                           ],
                           Text(
                             googlePhoneLinkRuntimeMessage,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           if (kDebugMode &&
                               _googlePhoneLinkRuntimeCode != null) ...[
@@ -709,9 +707,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       hintText: 'SMS do\u011frulama kodu',
                       prefixIcon: const Icon(Icons.lock_outline),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                          YoldaAlRadius.md,
-                        ),
+                        borderRadius: BorderRadius.circular(YoldaAlRadius.md),
                       ),
                     ),
                   ),
@@ -750,9 +746,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 36),
                 const Text(
                   '\u00a9 2026 YoldaAl',
-                  style: TextStyle(
-                    color: YoldaAlColors.textSecondary,
-                  ),
+                  style: TextStyle(color: YoldaAlColors.textSecondary),
                 ),
 
                 if (kDebugMode) ...[

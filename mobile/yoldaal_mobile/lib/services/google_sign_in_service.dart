@@ -1,9 +1,40 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../application/auth/google_sign_in_coordinator.dart';
 import '../core/firebase/firebase_functions_registry.dart';
+
+/// Returns a Firebase Auth error code only when it is safe to emit as a
+/// diagnostic identifier.
+///
+/// The caller must pass FirebaseAuthException.code only. Arbitrary messages,
+/// account data, credentials and tokens must never be passed here.
+String? sanitizeFirebaseAuthCodeForGoogleLinkDiagnostic(String code) {
+  if (code.isEmpty || code.length > 64) {
+    return null;
+  }
+
+  if (!RegExp(r'^[a-z0-9-]+$').hasMatch(code)) {
+    return null;
+  }
+
+  return code;
+}
+
+void _debugLogUnmappedGoogleLinkFirebaseAuthCode(String code) {
+  if (!kDebugMode) {
+    return;
+  }
+
+  final safeCode = sanitizeFirebaseAuthCodeForGoogleLinkDiagnostic(code);
+
+  debugPrint(
+    'Google link FirebaseAuth safe error code: '
+    '${safeCode ?? 'invalid-safe-code'}',
+  );
+}
 
 class NativeGoogleIdentityTokenSource {
   NativeGoogleIdentityTokenSource({GoogleSignIn? googleSignIn})
@@ -44,6 +75,40 @@ class NativeGoogleIdentityTokenSource {
   }
 }
 
+bool parseGoogleLinkStateResponse(Object? data) {
+  if (data is! Map) {
+    throw const GoogleSignInFlowException(
+      'invalid_link_state_response',
+    );
+  }
+
+  if (
+    data.length == 1 &&
+    data.containsKey('linked') &&
+    data['linked'] is bool
+  ) {
+    return data['linked'] as bool;
+  }
+
+  final exactConflictKeys =
+      data.length == 2 &&
+      data.containsKey('linked') &&
+      data.containsKey('accountConflict');
+
+  if (
+    exactConflictKeys &&
+    data['linked'] == false &&
+    data['accountConflict'] == true
+  ) {
+    throw const GoogleSignInFlowException(
+      'google_account_link_account_conflict',
+    );
+  }
+
+  throw const GoogleSignInFlowException(
+    'invalid_link_state_response',
+  );
+}
 class CallableGoogleLinkStateResolver {
   CallableGoogleLinkStateResolver({FirebaseFunctions? functions})
     : _functions = functions;
@@ -60,19 +125,7 @@ class CallableGoogleLinkStateResolver {
         <String, Object?>{'idToken': idToken},
       );
 
-      final data = result.data;
-
-      if (data is! Map) {
-        throw const GoogleSignInFlowException('invalid_link_state_response');
-      }
-
-      if (data.length != 1 ||
-          !data.containsKey('linked') ||
-          data['linked'] is! bool) {
-        throw const GoogleSignInFlowException('invalid_link_state_response');
-      }
-
-      return data['linked'] as bool;
+      return parseGoogleLinkStateResponse(result.data);
     } on GoogleSignInFlowException {
       rethrow;
     } on FirebaseFunctionsException {
@@ -116,8 +169,6 @@ class FirebaseGoogleAuthAdapter {
 
     try {
       await user.linkWithCredential(_credential(idToken));
-
-      await user.getIdToken(true);
     } on FirebaseAuthException catch (error) {
       late final String safeCode;
 
@@ -126,6 +177,7 @@ class FirebaseGoogleAuthAdapter {
           safeCode = 'google_account_link_credential_in_use';
           break;
         case 'account-exists-with-different-credential':
+        case 'email-already-in-use':
           safeCode = 'google_account_link_account_conflict';
           break;
         case 'provider-already-linked':
@@ -150,6 +202,7 @@ class FirebaseGoogleAuthAdapter {
           safeCode = 'google_account_link_internal';
           break;
         default:
+          _debugLogUnmappedGoogleLinkFirebaseAuthCode(error.code);
           safeCode = 'google_account_link_failed';
       }
 
