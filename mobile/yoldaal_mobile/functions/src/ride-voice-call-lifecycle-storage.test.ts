@@ -513,6 +513,270 @@ test(
 );
 
 test(
+  "forward progression requires current voice-eligible ride",
+  async () => {
+    const cases:
+      ReadonlyArray<
+        Readonly<{
+          from: RideVoiceCallState;
+          to: RideVoiceCallState;
+          actorUid: string;
+        }>
+      > = [
+        {
+          from: "ringing",
+          to: "accepted",
+          actorUid: driverUid,
+        },
+        {
+          from: "accepted",
+          to: "connecting",
+          actorUid: passengerUid,
+        },
+        {
+          from: "connecting",
+          to: "active",
+          actorUid: passengerUid,
+        },
+      ];
+
+    for (const item of cases) {
+      const documents =
+        baseDocuments(item.from);
+
+      const ride =
+        documents[`rides/${rideId}`];
+
+      assert.ok(ride);
+
+      documents[`rides/${rideId}`] = {
+        ...ride,
+        status: "completed",
+      };
+
+      const fake =
+        createFakeFirestore(documents);
+
+      await expectAuthorityError(
+        () =>
+          transitionStoredRideVoiceCallForActor(
+            dependencies(fake),
+            item.actorUid,
+            {
+              rideId,
+              callId,
+              toState: item.to,
+            },
+          ),
+        "failed-precondition",
+      );
+
+      assert.equal(
+        fake.updates.length,
+        0,
+      );
+    }
+  },
+);
+
+test(
+  "cleanup remains available after ride loses eligibility",
+  async () => {
+    const actorCases:
+      ReadonlyArray<
+        Readonly<{
+          from: RideVoiceCallState;
+          to: RideVoiceCallState;
+          actorUid: string;
+        }>
+      > = [
+        {
+          from: "ringing",
+          to: "declined",
+          actorUid: driverUid,
+        },
+        {
+          from: "ringing",
+          to: "cancelled",
+          actorUid: passengerUid,
+        },
+        {
+          from: "accepted",
+          to: "ended",
+          actorUid: passengerUid,
+        },
+        {
+          from: "connecting",
+          to: "ended",
+          actorUid: passengerUid,
+        },
+        {
+          from: "active",
+          to: "ended",
+          actorUid: passengerUid,
+        },
+      ];
+
+    for (const item of actorCases) {
+      const documents =
+        baseDocuments(item.from);
+
+      const ride =
+        documents[`rides/${rideId}`];
+
+      assert.ok(ride);
+
+      documents[`rides/${rideId}`] = {
+        ...ride,
+        status: "completed",
+      };
+
+      const fake =
+        createFakeFirestore(documents);
+
+      const transition =
+        await transitionStoredRideVoiceCallForActor(
+          dependencies(fake),
+          item.actorUid,
+          {
+            rideId,
+            callId,
+            toState: item.to,
+          },
+        );
+
+      assert.equal(
+        transition.state,
+        item.to,
+      );
+
+      assert.equal(
+        fake.updates.length,
+        2,
+      );
+    }
+
+    const missedDocuments =
+      baseDocuments("ringing");
+
+    const missedRide =
+      missedDocuments[`rides/${rideId}`];
+
+    assert.ok(missedRide);
+
+    missedDocuments[`rides/${rideId}`] = {
+      ...missedRide,
+      status: "completed",
+    };
+
+    const missedFake =
+      createFakeFirestore(
+        missedDocuments,
+      );
+
+    const missed =
+      await transitionStoredRideVoiceCallForSystem(
+        dependencies(missedFake),
+        {
+          rideId,
+          callId,
+          toState: "missed",
+        },
+      );
+
+    assert.equal(
+      missed.state,
+      "missed",
+    );
+
+    const failedDocuments =
+      baseDocuments("active");
+
+    const failedRide =
+      failedDocuments[`rides/${rideId}`];
+
+    assert.ok(failedRide);
+
+    failedDocuments[`rides/${rideId}`] = {
+      ...failedRide,
+      status: "completed",
+    };
+
+    const failedFake =
+      createFakeFirestore(
+        failedDocuments,
+      );
+
+    const failed =
+      await transitionStoredRideVoiceCallForSystem(
+        dependencies(failedFake),
+        {
+          rideId,
+          callId,
+          toState: "failed",
+        },
+      );
+
+    assert.equal(
+      failed.state,
+      "failed",
+    );
+  },
+);
+
+test(
+  "eligible progression tolerates call ride-version snapshot",
+  async () => {
+    const documents =
+      baseDocuments("accepted");
+
+    const ride =
+      documents[`rides/${rideId}`];
+
+    const call =
+      documents[
+        `rides/${rideId}/voiceCalls/${callId}`
+      ];
+
+    assert.ok(ride);
+    assert.ok(call);
+
+    assert.equal(
+      ride.version,
+      7,
+    );
+
+    assert.equal(
+      call.rideVersion,
+      6,
+    );
+
+    const fake =
+      createFakeFirestore(documents);
+
+    const transition =
+      await transitionStoredRideVoiceCallForActor(
+        dependencies(fake),
+        passengerUid,
+        {
+          rideId,
+          callId,
+          toState: "connecting",
+        },
+      );
+
+    assert.equal(
+      transition.state,
+      "connecting",
+    );
+
+    assert.equal(
+      fake.updates.length,
+      2,
+    );
+  },
+);
+test(
   "participants can progress connection lifecycle",
   async () => {
     const cases:

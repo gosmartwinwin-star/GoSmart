@@ -125,6 +125,15 @@ import {
   sendRideChatMessageForActor,
 } from "./ride-chat-authority.js";
 import {
+  RideVoiceCallAuthorityError,
+} from "./ride-voice-call-authority.js";
+import {
+  createStoredRideVoiceCallForActor,
+} from "./ride-voice-call-storage-authority.js";
+import {
+  transitionStoredRideVoiceCallForActor,
+} from "./ride-voice-call-lifecycle-storage.js";
+import {
   dispatchRideChatPushHint,
 } from "./ride-chat-push-hint-authority.js";
 import {
@@ -998,6 +1007,98 @@ export const createActiveRideSupportCase = onCall(
       request.auth.uid,
       request.data,
     );
+  },
+);
+const toRideVoiceHttpsError = (
+  error: unknown,
+): HttpsError => {
+  if (
+    !(error instanceof RideVoiceCallAuthorityError)
+  ) {
+    return new HttpsError(
+      "internal",
+      "Ride voice call request failed.",
+    );
+  }
+
+  switch (error.code) {
+  case "invalid-argument":
+  case "not-found":
+  case "permission-denied":
+  case "failed-precondition":
+  case "already-exists":
+    return new HttpsError(
+      error.code,
+      error.message,
+    );
+  case "data-invalid":
+    return new HttpsError(
+      "internal",
+      "Ride voice call data is invalid.",
+    );
+  }
+
+  return new HttpsError(
+    "internal",
+    "Ride voice call request failed.",
+  );
+};
+
+export const createRideVoiceCall = onCall(
+  {
+    enforceAppCheck: true,
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride voice call requires authentication.",
+      );
+    }
+
+    try {
+      return await createStoredRideVoiceCallForActor(
+        {firestore},
+        request.auth.uid,
+        request.data,
+      );
+    } catch (error: unknown) {
+      throw toRideVoiceHttpsError(error);
+    }
+  },
+);
+
+export const transitionRideVoiceCall = onCall(
+  {
+    enforceAppCheck: true,
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride voice call transition requires authentication.",
+      );
+    }
+
+    try {
+      return await transitionStoredRideVoiceCallForActor(
+        {firestore},
+        request.auth.uid,
+        request.data,
+      );
+    } catch (error: unknown) {
+      throw toRideVoiceHttpsError(error);
+    }
   },
 );
 export const sendRideChatMessage = onCall(

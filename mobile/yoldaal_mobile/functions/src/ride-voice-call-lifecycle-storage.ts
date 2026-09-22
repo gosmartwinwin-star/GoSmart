@@ -13,6 +13,7 @@ import {
 
 import {
   isRideVoiceCallState,
+  isRideVoiceEligibleRideStatus,
   isRideVoiceParticipantRole,
   type RideVoiceCallState,
   type RideVoiceParticipantRole,
@@ -42,6 +43,7 @@ type TransitionInput = Readonly<{
 type RideParticipants = Readonly<{
   passengerUid: string;
   driverUid: string;
+  rideStatus: unknown;
 }>;
 
 type StoredParticipant = Readonly<{
@@ -263,6 +265,7 @@ const loadRideParticipants = async (
   return {
     passengerUid,
     driverUid,
+    rideStatus: rideSnapshot.data()?.status,
   };
 };
 
@@ -514,6 +517,13 @@ const requireNowMillis = (
   return millis;
 };
 
+const isForwardProgressionTransition = (
+  from: RideVoiceCallState,
+  to: RideVoiceCallState,
+): boolean =>
+  (from === "ringing" && to === "accepted") ||
+  (from === "accepted" && to === "connecting") ||
+  (from === "connecting" && to === "active");
 const persistTransition = async (
   dependencies: RideVoiceCallLifecycleDependencies,
   input: TransitionInput,
@@ -575,6 +585,20 @@ const persistTransition = async (
             call,
           );
 
+      if (
+        isForwardProgressionTransition(
+          call.state,
+          input.toState,
+        ) &&
+        !isRideVoiceEligibleRideStatus(
+          participants.rideStatus,
+        )
+      ) {
+        throw new RideVoiceCallAuthorityError(
+          "failed-precondition",
+          "Ride is not voice eligible for call progression.",
+        );
+      }
       if (
         !isRideVoiceAuthorityTransitionAllowed(
           actorSide,
