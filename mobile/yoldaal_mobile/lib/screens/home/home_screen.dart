@@ -42,6 +42,7 @@ import '../../widgets/panels/home_bottom_panel.dart';
 import '../../widgets/panels/ride_request_panel.dart';
 
 import '../ride/ride_history_screen.dart';
+import '../../controllers/ride_voice_call_recovery_controller.dart';
 
 typedef HomeRouteLoader =
     Future<RouteResultModel> Function({
@@ -82,8 +83,11 @@ String? passengerActiveRideArrivalContextText({
 }
 
 class HomeScreen extends StatefulWidget {
+  final RideVoiceCallRecoveryController? voiceCallRecoveryController;
+
   const HomeScreen({
     super.key,
+    this.voiceCallRecoveryController,
     this.rideController,
     this.liveTrackingController,
     this.nearbyDriverController,
@@ -114,7 +118,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  RideVoiceCallRecoveryController? _voiceCallRecoveryController;
+  bool _ownsVoiceCallRecoveryController = false;
   late final PassengerRideController rideController;
   late final bool _ownsRideController;
   PassengerRideLiveTrackingController? liveTrackingController;
@@ -157,6 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeVoiceCallRecoveryController();
 
     _ownsRideController = widget.rideController == null;
     rideController =
@@ -231,6 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _authSubscription = FirebaseAuth.instance.userChanges().skip(1).listen((
         user,
       ) {
+        _voiceCallRecoveryController?.authChanged();
         unawaited(rideController.authChanged(user?.uid));
         _passengerPushTargetLifecycle?.setEligible(user != null);
       });
@@ -266,8 +275,44 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _initializeVoiceCallRecoveryController() {
+    final injected = widget.voiceCallRecoveryController;
+
+    if (injected != null) {
+      _voiceCallRecoveryController = injected;
+      _ownsVoiceCallRecoveryController = false;
+    } else if (widget.rideController == null) {
+      _voiceCallRecoveryController = RideVoiceCallRecoveryController(
+        isAuthenticated: () => FirebaseAuth.instance.currentUser != null,
+      );
+      _ownsVoiceCallRecoveryController = true;
+    }
+
+    _voiceCallRecoveryController?.start();
+  }
+
+  void _disposeVoiceCallRecoveryController() {
+    final current = _voiceCallRecoveryController;
+    _voiceCallRecoveryController = null;
+
+    if (_ownsVoiceCallRecoveryController) {
+      current?.dispose();
+    }
+
+    _ownsVoiceCallRecoveryController = false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _voiceCallRecoveryController?.appResumed();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeVoiceCallRecoveryController();
     rideController.removeListener(_refreshRide);
     liveTrackingController?.removeListener(_refreshLiveTracking);
     if (_ownsLiveTrackingController) {

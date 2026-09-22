@@ -54,6 +54,7 @@ import '../../widgets/driver/ride_match_offer_panel.dart';
 import '../../widgets/driver/return_route_map_preview.dart';
 import '../profile/profile_screen.dart';
 import '../search/search_address_screen.dart';
+import '../../controllers/ride_voice_call_recovery_controller.dart';
 
 class DriverCenterScreen extends StatefulWidget {
   final DriverCenterController? controller;
@@ -72,8 +73,11 @@ class DriverCenterScreen extends StatefulWidget {
   final RideChatGateway? chatGateway;
   final String Function()? chatRequestIdGenerator;
 
+  final RideVoiceCallRecoveryController? voiceCallRecoveryController;
+
   const DriverCenterScreen({
     super.key,
+    this.voiceCallRecoveryController,
     this.controller,
     this.applicationScreenBuilder,
     this.resubmissionScreenBuilder,
@@ -96,6 +100,8 @@ class DriverCenterScreen extends StatefulWidget {
 
 class _DriverCenterScreenState extends State<DriverCenterScreen>
     with WidgetsBindingObserver {
+  RideVoiceCallRecoveryController? _voiceCallRecoveryController;
+  bool _ownsVoiceCallRecoveryController = false;
   late final DriverCenterController controller;
   late final bool _ownsController;
   DriverRideController? rideController;
@@ -125,6 +131,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initializeVoiceCallRecoveryController();
     _ownsController = widget.controller == null;
     controller =
         widget.controller ??
@@ -158,14 +165,15 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
     if (_ownsRideController && rideController != null) {
       final trackingLocation = LocationAccessService();
 
-      _liveTrackingController = DriverLiveTrackingController(
-        rideStatusListenable: rideController!,
-        rideStatus: () => rideController?.ride?.status,
-        locationStream: trackingLocation.locationStream,
-        livePresence: PublishDriverLiveLocationService(),
-      )
-        ..setAppResumed(_appResumed)
-        ..start();
+      _liveTrackingController =
+          DriverLiveTrackingController(
+              rideStatusListenable: rideController!,
+              rideStatus: () => rideController?.ride?.status,
+              locationStream: trackingLocation.locationStream,
+              livePresence: PublishDriverLiveLocationService(),
+            )
+            ..setAppResumed(_appResumed)
+            ..start();
     }
 
     final injectedMidtripRouteChangeController =
@@ -203,6 +211,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
     if (_ownsRideController) {
       _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
         _driverRideRecoveryRequested = false;
+        _voiceCallRecoveryController?.authChanged();
         if (user == null) {
           _pushTargetLifecycle?.setEligible(false);
           unawaited(rideController?.authChanged(null));
@@ -226,6 +235,9 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
 
     _appResumed = resumed;
     _liveTrackingController?.setAppResumed(resumed);
+    if (resumed) {
+      _voiceCallRecoveryController?.appResumed();
+    }
     _syncPushTargetLifecycleEligibility();
 
     if (!resumed) {
@@ -265,6 +277,33 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
       platform: platform,
     );
     _ownsPushTargetLifecycle = true;
+  }
+
+  void _initializeVoiceCallRecoveryController() {
+    final injected = widget.voiceCallRecoveryController;
+
+    if (injected != null) {
+      _voiceCallRecoveryController = injected;
+      _ownsVoiceCallRecoveryController = false;
+    } else if (widget.controller == null && widget.rideController == null) {
+      _voiceCallRecoveryController = RideVoiceCallRecoveryController(
+        isAuthenticated: () => FirebaseAuth.instance.currentUser != null,
+      );
+      _ownsVoiceCallRecoveryController = true;
+    }
+
+    _voiceCallRecoveryController?.start();
+  }
+
+  void _disposeVoiceCallRecoveryController() {
+    final current = _voiceCallRecoveryController;
+    _voiceCallRecoveryController = null;
+
+    if (_ownsVoiceCallRecoveryController) {
+      current?.dispose();
+    }
+
+    _ownsVoiceCallRecoveryController = false;
   }
 
   void _initializeOfferPushHintSource() {
@@ -384,6 +423,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
     _pushTargetLifecycle?.setEligible(false);
     _offerPushHintSubscription?.cancel();
     _offerPushHintSubscription = null;
+    _disposeVoiceCallRecoveryController();
     if (_ownsPushTargetLifecycle) {
       _pushTargetLifecycle?.dispose();
     }

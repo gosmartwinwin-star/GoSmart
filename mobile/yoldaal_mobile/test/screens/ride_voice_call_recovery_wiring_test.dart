@@ -1,0 +1,89 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final driver = File(
+    'lib/screens/driver/driver_center_screen.dart',
+  ).readAsStringSync();
+  final home = File('lib/screens/home/home_screen.dart').readAsStringSync();
+  final controller = File(
+    'lib/controllers/ride_voice_call_recovery_controller.dart',
+  ).readAsStringSync();
+
+  test('driver reuses existing lifecycle observer for Voice recovery', () {
+    expect(
+      driver,
+      contains(
+        "import '../../controllers/ride_voice_call_recovery_controller.dart';",
+      ),
+    );
+    expect(
+      driver,
+      contains(
+        'final RideVoiceCallRecoveryController? voiceCallRecoveryController;',
+      ),
+    );
+    expect(driver, contains('_initializeVoiceCallRecoveryController();'));
+    expect(driver, contains('_voiceCallRecoveryController?.authChanged();'));
+    expect(driver, contains('_voiceCallRecoveryController?.appResumed();'));
+    expect(driver, contains('_disposeVoiceCallRecoveryController();'));
+    expect(driver, contains('with WidgetsBindingObserver'));
+  });
+
+  test('passenger HomeScreen gains minimal lifecycle recovery ownership', () {
+    expect(
+      home,
+      contains(
+        "import '../../controllers/ride_voice_call_recovery_controller.dart';",
+      ),
+    );
+    expect(
+      home,
+      contains(
+        'class _HomeScreenState extends State<HomeScreen> '
+        'with WidgetsBindingObserver {',
+      ),
+    );
+    expect(home, contains('WidgetsBinding.instance.addObserver(this);'));
+    expect(home, contains('WidgetsBinding.instance.removeObserver(this);'));
+    expect(home, contains('_initializeVoiceCallRecoveryController();'));
+    expect(home, contains('_voiceCallRecoveryController?.authChanged();'));
+    expect(home, contains('_voiceCallRecoveryController?.appResumed();'));
+  });
+
+  test(
+    'screens consume only shared controller, never push payload authority',
+    () {
+      for (final source in <String>[driver, home]) {
+        expect(source, isNot(contains('RideVoiceCallRecoveryService(')));
+        expect(source, isNot(contains('isRideVoiceCallPushHintData')));
+        expect(source, isNot(contains('getMyActiveRideVoiceCall')));
+        expect(source, isNot(contains('ride_voice_call_available')));
+        expect(source.toLowerCase(), isNot(contains('agora')));
+      }
+
+      expect(controller, contains('RideVoiceCallPushHintSource? hintSource'));
+      expect(
+        controller,
+        contains('recoveryService ?? RideVoiceCallRecoveryService()'),
+      );
+      expect(controller, contains('hintSource ?? rideVoiceCallPushHintBus'));
+      expect(controller, contains('void _handleHintRevision(int revision)'));
+      expect(controller, contains('void appResumed()'));
+      expect(controller, isNot(contains('ride_voice_call_available')));
+      expect(controller.toLowerCase(), isNot(contains('agora')));
+    },
+  );
+
+  test(
+    'default screen wiring is production-only when core controllers inject',
+    () {
+      expect(
+        driver,
+        contains('widget.controller == null && widget.rideController == null'),
+      );
+      expect(home, contains('widget.rideController == null'));
+    },
+  );
+}
