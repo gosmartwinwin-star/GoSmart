@@ -14,6 +14,7 @@ void main() {
       final opened = StreamController<DriverOfferPushHintData>.broadcast();
 
       final bridge = DriverOfferPushHintBridge(
+        voiceSink: null,
         sink: offerBus,
         chatSink: chatBus,
         foregroundMessages: foreground.stream,
@@ -90,6 +91,7 @@ void main() {
       final opened = StreamController<DriverOfferPushHintData>.broadcast();
 
       final bridge = DriverOfferPushHintBridge(
+        voiceSink: null,
         sink: bus,
         foregroundMessages: foreground.stream,
         openedMessages: opened.stream,
@@ -132,6 +134,7 @@ void main() {
     var initialCalls = 0;
 
     final bridge = DriverOfferPushHintBridge(
+      voiceSink: null,
       sink: bus,
       foregroundMessages: foreground.stream,
       openedMessages: opened.stream,
@@ -171,6 +174,7 @@ void main() {
       final opened = StreamController<DriverOfferPushHintData>.broadcast();
 
       final bridge = DriverOfferPushHintBridge(
+        voiceSink: null,
         sink: bus,
         foregroundMessages: foreground.stream,
         openedMessages: opened.stream,

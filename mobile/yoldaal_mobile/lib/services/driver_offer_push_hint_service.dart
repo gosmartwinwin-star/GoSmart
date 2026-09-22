@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'ride_chat_push_hint_service.dart';
+import 'ride_voice_call_push_hint_service.dart';
 
 const driverRideOfferAvailablePushHintType = 'ride_offer_available';
 
@@ -47,14 +48,17 @@ class DriverOfferPushHintBridge {
     required Stream<DriverOfferPushHintData> openedMessages,
     required DriverOfferPushInitialDataLoader initialMessageLoader,
     RideChatPushHintBus? chatSink,
+    RideVoiceCallPushHintBus? voiceSink,
   }) : _sink = sink,
        _chatSink = chatSink,
+       _voiceSink = voiceSink,
        _foregroundMessages = foregroundMessages,
        _openedMessages = openedMessages,
        _initialMessageLoader = initialMessageLoader;
 
   final DriverOfferPushHintBus _sink;
   final RideChatPushHintBus? _chatSink;
+  final RideVoiceCallPushHintBus? _voiceSink;
   final Stream<DriverOfferPushHintData> _foregroundMessages;
   final Stream<DriverOfferPushHintData> _openedMessages;
   final DriverOfferPushInitialDataLoader _initialMessageLoader;
@@ -102,6 +106,11 @@ class DriverOfferPushHintBridge {
 
     if (isRideChatPushHintData(data)) {
       _chatSink?.publish();
+      return;
+    }
+
+    if (isRideVoiceCallPushHintData(data)) {
+      _voiceSink?.publish();
     }
   }
 
@@ -142,6 +151,7 @@ Future<void> initializeDriverOfferPushHintBridge() async {
   final bridge = DriverOfferPushHintBridge(
     sink: driverOfferPushHintBus,
     chatSink: rideChatPushHintBus,
+    voiceSink: rideVoiceCallPushHintBus,
     foregroundMessages: FirebaseMessaging.onMessage.map(
       (message) => message.data,
     ),
