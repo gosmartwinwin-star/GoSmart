@@ -94,7 +94,10 @@ import {
   DRIVER_TRANSITIONS,
   transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
-import {loadApprovedDriverId} from "./ride-driver-identity.js";
+import {
+  loadApprovedDriverId,
+  loadDriverProfileId,
+} from "./ride-driver-identity.js";
 import {publishDriverLivePresence} from "./driver-live-presence-authority.js";
 import {
   registerDriverPushTarget as registerDriverPushTargetAuthority,
@@ -133,6 +136,12 @@ import {
 import {
   transitionStoredRideVoiceCallForActor,
 } from "./ride-voice-call-lifecycle-storage.js";
+import {
+  recoverActiveRideVoiceCallForActor,
+} from "./ride-voice-call-recovery-authority.js";
+import {
+  dispatchRideVoiceCallPushHint,
+} from "./ride-voice-call-push-hint-authority.js";
 import {
   dispatchRideChatPushHint,
 } from "./ride-chat-push-hint-authority.js";
@@ -1101,6 +1110,42 @@ export const transitionRideVoiceCall = onCall(
     }
   },
 );
+export const getMyActiveRideVoiceCall = onCall(
+  {
+    enforceAppCheck: true,
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride voice call recovery requires authentication.",
+      );
+    }
+
+    try {
+      return await recoverActiveRideVoiceCallForActor(
+        {
+          firestore,
+          resolveDriverIdForActor: (uid) =>
+            loadDriverProfileId(
+              firestore,
+              uid,
+            ),
+        },
+        request.auth.uid,
+        request.data,
+      );
+    } catch (error: unknown) {
+      throw toRideVoiceHttpsError(error);
+    }
+  },
+);
+
 export const sendRideChatMessage = onCall(
   {
     region: "europe-west1",
@@ -2447,6 +2492,37 @@ export const resolvePlace = onCall(
     );
   },
 );
+
+export const onRideVoiceCallCreated =
+  onDocumentCreated(
+    {
+      document: "rides/{rideId}/voiceCalls/{callId}",
+      region: "europe-west1",
+    },
+    async (event) => {
+      await dispatchRideVoiceCallPushHint(
+        {
+          firestore,
+          getMessaging: () => ({
+            sendEachForMulticast: (
+              message,
+            ) =>
+              getMessaging()
+                .sendEachForMulticast(
+                  message,
+                ),
+          }),
+          warn: (message) => {
+            logger.warn(message);
+          },
+        },
+        {
+          rideId: event.params.rideId,
+          callId: event.params.callId,
+        },
+      );
+    },
+  );
 
 export const onRideChatMessageCreated =
   onDocumentCreated(
