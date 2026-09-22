@@ -55,6 +55,7 @@ import '../../widgets/driver/return_route_map_preview.dart';
 import '../profile/profile_screen.dart';
 import '../search/search_address_screen.dart';
 import '../../controllers/ride_voice_call_recovery_controller.dart';
+import '../../widgets/ride/ride_voice_call_status_panel.dart';
 
 class DriverCenterScreen extends StatefulWidget {
   final DriverCenterController? controller;
@@ -510,6 +511,10 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
               YoldaAlSlogans.driver,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16),
+            ),
+            RideVoiceCallStatusPanel(
+              controller: _voiceCallRecoveryController,
+              viewerRole: RideVoiceCallStatusViewerRole.driver,
             ),
             const SizedBox(height: 24),
             _content(),

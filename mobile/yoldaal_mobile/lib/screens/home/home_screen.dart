@@ -43,6 +43,7 @@ import '../../widgets/panels/ride_request_panel.dart';
 
 import '../ride/ride_history_screen.dart';
 import '../../controllers/ride_voice_call_recovery_controller.dart';
+import '../../widgets/ride/ride_voice_call_status_panel.dart';
 
 typedef HomeRouteLoader =
     Future<RouteResultModel> Function({
@@ -828,6 +829,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               mapController = controller;
               await _getCurrentLocation();
             },
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: 16,
+            child: SafeArea(
+              bottom: false,
+              child: RideVoiceCallStatusPanel(
+                controller: _voiceCallRecoveryController,
+                viewerRole: RideVoiceCallStatusViewerRole.passenger,
+              ),
+            ),
           ),
           if (!rideController.loading && rideController.ride == null)
             RideRequestPanel(

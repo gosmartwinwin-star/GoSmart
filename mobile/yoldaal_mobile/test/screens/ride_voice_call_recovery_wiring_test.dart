@@ -76,6 +76,37 @@ void main() {
     },
   );
 
+  test('both screens mount presentation-only shared Voice status panel', () {
+    expect(
+      driver,
+      contains(
+        "import '../../widgets/ride/ride_voice_call_status_panel.dart';",
+      ),
+    );
+    expect(
+      home,
+      contains(
+        "import '../../widgets/ride/ride_voice_call_status_panel.dart';",
+      ),
+    );
+    expect(driver, contains('RideVoiceCallStatusPanel('));
+    expect(
+      driver,
+      contains('viewerRole: RideVoiceCallStatusViewerRole.driver'),
+    );
+    expect(home, contains('RideVoiceCallStatusPanel('));
+    expect(
+      home,
+      contains('viewerRole: RideVoiceCallStatusViewerRole.passenger'),
+    );
+
+    for (final source in <String>[driver, home]) {
+      expect(source, isNot(contains('createRideVoiceCall')));
+      expect(source, isNot(contains('transitionRideVoiceCall')));
+      expect(source, isNot(contains('ride_voice_call_available')));
+      expect(source.toLowerCase(), isNot(contains('agora')));
+    }
+  });
   test(
     'default screen wiring is production-only when core controllers inject',
     () {
