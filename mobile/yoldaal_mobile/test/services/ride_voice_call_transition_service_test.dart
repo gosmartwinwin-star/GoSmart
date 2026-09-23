@@ -11,6 +11,7 @@ void main() {
       for (final target in <String>[
         'accepted',
         'connecting',
+        'active',
         'declined',
         'cancelled',
         'ended',
@@ -45,7 +46,7 @@ void main() {
       targetService.transition(
         rideId: 'ride-1',
         callId: 'rvc_0123456789abcdef0123456789abcdef',
-        targetState: 'active',
+        targetState: 'unsupported',
       ),
       throwsA(
         isA<RideVoiceCallTransitionException>().having(

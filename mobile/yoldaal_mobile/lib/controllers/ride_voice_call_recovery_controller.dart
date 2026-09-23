@@ -62,6 +62,8 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
 
   bool get canConnect => _isActionAllowed('connecting');
 
+  bool get canActivate => _isActionAllowed('active');
+
   bool get canEnd => _isActionAllowed('ended');
 
   bool get recovering => _recovering;
@@ -174,6 +176,8 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
 
   Future<void> connectCall() => _requestTransition('connecting');
 
+  Future<void> activateCall() => _requestTransition('active');
+
   Future<void> endCall() => _requestTransition('ended');
 
   bool _isActionAllowed(String targetState) {
@@ -203,6 +207,10 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
 
     if (targetState == 'connecting') {
       return call.state == RideVoiceCallRecoveryState.accepted;
+    }
+
+    if (targetState == 'active') {
+      return call.state == RideVoiceCallRecoveryState.connecting;
     }
 
     if (targetState == 'ended') {
