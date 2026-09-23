@@ -76,7 +76,7 @@ void main() {
     },
   );
 
-  test('both screens mount presentation-only shared Voice status panel', () {
+  test('both screens mount shared Voice panel without direct callables', () {
     expect(
       driver,
       contains(

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/controllers/ride_voice_call_recovery_controller.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_push_hint_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_recovery_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_transition_service.dart';
 
 void main() {
   test(
@@ -187,6 +188,218 @@ void main() {
       expect(controller.errorCode, isNot(contains('sensitive')));
     },
   );
+  test(
+    'callee ringing accepts and refreshes from authoritative recovery',
+    () async {
+      final hints = _FakeHintSource();
+      final recovery = _FakeInvoker(
+        result: <String, dynamic>{
+          'activeCall': <String, dynamic>{
+            'rideId': 'ride-1',
+            'callId': 'rvc_0123456789abcdef0123456789abcdef',
+            'state': 'ringing',
+            'role': 'passenger',
+            'side': 'callee',
+          },
+        },
+      );
+      final transitionInvoker = _FakeTransitionInvoker();
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(
+          invoker: transitionInvoker,
+        ),
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      addTearDown(controller.dispose);
+      addTearDown(hints.dispose);
+
+      controller.start();
+      await _drain();
+
+      expect(controller.canAccept, isTrue);
+      expect(controller.canDecline, isTrue);
+      expect(controller.canCancel, isFalse);
+      expect(controller.canEnd, isFalse);
+
+      await controller.acceptCall();
+
+      expect(transitionInvoker.calls, 1);
+      expect(transitionInvoker.data?['toState'], 'accepted');
+      expect(recovery.calls, 2);
+      expect(controller.actionErrorCode, isNull);
+      expect(controller.actionInFlight, isFalse);
+    },
+  );
+
+  test('caller ringing can cancel but cannot accept', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: <String, dynamic>{
+        'activeCall': <String, dynamic>{
+          'rideId': 'ride-1',
+          'callId': 'rvc_0123456789abcdef0123456789abcdef',
+          'state': 'ringing',
+          'role': 'driver',
+          'side': 'caller',
+        },
+      },
+    );
+    final transitionInvoker = _FakeTransitionInvoker();
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      transitionService: RideVoiceCallTransitionService(
+        invoker: transitionInvoker,
+      ),
+      hintSource: hints,
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+
+    expect(controller.canCancel, isTrue);
+    expect(controller.canAccept, isFalse);
+
+    await controller.acceptCall();
+    expect(transitionInvoker.calls, 0);
+    expect(controller.actionErrorCode, 'failed-precondition');
+
+    await controller.cancelCall();
+    expect(transitionInvoker.calls, 1);
+    expect(transitionInvoker.data?['toState'], 'cancelled');
+  });
+
+  test('accepted connecting and active calls expose end action', () async {
+    for (final state in <String>['accepted', 'connecting', 'active']) {
+      final hints = _FakeHintSource();
+      final recovery = _FakeInvoker(
+        result: <String, dynamic>{
+          'activeCall': <String, dynamic>{
+            'rideId': 'ride-1',
+            'callId': 'rvc_0123456789abcdef0123456789abcdef',
+            'state': state,
+            'role': 'passenger',
+            'side': 'callee',
+          },
+        },
+      );
+      final transitionInvoker = _FakeTransitionInvoker();
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(
+          invoker: transitionInvoker,
+        ),
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      controller.start();
+      await _drain();
+
+      expect(controller.canEnd, isTrue);
+      await controller.endCall();
+      expect(transitionInvoker.calls, 1);
+      expect(transitionInvoker.data?['toState'], 'ended');
+
+      controller.dispose();
+      await hints.dispose();
+    }
+  });
+
+  test(
+    'transition failure keeps snapshot and exposes bounded action error',
+    () async {
+      final hints = _FakeHintSource();
+      final recovery = _FakeInvoker(
+        result: <String, dynamic>{
+          'activeCall': <String, dynamic>{
+            'rideId': 'ride-1',
+            'callId': 'rvc_0123456789abcdef0123456789abcdef',
+            'state': 'ringing',
+            'role': 'passenger',
+            'side': 'callee',
+          },
+        },
+      );
+      final transitionInvoker = _FakeTransitionInvoker(
+        error: const RideVoiceCallTransitionException('permission-denied'),
+      );
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(
+          invoker: transitionInvoker,
+        ),
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      addTearDown(controller.dispose);
+      addTearDown(hints.dispose);
+
+      controller.start();
+      await _drain();
+      final before = controller.activeCall;
+
+      await controller.declineCall();
+
+      expect(transitionInvoker.calls, 1);
+      expect(recovery.calls, 1);
+      expect(controller.activeCall, same(before));
+      expect(controller.actionErrorCode, 'permission-denied');
+    },
+  );
+
+  test('parallel transition attempts are coalesced to one callable', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: <String, dynamic>{
+        'activeCall': <String, dynamic>{
+          'rideId': 'ride-1',
+          'callId': 'rvc_0123456789abcdef0123456789abcdef',
+          'state': 'ringing',
+          'role': 'passenger',
+          'side': 'callee',
+        },
+      },
+    );
+    final pending = Completer<Object?>();
+    final transitionInvoker = _FakeTransitionInvoker(pending: pending);
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      transitionService: RideVoiceCallTransitionService(
+        invoker: transitionInvoker,
+      ),
+      hintSource: hints,
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+
+    final first = controller.acceptCall();
+    await Future<void>.delayed(Duration.zero);
+    final second = controller.declineCall();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.actionInFlight, isTrue);
+    expect(transitionInvoker.calls, 1);
+
+    pending.complete(const <String, dynamic>{'ok': true});
+    await Future.wait<void>(<Future<void>>[first, second]);
+
+    expect(transitionInvoker.calls, 1);
+    expect(recovery.calls, 2);
+    expect(controller.actionInFlight, isFalse);
+  });
 }
 
 Future<void> _drain([int turns = 2]) async {
@@ -249,5 +462,33 @@ class _FakeInvoker implements RideVoiceCallRecoveryCallableInvoker {
     } finally {
       concurrent -= 1;
     }
+  }
+}
+
+class _FakeTransitionInvoker implements RideVoiceCallTransitionCallableInvoker {
+  _FakeTransitionInvoker({this.error, this.pending});
+
+  final Object? error;
+  final Completer<Object?>? pending;
+
+  int calls = 0;
+  Map<String, dynamic>? data;
+
+  @override
+  Future<Object?> call(String callable, Map<String, dynamic> data) async {
+    calls += 1;
+    this.data = Map<String, dynamic>.from(data);
+
+    final currentError = error;
+    if (currentError != null) {
+      throw currentError;
+    }
+
+    final currentPending = pending;
+    if (currentPending != null) {
+      return currentPending.future;
+    }
+
+    return const <String, dynamic>{'ok': true};
   }
 }

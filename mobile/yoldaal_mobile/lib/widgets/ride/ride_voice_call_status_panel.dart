@@ -38,6 +38,7 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
     }
 
     final presentation = _presentation(activeCall);
+    final actions = _actions(current);
     final theme = Theme.of(context);
 
     return Card(
@@ -68,6 +69,10 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
                     key: const ValueKey('ride-voice-call-status-message'),
                     style: theme.textTheme.bodySmall,
                   ),
+                  if (actions.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(spacing: 8, runSpacing: 8, children: actions),
+                  ],
                 ],
               ),
             ),
@@ -75,6 +80,47 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  List<Widget> _actions(RideVoiceCallRecoveryController current) {
+    final disabled = current.actionInFlight;
+
+    if (current.canAccept && current.canDecline) {
+      return <Widget>[
+        FilledButton(
+          key: const ValueKey('ride-voice-call-accept-button'),
+          onPressed: disabled ? null : current.acceptCall,
+          child: const Text('Kabul et'),
+        ),
+        OutlinedButton(
+          key: const ValueKey('ride-voice-call-decline-button'),
+          onPressed: disabled ? null : current.declineCall,
+          child: const Text('Reddet'),
+        ),
+      ];
+    }
+
+    if (current.canCancel) {
+      return <Widget>[
+        OutlinedButton(
+          key: const ValueKey('ride-voice-call-cancel-button'),
+          onPressed: disabled ? null : current.cancelCall,
+          child: const Text('İptal et'),
+        ),
+      ];
+    }
+
+    if (current.canEnd) {
+      return <Widget>[
+        OutlinedButton(
+          key: const ValueKey('ride-voice-call-end-button'),
+          onPressed: disabled ? null : current.endCall,
+          child: const Text('Aramayı bitir'),
+        ),
+      ];
+    }
+
+    return const <Widget>[];
   }
 
   bool _matchesViewerRole(RideVoiceCallRecoveryRole recoveredRole) =>

@@ -4,25 +4,32 @@ import 'package:flutter/foundation.dart';
 
 import '../services/ride_voice_call_push_hint_service.dart';
 import '../services/ride_voice_call_recovery_service.dart';
+import '../services/ride_voice_call_transition_service.dart';
 
 typedef RideVoiceCallAuthenticationProbe = bool Function();
 
 class RideVoiceCallRecoveryController extends ChangeNotifier {
   RideVoiceCallRecoveryController({
     RideVoiceCallRecoveryService? recoveryService,
+    RideVoiceCallTransitionService? transitionService,
     RideVoiceCallPushHintSource? hintSource,
     required RideVoiceCallAuthenticationProbe isAuthenticated,
   }) : _recoveryService = recoveryService ?? RideVoiceCallRecoveryService(),
+       _transitionService =
+           transitionService ?? RideVoiceCallTransitionService(),
        _hintSource = hintSource ?? rideVoiceCallPushHintBus,
        _isAuthenticated = isAuthenticated;
 
   final RideVoiceCallRecoveryService _recoveryService;
+  final RideVoiceCallTransitionService _transitionService;
   final RideVoiceCallPushHintSource _hintSource;
   final RideVoiceCallAuthenticationProbe _isAuthenticated;
 
   StreamSubscription<int>? _hintSubscription;
   RideVoiceCallRecoverySnapshot? _activeCall;
   String? _errorCode;
+  String? _actionErrorCode;
+  bool _actionInFlight = false;
   int _handledHintRevision = 0;
   bool _started = false;
   bool _recovering = false;
@@ -32,6 +39,18 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
   RideVoiceCallRecoverySnapshot? get activeCall => _activeCall;
 
   String? get errorCode => _errorCode;
+
+  String? get actionErrorCode => _actionErrorCode;
+
+  bool get actionInFlight => _actionInFlight;
+
+  bool get canAccept => _isActionAllowed('accepted');
+
+  bool get canDecline => _isActionAllowed('declined');
+
+  bool get canCancel => _isActionAllowed('cancelled');
+
+  bool get canEnd => _isActionAllowed('ended');
 
   bool get recovering => _recovering;
 
@@ -69,6 +88,87 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
   }
 
   Future<void> recoverNow() => _requestRecovery();
+
+  Future<void> acceptCall() => _requestTransition('accepted');
+
+  Future<void> declineCall() => _requestTransition('declined');
+
+  Future<void> cancelCall() => _requestTransition('cancelled');
+
+  Future<void> endCall() => _requestTransition('ended');
+
+  bool _isActionAllowed(String targetState) {
+    final call = _activeCall;
+    if (call == null) return false;
+    return _isActionAllowedFor(call, targetState);
+  }
+
+  bool _isActionAllowedFor(
+    RideVoiceCallRecoverySnapshot call,
+    String targetState,
+  ) {
+    final participantRole =
+        call.role == RideVoiceCallRecoveryRole.driver ||
+        call.role == RideVoiceCallRecoveryRole.passenger;
+    if (!participantRole) return false;
+
+    if (targetState == 'accepted' || targetState == 'declined') {
+      return call.state == RideVoiceCallRecoveryState.ringing &&
+          call.side == RideVoiceCallRecoverySide.callee;
+    }
+
+    if (targetState == 'cancelled') {
+      return call.state == RideVoiceCallRecoveryState.ringing &&
+          call.side == RideVoiceCallRecoverySide.caller;
+    }
+
+    if (targetState == 'ended') {
+      return call.state == RideVoiceCallRecoveryState.accepted ||
+          call.state == RideVoiceCallRecoveryState.connecting ||
+          call.state == RideVoiceCallRecoveryState.active;
+    }
+
+    return false;
+  }
+
+  Future<void> _requestTransition(String targetState) async {
+    if (_disposed || _actionInFlight) return;
+
+    if (!_authenticated()) {
+      _clearSignedOutState();
+      return;
+    }
+
+    final call = _activeCall;
+    if (call == null || !_isActionAllowedFor(call, targetState)) {
+      _actionErrorCode = 'failed-precondition';
+      notifyListeners();
+      return;
+    }
+
+    _actionInFlight = true;
+    _actionErrorCode = null;
+    notifyListeners();
+
+    try {
+      await _transitionService.transition(
+        rideId: call.rideId,
+        callId: call.callId,
+        targetState: targetState,
+      );
+
+      if (_disposed) return;
+      await _requestRecovery();
+    } on RideVoiceCallTransitionException catch (error) {
+      if (_disposed) return;
+      _actionErrorCode = error.code;
+    } finally {
+      if (!_disposed) {
+        _actionInFlight = false;
+        notifyListeners();
+      }
+    }
+  }
 
   void _handleHintRevision(int revision) {
     if (_disposed || revision <= _handledHintRevision) return;
@@ -134,11 +234,15 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
     final changed =
         _activeCall != null ||
         _errorCode != null ||
+        _actionErrorCode != null ||
+        _actionInFlight ||
         _recoverAgain ||
         _recovering;
 
     _activeCall = null;
     _errorCode = null;
+    _actionErrorCode = null;
+    _actionInFlight = false;
     _recoverAgain = false;
 
     if (changed && !_disposed) {

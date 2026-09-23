@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/controllers/ride_voice_call_recovery_controller.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_push_hint_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_recovery_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_transition_service.dart';
 import 'package:yoldaal_mobile/widgets/ride/ride_voice_call_status_panel.dart';
 
 void main() {
@@ -95,14 +96,163 @@ void main() {
       );
       expect(find.text(item.title), findsOneWidget);
       expect(find.text(item.message), findsOneWidget);
-      expect(find.byType(FilledButton), findsNothing);
-      expect(find.byType(OutlinedButton), findsNothing);
-      expect(find.byType(TextButton), findsNothing);
       expect(find.text('ride-secret-123'), findsNothing);
       expect(find.text('rvc_0123456789abcdef0123456789abcdef'), findsNothing);
     });
   }
 
+  testWidgets('ringing callee shows accept and decline actions only', (
+    tester,
+  ) async {
+    final harness = _Harness(
+      result: _call(state: 'ringing', role: 'passenger', side: 'callee'),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-accept-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-decline-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-cancel-button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-end-button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('ringing caller shows cancel action only', (tester) async {
+    final harness = _Harness(
+      result: _call(state: 'ringing', role: 'driver', side: 'caller'),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.driver,
+    );
+
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-accept-button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-decline-button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-cancel-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-end-button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('accepted connecting and active states show end action only', (
+    tester,
+  ) async {
+    for (final state in <String>['accepted', 'connecting', 'active']) {
+      final harness = _Harness(
+        result: _call(state: state, role: 'passenger', side: 'callee'),
+      );
+
+      await harness.pump(
+        tester,
+        viewerRole: RideVoiceCallStatusViewerRole.passenger,
+      );
+
+      expect(
+        find.byKey(const ValueKey('ride-voice-call-accept-button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('ride-voice-call-decline-button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('ride-voice-call-cancel-button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('ride-voice-call-end-button')),
+        findsOneWidget,
+      );
+
+      await harness.dispose();
+    }
+  });
+
+  testWidgets('action controls disable while transition is in flight', (
+    tester,
+  ) async {
+    final pending = Completer<Object?>();
+    final harness = _Harness(
+      result: _call(state: 'ringing', role: 'passenger', side: 'callee'),
+      transitionPending: pending,
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+
+    final action = harness.controller.acceptCall();
+    await tester.pump();
+
+    final accept = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('ride-voice-call-accept-button')),
+    );
+    final decline = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('ride-voice-call-decline-button')),
+    );
+
+    expect(accept.onPressed, isNull);
+    expect(decline.onPressed, isNull);
+    expect(harness.transitionInvoker.calls, 1);
+
+    pending.complete(const <String, dynamic>{'ok': true});
+    await action;
+    await tester.pump();
+  });
+
+  testWidgets('accept button delegates through shared controller transition', (
+    tester,
+  ) async {
+    final harness = _Harness(
+      result: _call(state: 'ringing', role: 'passenger', side: 'callee'),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('ride-voice-call-accept-button')),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(harness.transitionInvoker.calls, 1);
+    expect(harness.transitionInvoker.data?['toState'], 'accepted');
+    expect(find.text('ride-secret-123'), findsNothing);
+    expect(find.text('rvc_0123456789abcdef0123456789abcdef'), findsNothing);
+  });
   testWidgets(
     'panel rebuilds from authoritative recovery controller notification',
     (tester) async {
@@ -146,11 +296,18 @@ Map<String, dynamic> _call({
 };
 
 class _Harness {
-  _Harness({Object? result, List<Object?>? results})
-    : hints = _FakeHintSource(),
-      invoker = _FakeInvoker(results: results ?? <Object?>[result]) {
+  _Harness({
+    Object? result,
+    List<Object?>? results,
+    Completer<Object?>? transitionPending,
+  }) : hints = _FakeHintSource(),
+       invoker = _FakeInvoker(results: results ?? <Object?>[result]),
+       transitionInvoker = _FakeTransitionInvoker(pending: transitionPending) {
     controller = RideVoiceCallRecoveryController(
       recoveryService: RideVoiceCallRecoveryService(invoker: invoker),
+      transitionService: RideVoiceCallTransitionService(
+        invoker: transitionInvoker,
+      ),
       hintSource: hints,
       isAuthenticated: () => true,
     );
@@ -158,6 +315,7 @@ class _Harness {
 
   final _FakeHintSource hints;
   final _FakeInvoker invoker;
+  final _FakeTransitionInvoker transitionInvoker;
   late final RideVoiceCallRecoveryController controller;
 
   Future<void> pump(
@@ -227,5 +385,27 @@ class _FakeInvoker implements RideVoiceCallRecoveryCallableInvoker {
     }
 
     return _results.removeAt(0);
+  }
+}
+
+class _FakeTransitionInvoker implements RideVoiceCallTransitionCallableInvoker {
+  _FakeTransitionInvoker({this.pending});
+
+  final Completer<Object?>? pending;
+
+  int calls = 0;
+  Map<String, dynamic>? data;
+
+  @override
+  Future<Object?> call(String callable, Map<String, dynamic> data) async {
+    calls += 1;
+    this.data = Map<String, dynamic>.from(data);
+
+    final currentPending = pending;
+    if (currentPending != null) {
+      return currentPending.future;
+    }
+
+    return const <String, dynamic>{'ok': true};
   }
 }
