@@ -401,6 +401,185 @@ void main() {
     expect(recovery.calls, 2);
     expect(controller.actionInFlight, isFalse);
   });
+  test(
+    'accepted caller and callee can connect and refresh authoritative recovery',
+    () async {
+      for (final side in <String>['caller', 'callee']) {
+        final hints = _FakeHintSource();
+        final recovery = _FakeInvoker(
+          result: <String, dynamic>{
+            'activeCall': <String, dynamic>{
+              'rideId': 'ride-1',
+              'callId': 'rvc_0123456789abcdef0123456789abcdef',
+              'state': 'accepted',
+              'role': 'passenger',
+              'side': side,
+            },
+          },
+        );
+        final transitionInvoker = _FakeTransitionInvoker();
+        final controller = RideVoiceCallRecoveryController(
+          recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+          transitionService: RideVoiceCallTransitionService(
+            invoker: transitionInvoker,
+          ),
+          hintSource: hints,
+          isAuthenticated: () => true,
+        );
+
+        controller.start();
+        await _drain();
+
+        expect(controller.canConnect, isTrue);
+        await controller.connectCall();
+
+        expect(transitionInvoker.calls, 1);
+        expect(transitionInvoker.data, <String, dynamic>{
+          'rideId': 'ride-1',
+          'callId': 'rvc_0123456789abcdef0123456789abcdef',
+          'toState': 'connecting',
+        });
+        expect(recovery.calls, 2);
+        expect(controller.actionErrorCode, isNull);
+        expect(controller.actionInFlight, isFalse);
+
+        controller.dispose();
+        await hints.dispose();
+      }
+    },
+  );
+
+  test('connect action is unavailable outside accepted state', () async {
+    for (final state in <String>['ringing', 'connecting', 'active']) {
+      final hints = _FakeHintSource();
+      final recovery = _FakeInvoker(
+        result: <String, dynamic>{
+          'activeCall': <String, dynamic>{
+            'rideId': 'ride-1',
+            'callId': 'rvc_0123456789abcdef0123456789abcdef',
+            'state': state,
+            'role': 'driver',
+            'side': 'caller',
+          },
+        },
+      );
+      final transitionInvoker = _FakeTransitionInvoker();
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(
+          invoker: transitionInvoker,
+        ),
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      controller.start();
+      await _drain();
+
+      expect(controller.canConnect, isFalse);
+      await controller.connectCall();
+
+      expect(transitionInvoker.calls, 0);
+      expect(controller.actionErrorCode, 'failed-precondition');
+
+      controller.dispose();
+      await hints.dispose();
+    }
+  });
+
+  test(
+    'connecting transition failure preserves snapshot and bounded action error',
+    () async {
+      final hints = _FakeHintSource();
+      final recovery = _FakeInvoker(
+        result: <String, dynamic>{
+          'activeCall': <String, dynamic>{
+            'rideId': 'ride-1',
+            'callId': 'rvc_0123456789abcdef0123456789abcdef',
+            'state': 'accepted',
+            'role': 'passenger',
+            'side': 'callee',
+          },
+        },
+      );
+      final transitionInvoker = _FakeTransitionInvoker(
+        error: const RideVoiceCallTransitionException('permission-denied'),
+      );
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(
+          invoker: transitionInvoker,
+        ),
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      addTearDown(controller.dispose);
+      addTearDown(hints.dispose);
+
+      controller.start();
+      await _drain();
+      final before = controller.activeCall;
+
+      await controller.connectCall();
+
+      expect(transitionInvoker.calls, 1);
+      expect(recovery.calls, 1);
+      expect(controller.activeCall, same(before));
+      expect(controller.actionErrorCode, 'permission-denied');
+      expect(controller.actionInFlight, isFalse);
+    },
+  );
+
+  test(
+    'parallel connecting attempts coalesce on shared action boundary',
+    () async {
+      final hints = _FakeHintSource();
+      final recovery = _FakeInvoker(
+        result: <String, dynamic>{
+          'activeCall': <String, dynamic>{
+            'rideId': 'ride-1',
+            'callId': 'rvc_0123456789abcdef0123456789abcdef',
+            'state': 'accepted',
+            'role': 'driver',
+            'side': 'caller',
+          },
+        },
+      );
+      final pending = Completer<Object?>();
+      final transitionInvoker = _FakeTransitionInvoker(pending: pending);
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(
+          invoker: transitionInvoker,
+        ),
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      addTearDown(controller.dispose);
+      addTearDown(hints.dispose);
+
+      controller.start();
+      await _drain();
+
+      final first = controller.connectCall();
+      await Future<void>.delayed(Duration.zero);
+      final second = controller.connectCall();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.actionInFlight, isTrue);
+      expect(transitionInvoker.calls, 1);
+
+      pending.complete(const <String, dynamic>{'ok': true});
+      await Future.wait<void>(<Future<void>>[first, second]);
+
+      expect(transitionInvoker.calls, 1);
+      expect(recovery.calls, 2);
+      expect(controller.actionInFlight, isFalse);
+    },
+  );
+
   test('start call is unavailable without an eligible current ride', () async {
     final hints = _FakeHintSource();
     final recovery = _FakeInvoker(

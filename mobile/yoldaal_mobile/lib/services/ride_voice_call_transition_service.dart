@@ -19,6 +19,7 @@ class RideVoiceCallTransitionService {
 
   static const allowedTargetStates = <String>{
     'accepted',
+    'connecting',
     'declined',
     'cancelled',
     'ended',

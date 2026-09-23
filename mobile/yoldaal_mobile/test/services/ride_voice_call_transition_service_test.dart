@@ -10,6 +10,7 @@ void main() {
 
       for (final target in <String>[
         'accepted',
+        'connecting',
         'declined',
         'cancelled',
         'ended',
