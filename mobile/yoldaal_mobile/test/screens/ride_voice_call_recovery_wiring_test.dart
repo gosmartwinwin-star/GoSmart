@@ -107,6 +107,26 @@ void main() {
       expect(source.toLowerCase(), isNot(contains('agora')));
     }
   });
+
+  test('screen Voice ride probes expose only eligible current ride IDs', () {
+    for (final source in <String>[driver, home]) {
+      expect(source, contains('String? _currentEligibleVoiceRideId()'));
+      expect(
+        source,
+        contains('currentEligibleRideId: _currentEligibleVoiceRideId'),
+      );
+      expect(source, contains('RideStatus.driverEnRoute'));
+      expect(source, contains('RideStatus.driverArrived'));
+      expect(source, contains('RideStatus.inProgress'));
+      expect(source, contains('if (!eligible) return null;'));
+      expect(source, contains('return rideId.isEmpty ? null : rideId;'));
+      expect(
+        source,
+        isNot(contains('FirebaseFunctionsRegistry.createRideVoiceCall')),
+      );
+      expect(source, isNot(contains('httpsCallable(')));
+    }
+  });
   test(
     'default screen wiring is production-only when core controllers inject',
     () {

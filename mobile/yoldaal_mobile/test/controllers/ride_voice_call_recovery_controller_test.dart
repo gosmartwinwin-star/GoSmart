@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/controllers/ride_voice_call_recovery_controller.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_push_hint_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_create_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_recovery_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_transition_service.dart';
 
@@ -400,6 +401,169 @@ void main() {
     expect(recovery.calls, 2);
     expect(controller.actionInFlight, isFalse);
   });
+  test('start call is unavailable without an eligible current ride', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: const <String, dynamic>{'activeCall': null},
+    );
+    final createInvoker = _FakeCreateInvoker();
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      createService: RideVoiceCallCreateService(invoker: createInvoker),
+      hintSource: hints,
+      currentEligibleRideId: () => null,
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+
+    expect(controller.canStartCall, isFalse);
+    await controller.startCall();
+
+    expect(createInvoker.calls, 0);
+    expect(controller.actionErrorCode, 'failed-precondition');
+  });
+
+  test('active recovered call blocks outgoing create', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: <String, dynamic>{
+        'activeCall': <String, dynamic>{
+          'rideId': 'ride-1',
+          'callId': 'rvc_0123456789abcdef0123456789abcdef',
+          'state': 'ringing',
+          'role': 'passenger',
+          'side': 'callee',
+        },
+      },
+    );
+    final createInvoker = _FakeCreateInvoker();
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      createService: RideVoiceCallCreateService(invoker: createInvoker),
+      hintSource: hints,
+      currentEligibleRideId: () => 'ride-1',
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+
+    expect(controller.canStartCall, isFalse);
+    await controller.startCall();
+
+    expect(createInvoker.calls, 0);
+    expect(controller.actionErrorCode, 'failed-precondition');
+  });
+
+  test('successful create refreshes authoritative recovery state', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: const <String, dynamic>{'activeCall': null},
+    );
+    final createInvoker = _FakeCreateInvoker();
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      createService: RideVoiceCallCreateService(invoker: createInvoker),
+      hintSource: hints,
+      currentEligibleRideId: () => ' ride-1 ',
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+
+    expect(controller.canStartCall, isTrue);
+    await controller.startCall();
+
+    expect(createInvoker.calls, 1);
+    expect(createInvoker.callable, 'createRideVoiceCall');
+    expect(createInvoker.data, <String, dynamic>{'rideId': 'ride-1'});
+    expect(recovery.calls, 2);
+    expect(controller.activeCall, isNull);
+    expect(controller.actionErrorCode, isNull);
+    expect(controller.actionInFlight, isFalse);
+  });
+
+  test('create failure preserves snapshot and bounded action error', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: const <String, dynamic>{'activeCall': null},
+    );
+    final createInvoker = _FakeCreateInvoker(
+      error: const RideVoiceCallCreateException('permission-denied'),
+    );
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      createService: RideVoiceCallCreateService(invoker: createInvoker),
+      hintSource: hints,
+      currentEligibleRideId: () => 'ride-1',
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+    final before = controller.activeCall;
+
+    await controller.startCall();
+
+    expect(createInvoker.calls, 1);
+    expect(recovery.calls, 1);
+    expect(controller.activeCall, same(before));
+    expect(controller.actionErrorCode, 'permission-denied');
+    expect(controller.actionInFlight, isFalse);
+  });
+
+  test('parallel create attempts coalesce on shared action boundary', () async {
+    final hints = _FakeHintSource();
+    final recovery = _FakeInvoker(
+      result: const <String, dynamic>{'activeCall': null},
+    );
+    final pending = Completer<Object?>();
+    final createInvoker = _FakeCreateInvoker(pending: pending);
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      createService: RideVoiceCallCreateService(invoker: createInvoker),
+      hintSource: hints,
+      currentEligibleRideId: () => 'ride-1',
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain();
+
+    final first = controller.startCall();
+    await Future<void>.delayed(Duration.zero);
+    final second = controller.startCall();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.actionInFlight, isTrue);
+    expect(controller.canStartCall, isFalse);
+    expect(createInvoker.calls, 1);
+
+    pending.complete(const <String, dynamic>{'ignored': true});
+    await Future.wait<void>(<Future<void>>[first, second]);
+
+    expect(createInvoker.calls, 1);
+    expect(recovery.calls, 2);
+    expect(controller.actionInFlight, isFalse);
+  });
 }
 
 Future<void> _drain([int turns = 2]) async {
@@ -490,5 +654,35 @@ class _FakeTransitionInvoker implements RideVoiceCallTransitionCallableInvoker {
     }
 
     return const <String, dynamic>{'ok': true};
+  }
+}
+
+class _FakeCreateInvoker implements RideVoiceCallCreateCallableInvoker {
+  _FakeCreateInvoker({this.error, this.pending});
+
+  final Object? error;
+  final Completer<Object?>? pending;
+
+  int calls = 0;
+  String? callable;
+  Map<String, dynamic>? data;
+
+  @override
+  Future<Object?> call(String callable, Map<String, dynamic> data) async {
+    calls += 1;
+    this.callable = callable;
+    this.data = Map<String, dynamic>.from(data);
+
+    final currentError = error;
+    if (currentError != null) {
+      throw currentError;
+    }
+
+    final currentPending = pending;
+    if (currentPending != null) {
+      return currentPending.future;
+    }
+
+    return const <String, dynamic>{'ignored': true};
   }
 }

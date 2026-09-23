@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/controllers/ride_voice_call_recovery_controller.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_push_hint_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_create_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_recovery_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_transition_service.dart';
 import 'package:yoldaal_mobile/widgets/ride/ride_voice_call_status_panel.dart';
@@ -253,6 +254,73 @@ void main() {
     expect(find.text('ride-secret-123'), findsNothing);
     expect(find.text('rvc_0123456789abcdef0123456789abcdef'), findsNothing);
   });
+  testWidgets('start control appears only for eligible no-active-call state', (
+    tester,
+  ) async {
+    final eligible = _Harness(
+      result: const <String, dynamic>{'activeCall': null},
+      eligibleRideId: 'ride-1',
+    );
+    addTearDown(eligible.dispose);
+
+    await eligible.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-start-button')),
+      findsOneWidget,
+    );
+
+    final ineligible = _Harness(
+      result: const <String, dynamic>{'activeCall': null},
+    );
+    addTearDown(ineligible.dispose);
+
+    await ineligible.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-start-button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('start control delegates create and disables while in flight', (
+    tester,
+  ) async {
+    final pending = Completer<Object?>();
+    final harness = _Harness(
+      result: const <String, dynamic>{'activeCall': null},
+      eligibleRideId: 'ride-1',
+      createPending: pending,
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+
+    final action = harness.controller.startCall();
+    await tester.pump();
+
+    final button = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('ride-voice-call-start-button')),
+    );
+
+    expect(button.onPressed, isNull);
+    expect(harness.createInvoker.calls, 1);
+    expect(harness.createInvoker.callable, 'createRideVoiceCall');
+    expect(harness.createInvoker.data, <String, dynamic>{'rideId': 'ride-1'});
+
+    pending.complete(const <String, dynamic>{'ignored': true});
+    await action;
+    await tester.pump();
+  });
   testWidgets(
     'panel rebuilds from authoritative recovery controller notification',
     (tester) async {
@@ -300,15 +368,21 @@ class _Harness {
     Object? result,
     List<Object?>? results,
     Completer<Object?>? transitionPending,
+    String? eligibleRideId,
+    Completer<Object?>? createPending,
   }) : hints = _FakeHintSource(),
        invoker = _FakeInvoker(results: results ?? <Object?>[result]),
-       transitionInvoker = _FakeTransitionInvoker(pending: transitionPending) {
+       transitionInvoker = _FakeTransitionInvoker(pending: transitionPending),
+       createInvoker = _FakeCreateInvoker(pending: createPending),
+       eligibleRideId = eligibleRideId {
     controller = RideVoiceCallRecoveryController(
       recoveryService: RideVoiceCallRecoveryService(invoker: invoker),
       transitionService: RideVoiceCallTransitionService(
         invoker: transitionInvoker,
       ),
+      createService: RideVoiceCallCreateService(invoker: createInvoker),
       hintSource: hints,
+      currentEligibleRideId: () => eligibleRideId,
       isAuthenticated: () => true,
     );
   }
@@ -316,6 +390,8 @@ class _Harness {
   final _FakeHintSource hints;
   final _FakeInvoker invoker;
   final _FakeTransitionInvoker transitionInvoker;
+  final _FakeCreateInvoker createInvoker;
+  final String? eligibleRideId;
   late final RideVoiceCallRecoveryController controller;
 
   Future<void> pump(
@@ -407,5 +483,29 @@ class _FakeTransitionInvoker implements RideVoiceCallTransitionCallableInvoker {
     }
 
     return const <String, dynamic>{'ok': true};
+  }
+}
+
+class _FakeCreateInvoker implements RideVoiceCallCreateCallableInvoker {
+  _FakeCreateInvoker({this.pending});
+
+  final Completer<Object?>? pending;
+
+  int calls = 0;
+  String? callable;
+  Map<String, dynamic>? data;
+
+  @override
+  Future<Object?> call(String callable, Map<String, dynamic> data) async {
+    calls += 1;
+    this.callable = callable;
+    this.data = Map<String, dynamic>.from(data);
+
+    final currentPending = pending;
+    if (currentPending != null) {
+      return currentPending.future;
+    }
+
+    return const <String, dynamic>{'ignored': true};
   }
 }

@@ -33,7 +33,10 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
     RideVoiceCallRecoveryController current,
   ) {
     final activeCall = current.activeCall;
-    if (activeCall == null || !_matchesViewerRole(activeCall.role)) {
+    if (activeCall == null) {
+      return _buildStart(context, current);
+    }
+    if (!_matchesViewerRole(activeCall.role)) {
       return const SizedBox.shrink();
     }
 
@@ -75,6 +78,46 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStart(
+    BuildContext context,
+    RideVoiceCallRecoveryController current,
+  ) {
+    if (!current.canStartCall && !current.actionInFlight) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+
+    return Card(
+      key: const ValueKey('ride-voice-call-start-panel'),
+      margin: const EdgeInsets.only(top: 16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.call_outlined),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Yolculuk kat\u0131l\u0131mc\u0131s\u0131n\u0131 sesli ara',
+                key: const ValueKey('ride-voice-call-start-title'),
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            const SizedBox(width: 10),
+            FilledButton(
+              key: const ValueKey('ride-voice-call-start-button'),
+              onPressed: current.actionInFlight || !current.canStartCall
+                  ? null
+                  : current.startCall,
+              child: const Text('Sesli ara'),
             ),
           ],
         ),

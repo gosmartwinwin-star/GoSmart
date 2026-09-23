@@ -280,6 +280,20 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
     _ownsPushTargetLifecycle = true;
   }
 
+  String? _currentEligibleVoiceRideId() {
+    final ride = rideController?.ride;
+    if (ride == null) return null;
+
+    final eligible =
+        ride.status == RideStatus.driverEnRoute ||
+        ride.status == RideStatus.driverArrived ||
+        ride.status == RideStatus.inProgress;
+    if (!eligible) return null;
+
+    final rideId = ride.rideId.trim();
+    return rideId.isEmpty ? null : rideId;
+  }
+
   void _initializeVoiceCallRecoveryController() {
     final injected = widget.voiceCallRecoveryController;
 
@@ -288,6 +302,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
       _ownsVoiceCallRecoveryController = false;
     } else if (widget.controller == null && widget.rideController == null) {
       _voiceCallRecoveryController = RideVoiceCallRecoveryController(
+        currentEligibleRideId: _currentEligibleVoiceRideId,
         isAuthenticated: () => FirebaseAuth.instance.currentUser != null,
       );
       _ownsVoiceCallRecoveryController = true;
