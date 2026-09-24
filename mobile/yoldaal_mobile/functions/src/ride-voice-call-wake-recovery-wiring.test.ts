@@ -360,7 +360,7 @@ test(
       );
     const recoveryEnd =
       source.indexOf(
-        "export const sendRideChatMessage",
+        "export const getMyActiveRideVoiceRtcSession",
       );
 
     const combined =

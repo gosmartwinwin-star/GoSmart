@@ -54,6 +54,8 @@ class FirebaseFunctionsRegistry {
   static const registerPassengerPushTarget = 'registerPassengerPushTarget';
   static const getMyActiveReturnRoute = 'getMyActiveReturnRoute';
   static const getMyActiveRideVoiceCall = 'getMyActiveRideVoiceCall';
+  static const getMyActiveRideVoiceRtcSession =
+      'getMyActiveRideVoiceRtcSession';
   static const createRideVoiceCall = 'createRideVoiceCall';
   static const transitionRideVoiceCall = 'transitionRideVoiceCall';
   static const acceptRide = 'acceptRide';

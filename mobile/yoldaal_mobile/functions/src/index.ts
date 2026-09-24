@@ -140,6 +140,9 @@ import {
   recoverActiveRideVoiceCallForActor,
 } from "./ride-voice-call-recovery-authority.js";
 import {
+  getRideVoiceRtcSessionForActor,
+} from "./ride-voice-call-rtc-session-authority.js";
+import {
   dispatchRideVoiceCallPushHint,
 } from "./ride-voice-call-push-hint-authority.js";
 import {
@@ -252,6 +255,13 @@ const googlePlacesApiKey = defineSecret(
   "GOOGLE_PLACES_API_KEY",
 );
 
+const agoraAppCertificate = defineSecret(
+  "AGORA_APP_CERTIFICATE",
+);
+
+const agoraAppId = defineString(
+  "AGORA_APP_ID",
+);
 
 const googleSignInAllowedAudiences = defineString(
   "GOOGLE_SIGNIN_ALLOWED_AUDIENCES",
@@ -1146,6 +1156,55 @@ export const getMyActiveRideVoiceCall = onCall(
   },
 );
 
+export const getMyActiveRideVoiceRtcSession = onCall(
+  {
+    enforceAppCheck: true,
+    region: "europe-west1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [agoraAppCertificate],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Ride voice RTC session requires authentication.",
+      );
+    }
+
+    try {
+      return await getRideVoiceRtcSessionForActor(
+        {
+          recoverActiveCall: (
+            actorUid,
+            input,
+          ) =>
+            recoverActiveRideVoiceCallForActor(
+              {
+                firestore,
+                resolveDriverIdForActor: (uid) =>
+                  loadDriverProfileId(
+                    firestore,
+                    uid,
+                  ),
+              },
+              actorUid,
+              input,
+            ),
+          appId: agoraAppId.value(),
+          appCertificate:
+            agoraAppCertificate.value(),
+        },
+        request.auth.uid,
+        request.data,
+      );
+    } catch (error: unknown) {
+      throw toRideVoiceHttpsError(error);
+    }
+  },
+);
 export const sendRideChatMessage = onCall(
   {
     region: "europe-west1",

@@ -105,6 +105,7 @@ test(
     const names = [
       "createRideVoiceCall",
       "transitionRideVoiceCall",
+      "getMyActiveRideVoiceRtcSession",
     ];
 
     for (const name of names) {
@@ -301,6 +302,56 @@ test(
   },
 );
 
+test(
+  "RTC session callable authenticates and binds only Agora certificate",
+  () => {
+    const callable =
+      callableSource(
+        "getMyActiveRideVoiceRtcSession",
+      );
+
+    assert.match(
+      callable,
+      /if \(!request\.auth\?\.uid\)/u,
+    );
+    assert.match(
+      callable,
+      /getRideVoiceRtcSessionForActor/u,
+    );
+    assert.match(
+      callable,
+      /recoverActiveRideVoiceCallForActor/u,
+    );
+    assert.match(
+      callable,
+      /appId:\s*agoraAppId\.value\(\)/u,
+    );
+    assert.match(
+      callable,
+      /appCertificate:[\s\S]*?agoraAppCertificate\.value\(\)/u,
+    );
+    assert.match(
+      callable,
+      /secrets:\s*\[agoraAppCertificate\]/u,
+    );
+    assert.match(
+      callable,
+      /request\.auth\.uid/u,
+    );
+    assert.match(
+      callable,
+      /request\.data/u,
+    );
+    assert.doesNotMatch(
+      callable,
+      /request\.data\?\.(rideId|callId|uid|side|role|channel)/u,
+    );
+    assert.doesNotMatch(
+      callable,
+      /getMessaging|sendEachForMulticast/u,
+    );
+  },
+);
 test(
   "public callables expose no system FCM or Agora authority",
   () => {
