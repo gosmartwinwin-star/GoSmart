@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Sürücü başvuru belgelerini fotoğraflamak için kamera erişimi gereklidir.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Yolculuk sÄ±rasÄ±nda karÅŸÄ± tarafla sesli gÃ¶rÃ¼ÅŸme yapabilmek iÃ§in mikrofon eriÅŸimi gereklidir.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Yakınınızdaki taksileri göstermek ve mevcut konumunuzu başlangıç noktası olarak kullanmak için konum erişimi gereklidir.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

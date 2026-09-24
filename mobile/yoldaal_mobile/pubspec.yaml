@@ -12,6 +12,8 @@ dependencies:
   flutter:
     sdk: flutter
   geolocator: ^14.0.2
+  agora_rtc_engine: 6.6.4
+  permission_handler: 12.0.3
 
   cupertino_icons: ^1.0.8
 

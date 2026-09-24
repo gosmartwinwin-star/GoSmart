@@ -6,6 +6,8 @@ import 'package:yoldaal_mobile/controllers/ride_voice_call_recovery_controller.d
 import 'package:yoldaal_mobile/services/ride_voice_call_push_hint_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_create_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_recovery_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_rtc_engine_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_rtc_session_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_transition_service.dart';
 import 'package:yoldaal_mobile/widgets/ride/ride_voice_call_status_panel.dart';
 
@@ -347,6 +349,52 @@ void main() {
       expect(harness.invoker.calls, 2);
     },
   );
+
+  testWidgets('active RTC shows mute and speaker media controls', (
+    tester,
+  ) async {
+    final sessions = _PanelRtcSessionGateway();
+    final media = _PanelRtcMediaGateway();
+    final harness = _Harness(
+      result: _call(state: 'active', role: 'passenger', side: 'callee'),
+      rtcSessionGateway: sessions,
+      rtcMediaGateway: media,
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(
+      tester,
+      viewerRole: RideVoiceCallStatusViewerRole.passenger,
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(media.joinCalls, 1);
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-mute-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-speaker-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ride-voice-call-end-button')),
+      findsOneWidget,
+    );
+    expect(find.text('Bağlan'), findsNothing);
+    expect(find.text('Aktifleştir'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('ride-voice-call-mute-button')));
+    await tester.pump();
+    expect(media.muted, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey('ride-voice-call-speaker-button')),
+    );
+    await tester.pump();
+    expect(media.speaker, isTrue);
+  });
 }
 
 Map<String, dynamic> _call({
@@ -370,6 +418,8 @@ class _Harness {
     Completer<Object?>? transitionPending,
     String? eligibleRideId,
     Completer<Object?>? createPending,
+    RideVoiceCallRtcSessionGateway? rtcSessionGateway,
+    RideVoiceCallRtcMediaGateway? rtcMediaGateway,
   }) : hints = _FakeHintSource(),
        invoker = _FakeInvoker(results: results ?? <Object?>[result]),
        transitionInvoker = _FakeTransitionInvoker(pending: transitionPending),
@@ -381,6 +431,8 @@ class _Harness {
         invoker: transitionInvoker,
       ),
       createService: RideVoiceCallCreateService(invoker: createInvoker),
+      rtcSessionService: rtcSessionGateway,
+      rtcMediaGateway: rtcMediaGateway,
       hintSource: hints,
       currentEligibleRideId: () => eligibleRideId,
       isAuthenticated: () => true,
@@ -419,6 +471,56 @@ class _Harness {
     controller.dispose();
     await hints.dispose();
   }
+}
+
+class _PanelRtcSessionGateway implements RideVoiceCallRtcSessionGateway {
+  @override
+  Future<RideVoiceCallRtcSession> getActiveSession() async =>
+      const RideVoiceCallRtcSession(
+        appId: '0123456789abcdef0123456789abcdef',
+        channelName: 'rvc_0123456789abcdef0123456789abcdef',
+        token: 'server-token',
+        rtcUid: 2,
+        expiresAtMillis: 2_000_000_000_000,
+      );
+}
+
+class _PanelRtcMediaGateway implements RideVoiceCallRtcMediaGateway {
+  int joinCalls = 0;
+  bool? muted;
+  bool? speaker;
+
+  @override
+  Future<bool> requestMicrophonePermission() async => true;
+
+  @override
+  Future<void> join({
+    required RideVoiceCallRtcSession session,
+    required RideVoiceCallRtcMediaCallback onJoined,
+    required RideVoiceCallRtcMediaCallback onTokenWillExpire,
+  }) async {
+    joinCalls += 1;
+    await onJoined();
+  }
+
+  @override
+  Future<void> renewToken(String token) async {}
+
+  @override
+  Future<void> leave() async {}
+
+  @override
+  Future<void> setMuted(bool muted) async {
+    this.muted = muted;
+  }
+
+  @override
+  Future<void> setSpeakerphone(bool enabled) async {
+    speaker = enabled;
+  }
+
+  @override
+  Future<void> dispose() async {}
 }
 
 class _FakeHintSource implements RideVoiceCallPushHintSource {

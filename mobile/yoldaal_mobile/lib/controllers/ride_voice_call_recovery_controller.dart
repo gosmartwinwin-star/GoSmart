@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../services/ride_voice_call_create_service.dart';
 import '../services/ride_voice_call_push_hint_service.dart';
 import '../services/ride_voice_call_recovery_service.dart';
+import '../services/ride_voice_call_rtc_engine_service.dart';
+import '../services/ride_voice_call_rtc_session_service.dart';
 import '../services/ride_voice_call_transition_service.dart';
 
 typedef RideVoiceCallAuthenticationProbe = bool Function();
@@ -15,6 +17,8 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
     RideVoiceCallRecoveryService? recoveryService,
     RideVoiceCallTransitionService? transitionService,
     RideVoiceCallCreateService? createService,
+    RideVoiceCallRtcSessionGateway? rtcSessionService,
+    RideVoiceCallRtcMediaGateway? rtcMediaGateway,
     RideVoiceCallPushHintSource? hintSource,
     RideVoiceCallEligibleRideIdProbe? currentEligibleRideId,
     required RideVoiceCallAuthenticationProbe isAuthenticated,
@@ -22,6 +26,9 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
        _transitionService =
            transitionService ?? RideVoiceCallTransitionService(),
        _createService = createService ?? RideVoiceCallCreateService(),
+       _rtcSessionService =
+           rtcSessionService ?? RideVoiceCallRtcSessionService(),
+       _rtcMediaGateway = rtcMediaGateway ?? RideVoiceCallRtcEngineService(),
        _hintSource = hintSource ?? rideVoiceCallPushHintBus,
        _currentEligibleRideId = currentEligibleRideId,
        _isAuthenticated = isAuthenticated;
@@ -29,15 +36,26 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
   final RideVoiceCallRecoveryService _recoveryService;
   final RideVoiceCallTransitionService _transitionService;
   final RideVoiceCallCreateService _createService;
+  final RideVoiceCallRtcSessionGateway _rtcSessionService;
+  final RideVoiceCallRtcMediaGateway _rtcMediaGateway;
   final RideVoiceCallPushHintSource _hintSource;
   final RideVoiceCallEligibleRideIdProbe? _currentEligibleRideId;
   final RideVoiceCallAuthenticationProbe _isAuthenticated;
 
   StreamSubscription<int>? _hintSubscription;
   RideVoiceCallRecoverySnapshot? _activeCall;
+  RideVoiceCallRtcSession? _rtcSession;
+  String? _rtcCallId;
   String? _errorCode;
   String? _actionErrorCode;
+  String? _rtcErrorCode;
   bool _actionInFlight = false;
+  bool _rtcSyncInFlight = false;
+  bool _rtcTokenRefreshInFlight = false;
+  bool _rtcJoining = false;
+  bool _rtcConnected = false;
+  bool _rtcMuted = false;
+  bool _rtcSpeakerphoneEnabled = false;
   int _handledHintRevision = 0;
   bool _started = false;
   bool _recovering = false;
@@ -49,6 +67,8 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
   String? get errorCode => _errorCode;
 
   String? get actionErrorCode => _actionErrorCode;
+
+  String? get rtcErrorCode => _rtcErrorCode;
 
   bool get actionInFlight => _actionInFlight;
 
@@ -67,6 +87,16 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
   bool get canEnd => _isActionAllowed('ended');
 
   bool get recovering => _recovering;
+
+  bool get rtcJoining => _rtcJoining;
+
+  bool get rtcConnected => _rtcConnected;
+
+  bool get rtcMuted => _rtcMuted;
+
+  bool get rtcSpeakerphoneEnabled => _rtcSpeakerphoneEnabled;
+
+  bool get canControlRtc => _rtcConnected && !_disposed;
 
   int get handledHintRevision => _handledHintRevision;
 
@@ -178,7 +208,44 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
 
   Future<void> activateCall() => _requestTransition('active');
 
-  Future<void> endCall() => _requestTransition('ended');
+  Future<void> endCall() async {
+    await _requestTransition('ended');
+    await _leaveRtcMedia();
+  }
+
+  Future<void> toggleMuted() async {
+    if (_disposed || !canControlRtc) return;
+
+    final next = !_rtcMuted;
+    try {
+      await _rtcMediaGateway.setMuted(next);
+      if (_disposed) return;
+      _rtcMuted = next;
+      _rtcErrorCode = null;
+      notifyListeners();
+    } on RideVoiceCallRtcMediaException catch (error) {
+      if (_disposed) return;
+      _rtcErrorCode = error.code;
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleSpeakerphone() async {
+    if (_disposed || !canControlRtc) return;
+
+    final next = !_rtcSpeakerphoneEnabled;
+    try {
+      await _rtcMediaGateway.setSpeakerphone(next);
+      if (_disposed) return;
+      _rtcSpeakerphoneEnabled = next;
+      _rtcErrorCode = null;
+      notifyListeners();
+    } on RideVoiceCallRtcMediaException catch (error) {
+      if (_disposed) return;
+      _rtcErrorCode = error.code;
+      notifyListeners();
+    }
+  }
 
   bool _isActionAllowed(String targetState) {
     final call = _activeCall;
@@ -317,7 +384,190 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
       if (!_disposed) {
         _recovering = false;
         notifyListeners();
+        unawaited(_synchronizeRtcMedia());
       }
+    }
+  }
+
+  Future<void> _synchronizeRtcMedia() async {
+    if (_disposed || _rtcSyncInFlight) return;
+
+    final call = _activeCall;
+    if (!_authenticated() ||
+        call == null ||
+        call.state == RideVoiceCallRecoveryState.ringing) {
+      await _leaveRtcMedia();
+      return;
+    }
+
+    if (_rtcCallId == call.callId && (_rtcJoining || _rtcConnected)) {
+      return;
+    }
+
+    _rtcSyncInFlight = true;
+
+    try {
+      if (_rtcCallId != null && _rtcCallId != call.callId) {
+        await _leaveRtcMedia();
+      }
+
+      final granted = await _rtcMediaGateway.requestMicrophonePermission();
+      if (_disposed) return;
+
+      if (!granted) {
+        _rtcErrorCode = 'permission-denied';
+        notifyListeners();
+        return;
+      }
+
+      final session = await _rtcSessionService.getActiveSession();
+      if (_disposed) return;
+
+      final current = _activeCall;
+      if (current == null ||
+          current.callId != call.callId ||
+          current.state == RideVoiceCallRecoveryState.ringing) {
+        return;
+      }
+
+      _rtcSession = session;
+      _rtcErrorCode = null;
+
+      if (current.state == RideVoiceCallRecoveryState.accepted) {
+        await _requestTransition('connecting');
+        if (_disposed) return;
+      }
+
+      final ready = _activeCall;
+      if (ready == null ||
+          ready.callId != call.callId ||
+          (ready.state != RideVoiceCallRecoveryState.connecting &&
+              ready.state != RideVoiceCallRecoveryState.active)) {
+        return;
+      }
+
+      if (_rtcCallId == ready.callId && (_rtcJoining || _rtcConnected)) {
+        return;
+      }
+
+      _rtcCallId = ready.callId;
+      _rtcJoining = true;
+      _rtcConnected = false;
+      _rtcMuted = false;
+      _rtcSpeakerphoneEnabled = false;
+      notifyListeners();
+
+      await _rtcMediaGateway.join(
+        session: session,
+        onJoined: () => _handleRtcJoined(ready.callId),
+        onTokenWillExpire: () => _handleRtcTokenWillExpire(ready.callId),
+      );
+    } on RideVoiceCallRtcSessionException catch (error) {
+      if (_disposed) return;
+      _rtcJoining = false;
+      _rtcErrorCode = error.code;
+      notifyListeners();
+    } on RideVoiceCallRtcMediaException catch (error) {
+      if (_disposed) return;
+      _rtcJoining = false;
+      _rtcErrorCode = error.code;
+      notifyListeners();
+    } finally {
+      _rtcSyncInFlight = false;
+    }
+  }
+
+  Future<void> _handleRtcJoined(String callId) async {
+    if (_disposed || _rtcCallId != callId) return;
+
+    _rtcJoining = false;
+    _rtcConnected = true;
+    _rtcErrorCode = null;
+    notifyListeners();
+
+    final call = _activeCall;
+    if (call != null &&
+        call.callId == callId &&
+        call.state == RideVoiceCallRecoveryState.connecting) {
+      await activateCall();
+    }
+  }
+
+  Future<void> _handleRtcTokenWillExpire(String callId) async {
+    if (_disposed ||
+        _rtcCallId != callId ||
+        !_rtcConnected ||
+        _rtcTokenRefreshInFlight) {
+      return;
+    }
+
+    _rtcTokenRefreshInFlight = true;
+
+    try {
+      final previous = _rtcSession;
+      if (previous == null) return;
+
+      final refreshed = await _rtcSessionService.getActiveSession();
+      if (_disposed || _rtcCallId != callId) return;
+
+      if (refreshed.channelName != previous.channelName ||
+          refreshed.rtcUid != previous.rtcUid ||
+          refreshed.appId != previous.appId) {
+        _rtcErrorCode = 'invalid-response';
+        notifyListeners();
+        return;
+      }
+
+      await _rtcMediaGateway.renewToken(refreshed.token);
+      if (_disposed || _rtcCallId != callId) return;
+
+      _rtcSession = refreshed;
+      _rtcErrorCode = null;
+      notifyListeners();
+    } on RideVoiceCallRtcSessionException catch (error) {
+      if (_disposed) return;
+      _rtcErrorCode = error.code;
+      notifyListeners();
+    } on RideVoiceCallRtcMediaException catch (error) {
+      if (_disposed) return;
+      _rtcErrorCode = error.code;
+      notifyListeners();
+    } finally {
+      _rtcTokenRefreshInFlight = false;
+    }
+  }
+
+  Future<void> _leaveRtcMedia() async {
+    if (_disposed) return;
+
+    final hadRtcState =
+        _rtcCallId != null ||
+        _rtcJoining ||
+        _rtcConnected ||
+        _rtcSession != null ||
+        _rtcMuted ||
+        _rtcSpeakerphoneEnabled;
+
+    _rtcCallId = null;
+    _rtcSession = null;
+    _rtcJoining = false;
+    _rtcConnected = false;
+    _rtcMuted = false;
+    _rtcSpeakerphoneEnabled = false;
+
+    if (!hadRtcState) {
+      return;
+    }
+
+    try {
+      await _rtcMediaGateway.leave();
+    } on RideVoiceCallRtcMediaException catch (error) {
+      if (_disposed) return;
+      _rtcErrorCode = error.code;
+    }
+
+    if (!_disposed) {
+      notifyListeners();
     }
   }
 
@@ -326,15 +576,22 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
         _activeCall != null ||
         _errorCode != null ||
         _actionErrorCode != null ||
+        _rtcErrorCode != null ||
         _actionInFlight ||
         _recoverAgain ||
-        _recovering;
+        _recovering ||
+        _rtcCallId != null ||
+        _rtcJoining ||
+        _rtcConnected;
 
     _activeCall = null;
     _errorCode = null;
     _actionErrorCode = null;
+    _rtcErrorCode = null;
     _actionInFlight = false;
     _recoverAgain = false;
+
+    unawaited(_leaveRtcMedia());
 
     if (changed && !_disposed) {
       notifyListeners();
@@ -353,6 +610,7 @@ class RideVoiceCallRecoveryController extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
 
+    unawaited(_rtcMediaGateway.dispose());
     super.dispose();
   }
 }

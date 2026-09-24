@@ -5,6 +5,8 @@ import 'package:yoldaal_mobile/controllers/ride_voice_call_recovery_controller.d
 import 'package:yoldaal_mobile/services/ride_voice_call_push_hint_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_create_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_recovery_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_rtc_engine_service.dart';
+import 'package:yoldaal_mobile/services/ride_voice_call_rtc_session_service.dart';
 import 'package:yoldaal_mobile/services/ride_voice_call_transition_service.dart';
 
 void main() {
@@ -919,11 +921,194 @@ void main() {
     expect(recovery.calls, 2);
     expect(controller.actionInFlight, isFalse);
   });
+
+  test(
+    'accepted call auto-connects RTC and activates only after media join',
+    () async {
+      final hints = _FakeHintSource();
+      final recovery = _SequenceRecoveryInvoker(<Object?>[
+        _rtcRecovery('accepted'),
+        _rtcRecovery('connecting'),
+        _rtcRecovery('active'),
+      ]);
+      final transitions = _RecordingTransitionInvoker();
+      final sessions = _FakeRtcSessionGateway();
+      final media = _FakeRtcMediaGateway();
+      final controller = RideVoiceCallRecoveryController(
+        recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+        transitionService: RideVoiceCallTransitionService(invoker: transitions),
+        rtcSessionService: sessions,
+        rtcMediaGateway: media,
+        hintSource: hints,
+        isAuthenticated: () => true,
+      );
+
+      addTearDown(controller.dispose);
+      addTearDown(hints.dispose);
+
+      controller.start();
+      await _drain(8);
+
+      expect(sessions.calls, 1);
+      expect(media.permissionCalls, 1);
+      expect(media.joinCalls, 1);
+      expect(transitions.targets, <String>['connecting']);
+      expect(
+        controller.activeCall?.state,
+        RideVoiceCallRecoveryState.connecting,
+      );
+      expect(controller.rtcJoining, isTrue);
+      expect(controller.rtcConnected, isFalse);
+
+      await media.fireJoined();
+      await _drain(8);
+
+      expect(transitions.targets, <String>['connecting', 'active']);
+      expect(controller.activeCall?.state, RideVoiceCallRecoveryState.active);
+      expect(controller.rtcConnected, isTrue);
+      expect(controller.rtcJoining, isFalse);
+    },
+  );
+
+  test('ringing call never requests RTC credentials or media join', () async {
+    final hints = _FakeHintSource();
+    final recovery = _SequenceRecoveryInvoker(<Object?>[
+      _rtcRecovery('ringing'),
+    ]);
+    final sessions = _FakeRtcSessionGateway();
+    final media = _FakeRtcMediaGateway();
+    final controller = RideVoiceCallRecoveryController(
+      recoveryService: RideVoiceCallRecoveryService(invoker: recovery),
+      rtcSessionService: sessions,
+      rtcMediaGateway: media,
+      hintSource: hints,
+      isAuthenticated: () => true,
+    );
+
+    addTearDown(controller.dispose);
+    addTearDown(hints.dispose);
+
+    controller.start();
+    await _drain(6);
+
+    expect(sessions.calls, 0);
+    expect(media.permissionCalls, 0);
+    expect(media.joinCalls, 0);
+    expect(controller.rtcConnected, isFalse);
+  });
 }
 
 Future<void> _drain([int turns = 2]) async {
   for (var i = 0; i < turns; i += 1) {
     await Future<void>.delayed(Duration.zero);
+  }
+}
+
+Map<String, dynamic> _rtcRecovery(String state) => <String, dynamic>{
+  'activeCall': <String, dynamic>{
+    'rideId': 'ride-1',
+    'callId': 'rvc_0123456789abcdef0123456789abcdef',
+    'state': state,
+    'role': 'passenger',
+    'side': 'callee',
+  },
+};
+
+class _SequenceRecoveryInvoker implements RideVoiceCallRecoveryCallableInvoker {
+  _SequenceRecoveryInvoker(List<Object?> values)
+    : _values = List<Object?>.from(values);
+
+  final List<Object?> _values;
+  int calls = 0;
+
+  @override
+  Future<Object?> call(String callable, Map<String, dynamic> data) async {
+    expect(callable, 'getMyActiveRideVoiceCall');
+    expect(data, isEmpty);
+    calls += 1;
+
+    if (_values.isEmpty) {
+      return _rtcRecovery('active');
+    }
+
+    return _values.removeAt(0);
+  }
+}
+
+class _RecordingTransitionInvoker
+    implements RideVoiceCallTransitionCallableInvoker {
+  final List<String> targets = <String>[];
+
+  @override
+  Future<Object?> call(String callable, Map<String, dynamic> data) async {
+    expect(callable, 'transitionRideVoiceCall');
+    targets.add(data['toState'] as String);
+    return const <String, dynamic>{'ok': true};
+  }
+}
+
+class _FakeRtcSessionGateway implements RideVoiceCallRtcSessionGateway {
+  int calls = 0;
+
+  @override
+  Future<RideVoiceCallRtcSession> getActiveSession() async {
+    calls += 1;
+    return const RideVoiceCallRtcSession(
+      appId: '0123456789abcdef0123456789abcdef',
+      channelName: 'rvc_0123456789abcdef0123456789abcdef',
+      token: 'server-token',
+      rtcUid: 2,
+      expiresAtMillis: 2_000_000_000_000,
+    );
+  }
+}
+
+class _FakeRtcMediaGateway implements RideVoiceCallRtcMediaGateway {
+  int permissionCalls = 0;
+  int joinCalls = 0;
+  int leaveCalls = 0;
+  int disposeCalls = 0;
+  RideVoiceCallRtcMediaCallback? _joined;
+  RideVoiceCallRtcMediaCallback? _tokenExpiring;
+
+  @override
+  Future<bool> requestMicrophonePermission() async {
+    permissionCalls += 1;
+    return true;
+  }
+
+  @override
+  Future<void> join({
+    required RideVoiceCallRtcSession session,
+    required RideVoiceCallRtcMediaCallback onJoined,
+    required RideVoiceCallRtcMediaCallback onTokenWillExpire,
+  }) async {
+    joinCalls += 1;
+    _joined = onJoined;
+    _tokenExpiring = onTokenWillExpire;
+  }
+
+  Future<void> fireJoined() async => _joined?.call();
+
+  Future<void> fireTokenWillExpire() async => _tokenExpiring?.call();
+
+  @override
+  Future<void> renewToken(String token) async {}
+
+  @override
+  Future<void> leave() async {
+    leaveCalls += 1;
+  }
+
+  @override
+  Future<void> setMuted(bool muted) async {}
+
+  @override
+  Future<void> setSpeakerphone(bool enabled) async {}
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls += 1;
   }
 }
 

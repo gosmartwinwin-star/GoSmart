@@ -72,6 +72,14 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
                     key: const ValueKey('ride-voice-call-status-message'),
                     style: theme.textTheme.bodySmall,
                   ),
+                  if (current.rtcErrorCode != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ses bağlantısı şu anda kullanılamıyor.',
+                      key: const ValueKey('ride-voice-call-rtc-error'),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                   if (actions.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(spacing: 8, runSpacing: 8, children: actions),
@@ -106,7 +114,7 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Yolculuk kat\u0131l\u0131mc\u0131s\u0131n\u0131 sesli ara',
+                'Yolculuk katılımcısını sesli ara',
                 key: const ValueKey('ride-voice-call-start-title'),
                 style: theme.textTheme.titleSmall,
               ),
@@ -155,6 +163,26 @@ class RideVoiceCallStatusPanel extends StatelessWidget {
 
     if (current.canEnd) {
       return <Widget>[
+        if (current.canControlRtc)
+          OutlinedButton.icon(
+            key: const ValueKey('ride-voice-call-mute-button'),
+            onPressed: disabled ? null : current.toggleMuted,
+            icon: Icon(
+              current.rtcMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+            ),
+            label: Text(current.rtcMuted ? 'Mikrofonu aç' : 'Sessize al'),
+          ),
+        if (current.canControlRtc)
+          OutlinedButton.icon(
+            key: const ValueKey('ride-voice-call-speaker-button'),
+            onPressed: disabled ? null : current.toggleSpeakerphone,
+            icon: Icon(
+              current.rtcSpeakerphoneEnabled
+                  ? Icons.volume_up_rounded
+                  : Icons.hearing_rounded,
+            ),
+            label: Text(current.rtcSpeakerphoneEnabled ? 'Ahize' : 'Hoparlör'),
+          ),
         OutlinedButton(
           key: const ValueKey('ride-voice-call-end-button'),
           onPressed: disabled ? null : current.endCall,
