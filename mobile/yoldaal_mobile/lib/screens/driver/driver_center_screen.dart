@@ -210,7 +210,7 @@ class _DriverCenterScreenState extends State<DriverCenterScreen>
     controller.load();
     _attachPlanPurchaseController();
     if (_ownsRideController) {
-      _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
+      _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
         _driverRideRecoveryRequested = false;
         _voiceCallRecoveryController?.authChanged();
         if (user == null) {

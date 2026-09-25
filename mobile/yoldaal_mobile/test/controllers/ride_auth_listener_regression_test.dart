@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoldaal_mobile/application/ride/ride_gateway.dart';
@@ -6,6 +8,18 @@ import 'package:yoldaal_mobile/controllers/passenger_ride_controller.dart';
 import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 
 void main() {
+  test('driver center auth listener ignores token-only user changes', () {
+    final source = File('lib/screens/driver/driver_center_screen.dart')
+        .readAsStringSync();
+    expect(
+      source,
+      contains('FirebaseAuth.instance.authStateChanges().listen((user) {'),
+    );
+    expect(
+      source,
+      isNot(contains('FirebaseAuth.instance.userChanges().listen((user) {')),
+    );
+  });
   test('signed-out passenger create ve cancel callable üretmez', () async { String? uid; final api=Api()..passenger=ride('one'); final controller=PassengerRideController(gateway:api,repository:api,authenticatedUserId:()=>uid); expect(await controller.create(pickup:point,dropoff:point),isFalse); await controller.recover(); await controller.cancel(); expect(api.createIds,isEmpty); expect(api.cancelIds,isEmpty); controller.dispose(); });
   test('passenger logout listener state ve pending requesti temizler', () async { String? uid='u1'; final api=Api()..passenger=ride('one'); final controller=PassengerRideController(gateway:api,repository:api,authenticatedUserId:()=>uid); await controller.recover(); uid=null; await controller.authChanged(null); expect(controller.ride,isNull); expect(api.cancelled('one'),isTrue); controller.dispose(); });
   test('passenger user değişimi eski listenerı kapatıp recovery yapar', () async { String? uid='u1'; final api=Api()..passenger=ride('one'); final controller=PassengerRideController(gateway:api,repository:api,authenticatedUserId:()=>uid); await controller.recover(); uid='u2'; api.passenger=ride('two'); await controller.authChanged(uid); expect(controller.ride?.rideId,'two'); expect(api.cancelled('one'),isTrue); api.emit('one',ride('one',version:99)); await Future<void>.delayed(Duration.zero); expect(controller.ride?.rideId,'two'); controller.dispose(); expect(api.cancelled('two'),isTrue); });
