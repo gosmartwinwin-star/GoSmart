@@ -147,6 +147,60 @@ void main() {
     ]);
   });
 
+  testWidgets('background polling keeps empty chat panel geometry stable', (
+    tester,
+  ) async {
+    final gateway = _Gateway();
+    final timers = _PeriodicTimerFactory();
+
+    await pumpActive(
+      tester,
+      gateway: gateway,
+      timers: timers,
+      requestIdGenerator: () => 'unused_request_1234567890',
+    );
+
+    final panelFinder = find.byKey(const ValueKey('ride-chat-panel-ride_1'));
+    final trailingFinder = find.byKey(
+      const ValueKey('ride-chat-trailing-ride_1'),
+    );
+
+    expect(
+      find.byKey(const ValueKey('ride-chat-empty-ride_1')),
+      findsOneWidget,
+    );
+    expect(find.text('Hen\u00FCz mesaj yok.'), findsOneWidget);
+
+    final idlePanelSize = tester.getSize(panelFinder);
+    final idleTrailingSize = tester.getSize(trailingFinder);
+
+    final pending = Completer<RideChatPage>();
+    gateway.pendingListPage = pending.future;
+
+    timers.timer!.fire();
+    await tester.pump();
+
+    expect(tester.getSize(panelFinder), idlePanelSize);
+    expect(tester.getSize(trailingFinder), idleTrailingSize);
+
+    pending.complete(
+      const RideChatPage(
+        rideId: 'ride_1',
+        messages: <RideChatMessage>[],
+        nextCursor: null,
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.getSize(panelFinder), idlePanelSize);
+    expect(tester.getSize(trailingFinder), idleTrailingSize);
+    expect(
+      find.byKey(const ValueKey('ride-chat-empty-ride_1')),
+      findsOneWidget,
+    );
+  });
   testWidgets('terminal chat is read-only and renders callable messages', (
     tester,
   ) async {
@@ -203,6 +257,7 @@ class _Gateway implements RideChatGateway {
   final sendTexts = <String>[];
 
   RideChatPage? listPage;
+  Future<RideChatPage>? pendingListPage;
 
   int _sendCount = 0;
 
@@ -211,13 +266,21 @@ class _Gateway implements RideChatGateway {
     required String rideId,
     int pageSize = 50,
     RideChatCursor? cursor,
-  }) async =>
-      listPage ??
-      RideChatPage(
-        rideId: rideId,
-        messages: const <RideChatMessage>[],
-        nextCursor: null,
-      );
+  }) async {
+    final pending = pendingListPage;
+
+    if (pending != null) {
+      pendingListPage = null;
+      return pending;
+    }
+
+    return listPage ??
+        RideChatPage(
+          rideId: rideId,
+          messages: const <RideChatMessage>[],
+          nextCursor: null,
+        );
+  }
 
   @override
   Future<RideChatMessage> sendMessage({

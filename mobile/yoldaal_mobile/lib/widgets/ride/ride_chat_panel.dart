@@ -264,23 +264,28 @@ class _RideChatPanelState extends State<RideChatPanel> {
                     style: theme.textTheme.titleSmall,
                   ),
                 ),
-                if (_controller.loading)
-                  const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  IconButton(
-                    key: ValueKey('ride-chat-refresh-${widget.rideId}'),
-                    tooltip: 'Sohbeti yenile',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: _controller.accessClosed
-                        ? null
-                        : () {
-                            unawaited(_controller.refresh());
-                          },
-                    icon: const Icon(Icons.refresh, size: 20),
+                SizedBox.square(
+                  key: ValueKey('ride-chat-trailing-${widget.rideId}'),
+                  dimension: 40,
+                  child: Center(
+                    child: _controller.loading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            key: ValueKey('ride-chat-refresh-${widget.rideId}'),
+                            tooltip: 'Sohbeti yenile',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _controller.accessClosed
+                                ? null
+                                : () {
+                                    unawaited(_controller.refresh());
+                                  },
+                            icon: const Icon(Icons.refresh, size: 20),
+                          ),
                   ),
+                ),
               ],
             ),
             if (_controller.accessClosed) ...[
@@ -302,13 +307,19 @@ class _RideChatPanelState extends State<RideChatPanel> {
                 ),
               ],
               const SizedBox(height: 6),
-              if (messages.isEmpty && !_controller.loading)
-                Text(
-                  'Henüz mesaj yok.',
-                  key: ValueKey('ride-chat-empty-${widget.rideId}'),
-                  style: theme.textTheme.bodySmall,
+              if (messages.isEmpty)
+                Visibility(
+                  visible: !_controller.loading,
+                  maintainState: true,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  child: Text(
+                    'Hen\u00FCz mesaj yok.',
+                    key: ValueKey('ride-chat-empty-${widget.rideId}'),
+                    style: theme.textTheme.bodySmall,
+                  ),
                 )
-              else if (messages.isNotEmpty)
+              else
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 220),
                   child: ListView.builder(
