@@ -322,6 +322,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _voiceCallRecoveryController?.appResumed();
+
+      if (_locationIssue != null) {
+        unawaited(_getCurrentLocation());
+      }
     }
   }
 
