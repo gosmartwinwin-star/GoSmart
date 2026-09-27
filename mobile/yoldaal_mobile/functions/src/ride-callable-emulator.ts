@@ -1340,6 +1340,7 @@ test(
       rideId,
       category: "safety",
       requestId: passengerRequestId,
+      note: "Kisa olay aciklamasi.",
     };
 
     const passengerFirst =
@@ -1406,7 +1407,10 @@ test(
         "counterpartyId",
         "createdAt",
         "reporterId",
+        "reporterNote",
         "reporterRole",
+        "status",
+        "updatedAt",
       ],
     );
     assert.equal(
@@ -1425,8 +1429,19 @@ test(
       passengerCase.get("category"),
       "safety",
     );
+    assert.equal(
+      passengerCase.get("reporterNote"),
+      "Kisa olay aciklamasi.",
+    );
+    assert.equal(
+      passengerCase.get("status"),
+      "new",
+    );
     assert.ok(
       passengerCase.get("createdAt") instanceof Timestamp,
+    );
+    assert.ok(
+      passengerCase.get("updatedAt") instanceof Timestamp,
     );
 
     const passengerOperation =
@@ -1498,7 +1513,10 @@ test(
         "counterpartyId",
         "createdAt",
         "reporterId",
+        "reporterNote",
         "reporterRole",
+        "status",
+        "updatedAt",
       ],
     );
     assert.equal(
@@ -1517,8 +1535,19 @@ test(
       driverCase.get("category"),
       "vehicle",
     );
+    assert.equal(
+      driverCase.get("reporterNote"),
+      null,
+    );
+    assert.equal(
+      driverCase.get("status"),
+      "new",
+    );
     assert.ok(
       driverCase.get("createdAt") instanceof Timestamp,
+    );
+    assert.ok(
+      driverCase.get("updatedAt") instanceof Timestamp,
     );
 
     const supportCases =
@@ -1711,6 +1740,7 @@ test(
       rideId,
       category: "safety",
       requestId: passengerRequestId,
+      note: "Kisa olay aciklamasi.",
     };
 
     const passengerFirst =
@@ -1800,7 +1830,10 @@ test(
         "counterpartyId",
         "createdAt",
         "reporterId",
+        "reporterNote",
         "reporterRole",
+        "status",
+        "updatedAt",
       ],
     );
 
@@ -1824,8 +1857,23 @@ test(
       "safety",
     );
 
+    assert.equal(
+      passengerCase.get("reporterNote"),
+      "Kisa olay aciklamasi.",
+    );
+
+    assert.equal(
+      passengerCase.get("status"),
+      "new",
+    );
+
     assert.ok(
       passengerCase.get("createdAt") instanceof
+        Timestamp,
+    );
+
+    assert.ok(
+      passengerCase.get("updatedAt") instanceof
         Timestamp,
     );
 
@@ -1932,6 +1980,21 @@ test(
     assert.equal(
       driverCase.get("counterpartyId"),
       passenger.uid,
+    );
+
+    assert.equal(
+      driverCase.get("reporterNote"),
+      null,
+    );
+
+    assert.equal(
+      driverCase.get("status"),
+      "new",
+    );
+
+    assert.ok(
+      driverCase.get("updatedAt") instanceof
+        Timestamp,
     );
 
     await callable(

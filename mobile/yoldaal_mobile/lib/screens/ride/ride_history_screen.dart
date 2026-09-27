@@ -398,6 +398,7 @@ class _RideHistoryCard extends StatelessWidget {
         '${two(local.minute)}';
   }
 }
+
 class _RideSupportPanel extends StatefulWidget {
   const _RideSupportPanel({
     super.key,
@@ -415,16 +416,24 @@ class _RideSupportPanel extends StatefulWidget {
 }
 
 class _RideSupportPanelState extends State<_RideSupportPanel> {
+  final TextEditingController _noteController = TextEditingController();
+
   RideSupportGateway? _resolvedGateway;
   String? _selectedCategory;
   String? _requestId;
   String? _requestCategory;
+  String? _requestNote;
   String? _errorMessage;
   bool _submitting = false;
   bool _success = false;
 
   RideSupportGateway get _gateway =>
       _resolvedGateway ??= widget.gateway ?? RideSupportService();
+
+  String? get _currentNote {
+    final value = _noteController.text.trim();
+    return value.isEmpty ? null : value;
+  }
 
   @override
   void didUpdateWidget(covariant _RideSupportPanel oldWidget) {
@@ -436,27 +445,34 @@ class _RideSupportPanelState extends State<_RideSupportPanel> {
       _selectedCategory = null;
       _requestId = null;
       _requestCategory = null;
+      _requestNote = null;
       _errorMessage = null;
       _submitting = false;
       _success = false;
+      _noteController.clear();
     }
   }
 
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
   void _selectCategory(String? category) {
-    if (_submitting || category == null) return;
+    if (_submitting || _success || category == null) return;
 
     setState(() {
-      if (_selectedCategory != category) {
-        _selectedCategory = category;
-
-        if (_requestCategory != category) {
-          _requestId = null;
-          _requestCategory = null;
-        }
-      }
-
+      _selectedCategory = category;
       _errorMessage = null;
-      _success = false;
+    });
+  }
+
+  void _noteChanged(String _) {
+    if (_submitting || _success) return;
+
+    setState(() {
+      _errorMessage = null;
     });
   }
 
@@ -467,13 +483,20 @@ class _RideSupportPanelState extends State<_RideSupportPanel> {
       return;
     }
 
-    final requestId =
-        _requestId ??
-        widget.requestIdGenerator();
+    final note = _currentNote;
+    final canReuseRequest =
+        _requestId != null &&
+        _requestCategory == category &&
+        _requestNote == note;
+
+    final requestId = canReuseRequest
+        ? _requestId!
+        : widget.requestIdGenerator();
 
     setState(() {
       _requestId = requestId;
       _requestCategory = category;
+      _requestNote = note;
       _submitting = true;
       _errorMessage = null;
     });
@@ -483,6 +506,7 @@ class _RideSupportPanelState extends State<_RideSupportPanel> {
         rideId: widget.rideId,
         category: category,
         requestId: requestId,
+        note: note,
       );
 
       if (!mounted) return;
@@ -498,7 +522,8 @@ class _RideSupportPanelState extends State<_RideSupportPanel> {
       setState(() {
         _submitting = false;
         _errorMessage =
-            'Destek talebi gönderilemedi. Lütfen tekrar deneyin.';
+            'Bildiriminiz g\u00F6nderilemedi. '
+            'L\u00FCtfen tekrar deneyin.';
       });
     } catch (_) {
       if (!mounted) return;
@@ -506,7 +531,8 @@ class _RideSupportPanelState extends State<_RideSupportPanel> {
       setState(() {
         _submitting = false;
         _errorMessage =
-            'Destek talebi gönderilemedi. Lütfen tekrar deneyin.';
+            'Bildiriminiz g\u00F6nderilemedi. '
+            'L\u00FCtfen tekrar deneyin.';
       });
     }
   }
@@ -514,95 +540,107 @@ class _RideSupportPanelState extends State<_RideSupportPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final category = _selectedCategory;
+    final controlsEnabled = !_submitting && !_success;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text("YoldaAl'a Bildir", style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
         Text(
-          'Destek / şikâyet',
-          style: theme.textTheme.titleSmall,
+          "Yolculukla ilgili bir sorun veya geri bildirim varsa "
+          "YoldaAl'a bildirebilirsiniz.",
+          style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
         DropdownButton<String>(
-          key: ValueKey(
-            'ride-support-category-${widget.rideId}',
-          ),
-          value: _selectedCategory,
+          key: ValueKey('ride-support-category-${widget.rideId}'),
+          value: category,
           isExpanded: true,
-          hint: const Text('Kategori seçin'),
+          hint: const Text('Kategori se\u00E7in'),
           items: [
-            for (final category in rideSupportCategories)
+            for (final item in rideSupportUiCategories)
               DropdownMenuItem<String>(
-                value: category,
-                child: Text(_categoryLabel(category)),
+                value: item,
+                child: Text(rideSupportCategoryLabel(item)),
               ),
           ],
-          onChanged: _submitting ? null : _selectCategory,
+          onChanged: controlsEnabled ? _selectCategory : null,
         ),
+        if (category == 'safety') ...[
+          const SizedBox(height: 4),
+          Text(
+            "Bu alan acil yard\u0131m hizmeti de\u011Fildir. "
+            "Acil bir tehlike varsa 112'yi aray\u0131n.",
+            key: ValueKey('ride-support-safety-warning-${widget.rideId}'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+        if (category == 'lost-item') ...[
+          const SizedBox(height: 4),
+          Text(
+            'E\u015Fyay\u0131 tan\u0131mlaman\u0131z '
+            'bulmam\u0131za yard\u0131mc\u0131 olur.',
+            key: ValueKey('ride-support-lost-item-help-${widget.rideId}'),
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+        if (category != null) ...[
+          const SizedBox(height: 8),
+          TextField(
+            key: ValueKey('ride-support-note-${widget.rideId}'),
+            controller: _noteController,
+            enabled: controlsEnabled,
+            maxLength: rideSupportNoteMaxCodePoints,
+            minLines: 2,
+            maxLines: 4,
+            onChanged: _noteChanged,
+            decoration: const InputDecoration(
+              labelText:
+                  'K\u0131sa a\u00E7\u0131klama '
+                  '(iste\u011Fe ba\u011Fl\u0131)',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         FilledButton.icon(
-          key: ValueKey(
-            'ride-support-submit-${widget.rideId}',
-          ),
-          onPressed:
-              _selectedCategory == null ||
-                  _submitting ||
-                  _success
-              ? null
-              : _submit,
+          key: ValueKey('ride-support-submit-${widget.rideId}'),
+          onPressed: category == null || !controlsEnabled ? null : _submit,
           icon: _submitting
               ? const SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.support_agent_outlined),
+              : const Icon(Icons.flag_outlined),
           label: Text(
-            _submitting
-                ? 'Gönderiliyor...'
-                : 'Destek talebi gönder',
+            _submitting ? 'G\u00F6nderiliyor...' : "YoldaAl'a Bildir",
           ),
         ),
         if (_errorMessage case final error?) ...[
           const SizedBox(height: 8),
           Text(
             error,
-            key: ValueKey(
-              'ride-support-error-${widget.rideId}',
-            ),
-            style: TextStyle(
-              color: theme.colorScheme.error,
-            ),
+            key: ValueKey('ride-support-error-${widget.rideId}'),
+            style: TextStyle(color: theme.colorScheme.error),
           ),
         ],
         if (_success) ...[
           const SizedBox(height: 8),
           Text(
-            'Destek talebiniz alındı.',
-            key: ValueKey(
-              'ride-support-success-${widget.rideId}',
-            ),
+            "Bildiriminiz YoldaAl'a iletildi.",
+            key: ValueKey('ride-support-success-${widget.rideId}'),
           ),
         ],
       ],
     );
   }
-
-  static String _categoryLabel(String category) => switch (category) {
-    'safety' => 'Güvenlik',
-    'behavior' => 'Davranış',
-    'fare' => 'Ücret',
-    'route' => 'Rota',
-    'pickup' => 'Alım noktası',
-    'no-show' => 'Gelmeme',
-    'cancel' => 'İptal',
-    'vehicle' => 'Araç',
-    'technical' => 'Teknik',
-    'lost-item' => 'Kayıp eşya',
-    _ => category,
-  };
 }
+
 class _RideRatingPanel extends StatefulWidget {
   const _RideRatingPanel({
     super.key,
@@ -651,12 +689,10 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
     });
 
     try {
-      final gateway =
-          _resolvedGateway ??= widget.gateway ?? RideRatingService();
+      final gateway = _resolvedGateway ??=
+          widget.gateway ?? RideRatingService();
 
-      final status = await gateway.getMyRatingStatus(
-        rideId: widget.rideId,
-      );
+      final status = await gateway.getMyRatingStatus(rideId: widget.rideId);
 
       if (!mounted) return;
 
@@ -675,16 +711,14 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
 
       setState(() {
         _loading = false;
-        _errorMessage =
-            'Puan durumu alınamadı. Lütfen tekrar deneyin.';
+        _errorMessage = 'Puan durumu alınamadı. Lütfen tekrar deneyin.';
       });
     } catch (_) {
       if (!mounted) return;
 
       setState(() {
         _loading = false;
-        _errorMessage =
-            'Puan durumu alınamadı. Lütfen tekrar deneyin.';
+        _errorMessage = 'Puan durumu alınamadı. Lütfen tekrar deneyin.';
       });
     }
   }
@@ -709,14 +743,11 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
   Future<void> _submit() async {
     final rating = _selectedRating;
 
-    if (_submitting ||
-        _status?.hasSubmitted == true ||
-        rating == null) {
+    if (_submitting || _status?.hasSubmitted == true || rating == null) {
       return;
     }
 
-    final requestId =
-        _requestId ??= widget.requestIdGenerator();
+    final requestId = _requestId ??= widget.requestIdGenerator();
 
     _requestRating ??= rating;
 
@@ -726,8 +757,8 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
     });
 
     try {
-      final gateway =
-          _resolvedGateway ??= widget.gateway ?? RideRatingService();
+      final gateway = _resolvedGateway ??=
+          widget.gateway ?? RideRatingService();
 
       final status = await gateway.submitRating(
         rideId: widget.rideId,
@@ -749,16 +780,14 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
 
       setState(() {
         _submitting = false;
-        _errorMessage =
-            'Puan gönderilemedi. Lütfen tekrar deneyin.';
+        _errorMessage = 'Puan gönderilemedi. Lütfen tekrar deneyin.';
       });
     } catch (_) {
       if (!mounted) return;
 
       setState(() {
         _submitting = false;
-        _errorMessage =
-            'Puan gönderilemedi. Lütfen tekrar deneyin.';
+        _errorMessage = 'Puan gönderilemedi. Lütfen tekrar deneyin.';
       });
     }
   }
@@ -785,14 +814,11 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _errorMessage ??
-                'Puan durumu alınamadı. Lütfen tekrar deneyin.',
+            _errorMessage ?? 'Puan durumu alınamadı. Lütfen tekrar deneyin.',
           ),
           const SizedBox(height: 4),
           TextButton.icon(
-            key: ValueKey(
-              'ride-rating-status-retry-${widget.rideId}',
-            ),
+            key: ValueKey('ride-rating-status-retry-${widget.rideId}'),
             onPressed: _loadStatus,
             icon: const Icon(Icons.refresh),
             label: const Text('Tekrar dene'),
@@ -803,9 +829,7 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
 
     if (status.hasSubmitted) {
       return Row(
-        key: ValueKey(
-          'ride-rating-submitted-${widget.rideId}',
-        ),
+        key: ValueKey('ride-rating-submitted-${widget.rideId}'),
         children: [
           const Icon(Icons.star),
           const SizedBox(width: 8),
@@ -823,12 +847,9 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
           children: [
             for (var value = 1; value <= 5; value++)
               IconButton(
-                key: ValueKey(
-                  'ride-rating-${widget.rideId}-star-$value',
-                ),
+                key: ValueKey('ride-rating-${widget.rideId}-star-$value'),
                 tooltip: '$value yıldız',
-                onPressed:
-                    _submitting ? null : () => _selectRating(value),
+                onPressed: _submitting ? null : () => _selectRating(value),
                 icon: Icon(
                   (_selectedRating ?? 0) >= value
                       ? Icons.star
@@ -838,24 +859,15 @@ class _RideRatingPanelState extends State<_RideRatingPanel> {
           ],
         ),
         FilledButton.icon(
-          key: ValueKey(
-            'ride-rating-submit-${widget.rideId}',
-          ),
-          onPressed:
-              _selectedRating == null || _submitting
-                  ? null
-                  : _submit,
+          key: ValueKey('ride-rating-submit-${widget.rideId}'),
+          onPressed: _selectedRating == null || _submitting ? null : _submit,
           icon: _submitting
               ? const SizedBox.square(
                   dimension: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.send),
-          label: Text(
-            _submitting
-                ? 'Gönderiliyor...'
-                : 'Puanı gönder',
-          ),
+          label: Text(_submitting ? 'Gönderiliyor...' : 'Puanı gönder'),
         ),
         if (_errorMessage case final error?) ...[
           const SizedBox(height: 8),

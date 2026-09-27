@@ -89,7 +89,7 @@ test(
 );
 
 test(
-  "active support reuses exact ride support payload contract",
+  "active support reuses backward compatible support payload contract",
   () => {
     assert.deepEqual(
       validateRideSupportPayload({
@@ -101,6 +101,21 @@ test(
         rideId: "ride_1",
         category: "safety",
         requestId,
+      },
+    );
+
+    assert.deepEqual(
+      validateRideSupportPayload({
+        rideId: "ride_1",
+        category: "safety",
+        requestId,
+        note: "  Aktif aciklama  ",
+      }),
+      {
+        rideId: "ride_1",
+        category: "safety",
+        requestId,
+        note: "Aktif aciklama",
       },
     );
 

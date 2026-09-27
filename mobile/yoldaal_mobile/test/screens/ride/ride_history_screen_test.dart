@@ -51,18 +51,12 @@ void main() {
 
     expect(find.text('First Pickup'), findsOneWidget);
 
-    expect(
-      find.byKey(const ValueKey('ride-history-load-more')),
-      findsOneWidget,
-    );
+    final loadMore = find.byKey(const ValueKey('ride-history-load-more'));
 
-    final loadMore = find.byKey(
-      const ValueKey('ride-history-load-more'),
-    );
-
-    await tester.ensureVisible(loadMore);
+    await tester.scrollUntilVisible(loadMore, 300);
     await tester.pumpAndSettle();
 
+    expect(loadMore, findsOneWidget);
     await tester.tap(loadMore);
 
     await tester.pumpAndSettle();
@@ -102,8 +96,7 @@ void main() {
         home: RideHistoryScreen(
           gateway: history,
           ratingGateway: ratings,
-          requestIdGenerator:
-              () => 'rating_request_1234567890',
+          requestIdGenerator: () => 'rating_request_1234567890',
         ),
       ),
     );
@@ -111,35 +104,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ratings.statusRideIds, ['passenger']);
-    expect(
-      find.text('Bu yolculuğu puanlayın'),
-      findsOneWidget,
-    );
+    expect(find.text('Bu yolculuğu puanlayın'), findsOneWidget);
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-rating-passenger-star-5'),
-      ),
+      find.byKey(const ValueKey('ride-rating-passenger-star-5')),
     );
     await tester.pump();
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-rating-submit-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-rating-submit-passenger')),
     );
     await tester.pumpAndSettle();
 
     expect(ratings.submitRatings, [5]);
-    expect(
-      ratings.submitRequestIds,
-      ['rating_request_1234567890'],
-    );
+    expect(ratings.submitRequestIds, ['rating_request_1234567890']);
     expect(find.text('Puanınız: 5/5'), findsOneWidget);
-    expect(
-      find.text('Bu yolculuğu puanlayın'),
-      findsNothing,
-    );
+    expect(find.text('Bu yolculuğu puanlayın'), findsNothing);
   });
 
   testWidgets('driver scope da ayni completed rating yuzeyini kullanir', (
@@ -153,71 +133,50 @@ void main() {
         home: RideHistoryScreen(
           gateway: history,
           ratingGateway: ratings,
-          requestIdGenerator:
-              () => 'rating_request_1234567890',
+          requestIdGenerator: () => 'rating_request_1234567890',
         ),
       ),
     );
 
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey('ride-history-driver-scope'),
-      ),
-    );
+    await tester.tap(find.byKey(const ValueKey('ride-history-driver-scope')));
     await tester.pumpAndSettle();
 
+    expect(ratings.statusRideIds, containsAllInOrder(['passenger', 'driver']));
     expect(
-      ratings.statusRideIds,
-      containsAllInOrder(['passenger', 'driver']),
-    );
-    expect(
-      find.byKey(
-        const ValueKey('ride-rating-panel-driver'),
-      ),
+      find.byKey(const ValueKey('ride-rating-panel-driver')),
       findsOneWidget,
     );
   });
 
-  testWidgets('daha once verilen own score tekrar puanlama aksiyonu gostermez', (
-    tester,
-  ) async {
-    final ratings = _RatingGateway()
-      ..status = RideRatingStatus(
-        rideId: 'passenger',
-        hasSubmitted: true,
-        rating: 4,
-        submittedAt:
-            DateTime.fromMillisecondsSinceEpoch(
-              123456,
-              isUtc: true,
-            ),
+  testWidgets(
+    'daha once verilen own score tekrar puanlama aksiyonu gostermez',
+    (tester) async {
+      final ratings = _RatingGateway()
+        ..status = RideRatingStatus(
+          rideId: 'passenger',
+          hasSubmitted: true,
+          rating: 4,
+          submittedAt: DateTime.fromMillisecondsSinceEpoch(123456, isUtc: true),
+        );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RideHistoryScreen(gateway: _Gateway(), ratingGateway: ratings),
+        ),
       );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RideHistoryScreen(
-          gateway: _Gateway(),
-          ratingGateway: ratings,
-        ),
-      ),
-    );
+      await tester.pumpAndSettle();
 
-    await tester.pumpAndSettle();
-
-    expect(find.text('Puanınız: 4/5'), findsOneWidget);
-    expect(
-      find.text('Bu yolculuğu puanlayın'),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        const ValueKey('ride-rating-submit-passenger'),
-      ),
-      findsNothing,
-    );
-  });
+      expect(find.text('Puanınız: 4/5'), findsOneWidget);
+      expect(find.text('Bu yolculuğu puanlayın'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ride-rating-submit-passenger')),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('rating status hatasi fail-soft ve raw reason sizdirmaz', (
     tester,
@@ -230,37 +189,22 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: RideHistoryScreen(
-          gateway: _Gateway(),
-          ratingGateway: ratings,
-        ),
+        home: RideHistoryScreen(gateway: _Gateway(), ratingGateway: ratings),
       ),
     );
 
     await tester.pumpAndSettle();
 
     expect(
-      find.text(
-        'Puan durumu alınamadı. Lütfen tekrar deneyin.',
-      ),
+      find.text('Puan durumu alınamadı. Lütfen tekrar deneyin.'),
       findsOneWidget,
     );
     expect(
-      find.byKey(
-        const ValueKey(
-          'ride-rating-status-retry-passenger',
-        ),
-      ),
+      find.byKey(const ValueKey('ride-rating-status-retry-passenger')),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('secret-rating-detail'),
-      findsNothing,
-    );
-    expect(
-      find.text('Bu yolculuğu puanlayın'),
-      findsNothing,
-    );
+    expect(find.textContaining('secret-rating-detail'), findsNothing);
+    expect(find.text('Bu yolculuğu puanlayın'), findsNothing);
   });
 
   testWidgets('ayni logical rating retry ayni requestId kullanir', (
@@ -268,16 +212,14 @@ void main() {
   ) async {
     var generated = 0;
 
-    final ratings = _RatingGateway()
-      ..submitFailuresRemaining = 1;
+    final ratings = _RatingGateway()..submitFailuresRemaining = 1;
 
     await tester.pumpWidget(
       MaterialApp(
         home: RideHistoryScreen(
           gateway: _Gateway(),
           ratingGateway: ratings,
-          requestIdGenerator: () =>
-              'rating_retry_${++generated}_1234567890',
+          requestIdGenerator: () => 'rating_retry_${++generated}_1234567890',
         ),
       ),
     );
@@ -285,39 +227,28 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-rating-passenger-star-3'),
-      ),
+      find.byKey(const ValueKey('ride-rating-passenger-star-3')),
     );
     await tester.pump();
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-rating-submit-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-rating-submit-passenger')),
     );
     await tester.pumpAndSettle();
 
     expect(
-      find.text(
-        'Puan gönderilemedi. Lütfen tekrar deneyin.',
-      ),
+      find.text('Puan gönderilemedi. Lütfen tekrar deneyin.'),
       findsOneWidget,
     );
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-rating-submit-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-rating-submit-passenger')),
     );
     await tester.pumpAndSettle();
 
     expect(ratings.submitRatings, [3, 3]);
     expect(ratings.submitRequestIds.length, 2);
-    expect(
-      ratings.submitRequestIds[0],
-      ratings.submitRequestIds[1],
-    );
+    expect(ratings.submitRequestIds[0], ratings.submitRequestIds[1]);
     expect(generated, 1);
     expect(find.text('Puanınız: 3/5'), findsOneWidget);
   });
@@ -339,90 +270,68 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ratings.statusRideIds, isEmpty);
+    expect(find.text('Bu yolculuğu puanlayın'), findsNothing);
     expect(
-      find.text('Bu yolculuğu puanlayın'),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        const ValueKey('ride-rating-panel-cancelled'),
-      ),
+      find.byKey(const ValueKey('ride-rating-panel-cancelled')),
       findsNothing,
     );
   });
 
-  testWidgets('completed terminal ride support category ve submit akisini kullanir', (
-    tester,
-  ) async {
-    final support = _SupportGateway();
+  testWidgets(
+    'completed terminal ride support category ve submit akisini kullanir',
+    (tester) async {
+      final support = _SupportGateway();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: RideHistoryScreen(
-          gateway: _Gateway(),
-          ratingGateway: _RatingGateway(),
-          supportGateway: support,
-          requestIdGenerator:
-              () => 'support_request_1234567890',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RideHistoryScreen(
+            gateway: _Gateway(),
+            ratingGateway: _RatingGateway(),
+            supportGateway: support,
+            requestIdGenerator: () => 'support_request_1234567890',
+          ),
         ),
-      ),
-    );
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(
-        const ValueKey('ride-support-panel-passenger'),
-      ),
-      findsOneWidget,
-    );
+      expect(
+        find.byKey(const ValueKey('ride-support-panel-passenger')),
+        findsOneWidget,
+      );
 
-    final submit = find.byKey(
-      const ValueKey('ride-support-submit-passenger'),
-    );
+      final submit = find.byKey(
+        const ValueKey('ride-support-submit-passenger'),
+      );
 
-    expect(
-      tester.widget<FilledButton>(submit).onPressed,
-      isNull,
-    );
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-category-passenger'),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ride-support-category-passenger')),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Güvenlik').last);
-    await tester.pump();
+      await tester.tap(find.text('Güvenlik').last);
+      await tester.pump();
 
-    expect(
-      tester.widget<FilledButton>(submit).onPressed,
-      isNotNull,
-    );
+      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
 
-    await tester.tap(submit);
-    await tester.pumpAndSettle();
+      await tester.ensureVisible(submit);
+      await tester.pumpAndSettle();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
 
-    expect(support.rideIds, ['passenger']);
-    expect(support.categories, ['safety']);
-    expect(
-      support.requestIds,
-      ['support_request_1234567890'],
-    );
-    expect(
-      find.text('Destek talebiniz alındı.'),
-      findsOneWidget,
-    );
-  });
+      expect(support.rideIds, ['passenger']);
+      expect(support.categories, ['safety']);
+      expect(support.requestIds, ['support_request_1234567890']);
+      expect(find.text("Bildiriminiz YoldaAl'a iletildi."), findsOneWidget);
+    },
+  );
 
-  testWidgets('support logical retry ayni requestId kullanir', (
-    tester,
-  ) async {
+  testWidgets('support logical retry ayni requestId kullanir', (tester) async {
     var generated = 0;
 
-    final support = _SupportGateway()
-      ..failuresRemaining = 1;
+    final support = _SupportGateway()..failuresRemaining = 1;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -430,8 +339,7 @@ void main() {
           gateway: _Gateway(),
           ratingGateway: _RatingGateway(),
           supportGateway: support,
-          requestIdGenerator: () =>
-              'support_retry_${++generated}_1234567890',
+          requestIdGenerator: () => 'support_retry_${++generated}_1234567890',
         ),
       ),
     );
@@ -439,45 +347,37 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-category-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-category-passenger')),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Rota').last);
+    await tester.tap(find.text('Yolculuk / rota sorunu').last);
     await tester.pump();
 
-    final submit = find.byKey(
-      const ValueKey('ride-support-submit-passenger'),
-    );
+    final submit = find.byKey(const ValueKey('ride-support-submit-passenger'));
 
+    await tester.ensureVisible(submit);
+    await tester.pumpAndSettle();
     await tester.tap(submit);
     await tester.pumpAndSettle();
 
     expect(
-      find.text(
-        'Destek talebi gönderilemedi. Lütfen tekrar deneyin.',
-      ),
+      find.text('Bildiriminiz g\u00F6nderilemedi. L\u00FCtfen tekrar deneyin.'),
       findsOneWidget,
     );
 
+    await tester.ensureVisible(submit);
+    await tester.pumpAndSettle();
     await tester.tap(submit);
     await tester.pumpAndSettle();
 
     expect(generated, 1);
     expect(support.categories, ['route', 'route']);
-    expect(
-      support.requestIds,
-      [
-        'support_retry_1_1234567890',
-        'support_retry_1_1234567890',
-      ],
-    );
-    expect(
-      find.text('Destek talebiniz alındı.'),
-      findsOneWidget,
-    );
+    expect(support.requestIds, [
+      'support_retry_1_1234567890',
+      'support_retry_1_1234567890',
+    ]);
+    expect(find.text("Bildiriminiz YoldaAl'a iletildi."), findsOneWidget);
   });
 
   testWidgets('failed support category change yeni logical requestId uretir', (
@@ -485,8 +385,7 @@ void main() {
   ) async {
     var generated = 0;
 
-    final support = _SupportGateway()
-      ..failuresRemaining = 1;
+    final support = _SupportGateway()..failuresRemaining = 1;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -494,8 +393,7 @@ void main() {
           gateway: _Gateway(),
           ratingGateway: _RatingGateway(),
           supportGateway: support,
-          requestIdGenerator: () =>
-              'support_change_${++generated}_1234567890',
+          requestIdGenerator: () => 'support_change_${++generated}_1234567890',
         ),
       ),
     );
@@ -508,42 +406,41 @@ void main() {
 
     await tester.tap(category);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Rota').last);
+    await tester.tap(find.text('Yolculuk / rota sorunu').last);
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-submit-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
     );
     await tester.pumpAndSettle();
 
     await tester.tap(category);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Ücret').last);
+    await tester.tap(find.text('Teknik sorun').last);
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-submit-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
     );
     await tester.pumpAndSettle();
 
     expect(generated, 2);
-    expect(support.categories, ['route', 'fare']);
-    expect(
-      support.requestIds,
-      [
-        'support_change_1_1234567890',
-        'support_change_2_1234567890',
-      ],
-    );
+    expect(support.categories, ['route', 'technical']);
+    expect(support.requestIds, [
+      'support_change_1_1234567890',
+      'support_change_2_1234567890',
+    ]);
   });
 
-  testWidgets('support backend raw reason UI metnine sizmaz', (
-    tester,
-  ) async {
+  testWidgets('support backend raw reason UI metnine sizmaz', (tester) async {
     final support = _SupportGateway()
       ..error = const RideGatewayException(
         'failed-precondition',
@@ -556,8 +453,7 @@ void main() {
           gateway: _Gateway(),
           ratingGateway: _RatingGateway(),
           supportGateway: support,
-          requestIdGenerator:
-              () => 'support_request_1234567890',
+          requestIdGenerator: () => 'support_request_1234567890',
         ),
       ),
     );
@@ -565,32 +461,27 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-category-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-category-passenger')),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Davranış').last);
+    await tester.tap(find.text('Davran\u0131\u015F / ileti\u015Fim').last);
     await tester.pump();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-submit-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
     );
     await tester.pumpAndSettle();
 
     expect(
-      find.text(
-        'Destek talebi gönderilemedi. Lütfen tekrar deneyin.',
-      ),
+      find.text('Bildiriminiz g\u00F6nderilemedi. L\u00FCtfen tekrar deneyin.'),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('secret-support-detail'),
-      findsNothing,
-    );
+    expect(find.textContaining('secret-support-detail'), findsNothing);
   });
 
   testWidgets('cancelled ve expired terminal rides support yuzeyi gosterir', (
@@ -608,35 +499,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(
-        const ValueKey('ride-support-panel-cancelled'),
-      ),
+      find.byKey(const ValueKey('ride-support-panel-cancelled')),
       findsOneWidget,
     );
     expect(
-      find.byKey(
-        const ValueKey('ride-support-panel-expired'),
-      ),
+      find.byKey(const ValueKey('ride-support-panel-expired')),
       findsOneWidget,
     );
 
     expect(
-      find.byKey(
-        const ValueKey('ride-rating-panel-cancelled'),
-      ),
+      find.byKey(const ValueKey('ride-rating-panel-cancelled')),
       findsNothing,
     );
     expect(
-      find.byKey(
-        const ValueKey('ride-rating-panel-expired'),
-      ),
+      find.byKey(const ValueKey('ride-rating-panel-expired')),
       findsNothing,
     );
   });
 
-  testWidgets('driver scope shared support yuzeyini kullanir', (
-    tester,
-  ) async {
+  testWidgets('driver scope shared support yuzeyini kullanir', (tester) async {
     final support = _SupportGateway();
 
     await tester.pumpWidget(
@@ -652,23 +533,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(
-        const ValueKey('ride-support-panel-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-panel-passenger')),
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey('ride-history-driver-scope'),
-      ),
-    );
+    await tester.tap(find.byKey(const ValueKey('ride-history-driver-scope')));
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(
-        const ValueKey('ride-support-panel-driver'),
-      ),
+      find.byKey(const ValueKey('ride-support-panel-driver')),
       findsOneWidget,
     );
   });
@@ -678,8 +551,7 @@ void main() {
   ) async {
     final pending = Completer<RideSupportCaseResult>();
 
-    final support = _SupportGateway()
-      ..pendingResult = pending;
+    final support = _SupportGateway()..pendingResult = pending;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -687,8 +559,7 @@ void main() {
           gateway: _Gateway(),
           ratingGateway: _RatingGateway(),
           supportGateway: support,
-          requestIdGenerator:
-              () => 'support_pending_1234567890',
+          requestIdGenerator: () => 'support_pending_1234567890',
         ),
       ),
     );
@@ -696,39 +567,30 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(
-        const ValueKey('ride-support-category-passenger'),
-      ),
+      find.byKey(const ValueKey('ride-support-category-passenger')),
     );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Güvenlik').last);
     await tester.pump();
 
-    final submit = find.byKey(
-      const ValueKey('ride-support-submit-passenger'),
-    );
+    final submit = find.byKey(const ValueKey('ride-support-submit-passenger'));
 
-    expect(
-      tester.widget<FilledButton>(submit).onPressed,
-      isNotNull,
-    );
+    expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
 
+    await tester.ensureVisible(submit);
+    await tester.pumpAndSettle();
     await tester.tap(submit);
     await tester.pump();
 
     expect(support.rideIds, ['passenger']);
     expect(support.categories, ['safety']);
-    expect(
-      support.requestIds,
-      ['support_pending_1234567890'],
-    );
+    expect(support.requestIds, ['support_pending_1234567890']);
 
-    expect(
-      tester.widget<FilledButton>(submit).onPressed,
-      isNull,
-    );
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
 
+    await tester.ensureVisible(submit);
+    await tester.pump();
     await tester.tap(submit);
     await tester.pump();
 
@@ -745,24 +607,63 @@ void main() {
         rideId: 'passenger',
         caseId: 'support-case-pending',
         category: 'safety',
-        createdAt: DateTime.fromMillisecondsSinceEpoch(
-          456789,
-          isUtc: true,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(456789, isUtc: true),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text("Bildiriminiz YoldaAl'a iletildi."), findsOneWidget);
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    expect(support.rideIds, ['passenger']);
+  });
+  testWidgets('history report sends optional note with lost item category', (
+    tester,
+  ) async {
+    final support = _SupportGateway();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RideHistoryScreen(
+          gateway: _Gateway(),
+          ratingGateway: _RatingGateway(),
+          supportGateway: support,
+          requestIdGenerator: () => 'support_lost_item_1234567890',
         ),
       ),
     );
 
     await tester.pumpAndSettle();
 
+    await tester.tap(
+      find.byKey(const ValueKey('ride-support-category-passenger')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unutulan e\u015Fya').last);
+    await tester.pump();
+
     expect(
-      find.text('Destek talebiniz alındı.'),
+      find.byKey(const ValueKey('ride-support-lost-item-help-passenger')),
       findsOneWidget,
     );
-    expect(
-      tester.widget<FilledButton>(submit).onPressed,
-      isNull,
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ride-support-note-passenger')),
+      '  Siyah canta arka koltukta kaldi.  ',
     );
-    expect(support.rideIds, ['passenger']);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('ride-support-submit-passenger')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(support.categories, ['lost-item']);
+    expect(support.notes, ['Siyah canta arka koltukta kaldi.']);
+    expect(find.text("Bildiriminiz YoldaAl'a iletildi."), findsOneWidget);
   });
 }
 
@@ -787,22 +688,13 @@ CanonicalRide _ride(
     encodedPolyline: 'encoded',
   ),
   completedAt: status == RideStatus.completed
-      ? DateTime.fromMillisecondsSinceEpoch(
-          2000,
-          isUtc: true,
-        )
+      ? DateTime.fromMillisecondsSinceEpoch(2000, isUtc: true)
       : null,
   cancelledAt: status == RideStatus.cancelled
-      ? DateTime.fromMillisecondsSinceEpoch(
-          2000,
-          isUtc: true,
-        )
+      ? DateTime.fromMillisecondsSinceEpoch(2000, isUtc: true)
       : null,
   expiredAt: status == RideStatus.expired
-      ? DateTime.fromMillisecondsSinceEpoch(
-          2000,
-          isUtc: true,
-        )
+      ? DateTime.fromMillisecondsSinceEpoch(2000, isUtc: true)
       : null,
 );
 
@@ -869,6 +761,7 @@ class _FailingGateway implements RideHistoryGateway {
     throw const RideGatewayException('internal', reason: 'secret-detail');
   }
 }
+
 class _RatingGateway implements RideRatingGateway {
   RideRatingStatus? status;
   RideGatewayException? statusError;
@@ -880,9 +773,7 @@ class _RatingGateway implements RideRatingGateway {
   final submitRequestIds = <String>[];
 
   @override
-  Future<RideRatingStatus> getMyRatingStatus({
-    required String rideId,
-  }) async {
+  Future<RideRatingStatus> getMyRatingStatus({required String rideId}) async {
     statusRideIds.add(rideId);
 
     if (statusError case final error?) {
@@ -900,10 +791,7 @@ class _RatingGateway implements RideRatingGateway {
       );
     }
 
-    return RideRatingStatus(
-      rideId: rideId,
-      hasSubmitted: false,
-    );
+    return RideRatingStatus(rideId: rideId, hasSubmitted: false);
   }
 
   @override
@@ -925,11 +813,7 @@ class _RatingGateway implements RideRatingGateway {
       rideId: rideId,
       hasSubmitted: true,
       rating: rating,
-      submittedAt:
-          DateTime.fromMillisecondsSinceEpoch(
-            456789,
-            isUtc: true,
-          ),
+      submittedAt: DateTime.fromMillisecondsSinceEpoch(456789, isUtc: true),
     );
   }
 }
@@ -938,6 +822,7 @@ class _SupportGateway implements RideSupportGateway {
   final rideIds = <String>[];
   final categories = <String>[];
   final requestIds = <String>[];
+  final notes = <String?>[];
 
   RideGatewayException? error;
   int failuresRemaining = 0;
@@ -948,10 +833,12 @@ class _SupportGateway implements RideSupportGateway {
     required String rideId,
     required String category,
     required String requestId,
+    String? note,
   }) async {
     rideIds.add(rideId);
     categories.add(category);
     requestIds.add(requestId);
+    notes.add(note);
 
     if (error case final value?) {
       throw value;
@@ -972,10 +859,7 @@ class _SupportGateway implements RideSupportGateway {
       rideId: rideId,
       caseId: 'support-case-${requestIds.length}',
       category: category,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        456789,
-        isUtc: true,
-      ),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(456789, isUtc: true),
     );
   }
 }
@@ -989,21 +873,14 @@ class _TerminalSupportGateway implements RideHistoryGateway {
   }) async {
     return RideHistoryPage(
       rides: [
-        _ride(
-          'cancelled',
-          'Cancelled Pickup',
-          status: RideStatus.cancelled,
-        ),
-        _ride(
-          'expired',
-          'Expired Pickup',
-          status: RideStatus.expired,
-        ),
+        _ride('cancelled', 'Cancelled Pickup', status: RideStatus.cancelled),
+        _ride('expired', 'Expired Pickup', status: RideStatus.expired),
       ],
       nextCursor: null,
     );
   }
 }
+
 class _CancelledGateway implements RideHistoryGateway {
   @override
   Future<RideHistoryPage> loadPage({
@@ -1013,11 +890,7 @@ class _CancelledGateway implements RideHistoryGateway {
   }) async {
     return RideHistoryPage(
       rides: [
-        _ride(
-          'cancelled',
-          'Cancelled Pickup',
-          status: RideStatus.cancelled,
-        ),
+        _ride('cancelled', 'Cancelled Pickup', status: RideStatus.cancelled),
       ],
       nextCursor: null,
     );

@@ -6,7 +6,7 @@ import 'package:yoldaal_mobile/services/ride_lifecycle_service.dart';
 import 'package:yoldaal_mobile/services/ride_support_service.dart';
 
 void main() {
-  test('support callable sends exact frozen authoritative payload', () async {
+  test('legacy support payload remains exact and note-free', () async {
     final invoker = _Invoker()
       ..response = {
         'rideId': 'ride_1',
@@ -23,74 +23,91 @@ void main() {
       requestId: 'support_request_1234567890',
     );
 
-    expect(
-      invoker.names,
-      [FirebaseFunctionsRegistry.createRideSupportCase],
-    );
-    expect(
-      invoker.payloads,
-      [
-        {
-          'rideId': 'ride_1',
-          'category': 'safety',
-          'requestId': 'support_request_1234567890',
-        },
-      ],
-    );
-
-    expect(result.rideId, 'ride_1');
+    expect(invoker.names, [FirebaseFunctionsRegistry.createRideSupportCase]);
+    expect(invoker.payloads, [
+      {
+        'rideId': 'ride_1',
+        'category': 'safety',
+        'requestId': 'support_request_1234567890',
+      },
+    ]);
     expect(result.caseId, 'case_123');
-    expect(result.category, 'safety');
-    expect(
-      result.createdAt,
-      DateTime.fromMillisecondsSinceEpoch(
-        456789,
-        isUtc: true,
-      ),
-    );
   });
 
-  test('every frozen support category is accepted locally', () async {
-    for (final category in rideSupportCategories) {
+  test(
+    'optional note is normalized and included only when non-empty',
+    () async {
       final invoker = _Invoker()
         ..response = {
           'rideId': 'ride_1',
-          'caseId': 'case_$category',
-          'category': category,
-          'createdAtMillis': 1,
+          'caseId': 'case_note',
+          'category': 'technical',
+          'createdAtMillis': 2,
         };
 
       final service = RideSupportService(invoker: invoker);
 
-      final result = await service.createCase(
+      await service.createCase(
         rideId: 'ride_1',
-        category: category,
-        requestId: 'support_request_1234567890',
+        category: 'technical',
+        requestId: 'support_note_1234567890',
+        note: '  Uygulama ekrani dondu.  ',
       );
 
-      expect(result.category, category);
-      expect(invoker.payloads.single.keys.toList(), [
+      expect(invoker.payloads.single, {
+        'rideId': 'ride_1',
+        'category': 'technical',
+        'requestId': 'support_note_1234567890',
+        'note': 'Uygulama ekrani dondu.',
+      });
+
+      final blankInvoker = _Invoker()
+        ..response = {
+          'rideId': 'ride_1',
+          'caseId': 'case_blank',
+          'category': 'technical',
+          'createdAtMillis': 3,
+        };
+
+      await RideSupportService(invoker: blankInvoker).createCase(
+        rideId: 'ride_1',
+        category: 'technical',
+        requestId: 'support_blank_1234567890',
+        note: '   ',
+      );
+
+      expect(blankInvoker.payloads.single.keys.toList(), [
         'rideId',
         'category',
         'requestId',
       ]);
-    }
+    },
+  );
 
-    expect(
-      rideSupportCategories,
-      [
-        'safety',
-        'behavior',
-        'fare',
-        'route',
-        'pickup',
-        'no-show',
-        'cancel',
-        'vehicle',
-        'technical',
-        'lost-item',
-      ],
-    );
+  test('canonical categories stay compatible while UI exposes five', () {
+    expect(rideSupportCategories, [
+      'safety',
+      'behavior',
+      'fare',
+      'route',
+      'pickup',
+      'no-show',
+      'cancel',
+      'vehicle',
+      'technical',
+      'lost-item',
+    ]);
+
+    expect(rideSupportUiCategories, [
+      'safety',
+      'behavior',
+      'route',
+      'technical',
+      'lost-item',
+    ]);
+
+    expect(rideSupportCategoryLabel('safety'), 'G\u00FCvenlik');
+    expect(rideSupportCategoryLabel('lost-item'), 'Unutulan e\u015Fya');
   });
 
   test('same logical retry keeps caller-owned requestId unchanged', () async {
@@ -111,6 +128,7 @@ void main() {
         rideId: 'ride_1',
         category: 'route',
         requestId: stableRequestId,
+        note: 'Ayni aciklama',
       ),
       throwsA(
         isA<RideGatewayException>().having(
@@ -125,6 +143,7 @@ void main() {
       rideId: 'ride_1',
       category: 'route',
       requestId: stableRequestId,
+      note: 'Ayni aciklama',
     );
 
     expect(result.caseId, 'case_retry');
@@ -133,16 +152,18 @@ void main() {
         'rideId': 'ride_1',
         'category': 'route',
         'requestId': stableRequestId,
+        'note': 'Ayni aciklama',
       },
       {
         'rideId': 'ride_1',
         'category': 'route',
         'requestId': stableRequestId,
+        'note': 'Ayni aciklama',
       },
     ]);
   });
 
-  test('local validation rejects invalid ride category and requestId', () async {
+  test('local validation rejects invalid fields and oversized note', () async {
     final service = RideSupportService(invoker: _Invoker());
 
     expect(
@@ -171,6 +192,21 @@ void main() {
       ),
       throwsArgumentError,
     );
+
+    expect(
+      () => service.createCase(
+        rideId: 'ride_1',
+        category: 'route',
+        requestId: 'support_request_1234567890',
+        note: List.filled(rideSupportNoteMaxCodePoints + 1, 'a').join(),
+      ),
+      throwsArgumentError,
+    );
+
+    expect(
+      () => normalizeRideSupportNote('bad\u0000note'),
+      throwsArgumentError,
+    );
   });
 
   test('gateway errors propagate unchanged', () async {
@@ -190,11 +226,7 @@ void main() {
       ),
       throwsA(
         isA<RideGatewayException>()
-            .having(
-              (error) => error.code,
-              'code',
-              'failed-precondition',
-            )
+            .having((error) => error.code, 'code', 'failed-precondition')
             .having(
               (error) => error.reason,
               'reason',
@@ -204,7 +236,7 @@ void main() {
     );
   });
 
-  test('active support uses separate callable with exact frozen payload', () async {
+  test('active support sends normalized optional note', () async {
     final invoker = _Invoker()
       ..response = {
         'rideId': 'ride_1',
@@ -219,32 +251,21 @@ void main() {
       rideId: 'ride_1',
       category: 'route',
       requestId: 'active_support_request_1234567890',
+      note: '  Kisa rota aciklamasi  ',
     );
 
-    expect(
-      invoker.names,
-      [FirebaseFunctionsRegistry.createActiveRideSupportCase],
-    );
-    expect(
-      invoker.payloads,
-      [
-        {
-          'rideId': 'ride_1',
-          'category': 'route',
-          'requestId': 'active_support_request_1234567890',
-        },
-      ],
-    );
-    expect(result.rideId, 'ride_1');
+    expect(invoker.names, [
+      FirebaseFunctionsRegistry.createActiveRideSupportCase,
+    ]);
+    expect(invoker.payloads, [
+      {
+        'rideId': 'ride_1',
+        'category': 'route',
+        'requestId': 'active_support_request_1234567890',
+        'note': 'Kisa rota aciklamasi',
+      },
+    ]);
     expect(result.caseId, 'active_case_123');
-    expect(result.category, 'route');
-    expect(
-      result.createdAt,
-      DateTime.fromMillisecondsSinceEpoch(
-        789123,
-        isUtc: true,
-      ),
-    );
   });
 
   test('malformed or expanded support response fails closed', () async {
@@ -278,7 +299,7 @@ void main() {
         'caseId': 'case_1',
         'category': 'safety',
         'createdAtMillis': 1,
-        'reporterId': 'must-not-leak',
+        'reporterNote': 'must-not-leak',
       },
     ]) {
       final invoker = _Invoker()..response = response;

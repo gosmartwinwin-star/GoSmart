@@ -3,6 +3,9 @@ import test from "node:test";
 import {HttpsError} from "firebase-functions/v2/https";
 
 import {
+  rideRequestDigest,
+} from "./ride-lifecycle-helpers.js";
+import {
   deriveRideSupportParticipant,
   RIDE_SUPPORT_CATEGORIES,
   rideSupportCaseId,
@@ -35,19 +38,94 @@ const reasonOf = (
 };
 
 test(
-  "ride support payload accepts exact frozen input",
+  "legacy ride support payload remains exact and digest compatible",
+  () => {
+    const legacy = {
+      rideId: "ride_1",
+      category: "safety",
+      requestId,
+    };
+
+    const validated =
+      validateRideSupportPayload(legacy);
+
+    assert.deepEqual(validated, legacy);
+    assert.equal(
+      rideRequestDigest(
+        "createRideSupportCase",
+        validated,
+      ),
+      rideRequestDigest(
+        "createRideSupportCase",
+        legacy,
+      ),
+    );
+  },
+);
+
+test(
+  "ride support payload accepts normalized optional note",
   () => {
     assert.deepEqual(
       validateRideSupportPayload({
         rideId: "ride_1",
-        category: "safety",
+        category: "technical",
         requestId,
+        note: "  Kisa aciklama  ",
       }),
       {
         rideId: "ride_1",
-        category: "safety",
+        category: "technical",
+        requestId,
+        note: "Kisa aciklama",
+      },
+    );
+
+    assert.deepEqual(
+      validateRideSupportPayload({
+        rideId: "ride_1",
+        category: "technical",
+        requestId,
+        note: "   ",
+      }),
+      {
+        rideId: "ride_1",
+        category: "technical",
         requestId,
       },
+    );
+  },
+);
+
+test(
+  "ride support note enforces type controls and 500 code points",
+  () => {
+    for (const invalidNote of [
+      123,
+      "a".repeat(501),
+      "bad\u0000note",
+    ]) {
+      assert.equal(
+        reasonOf(() =>
+          validateRideSupportPayload({
+            rideId: "ride_1",
+            category: "technical",
+            requestId,
+            note: invalidNote,
+          }),
+        ),
+        "invalid_ride_support_note",
+      );
+    }
+
+    assert.equal(
+      validateRideSupportPayload({
+        rideId: "ride_1",
+        category: "technical",
+        requestId,
+        note: "a".repeat(500),
+      }).note?.length,
+      500,
     );
   },
 );
@@ -98,6 +176,7 @@ test(
         {rideStatus: "completed"},
         {createdAt: 123},
         {caseId: "attacker"},
+        {status: "resolved"},
       ]
     ) {
       assert.equal(

@@ -256,7 +256,10 @@ async (
             counterpartyId:
               participant.counterpartyId,
             category: input.category,
+            reporterNote: input.note ?? null,
+            status: "new",
             createdAt: now,
+            updatedAt: now,
           },
         );
 

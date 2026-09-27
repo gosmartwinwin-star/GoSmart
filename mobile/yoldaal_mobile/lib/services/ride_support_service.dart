@@ -15,45 +15,53 @@ class RideSupportService
     required String rideId,
     required String category,
     required String requestId,
-  }) =>
-      _createCase(
-        callableName: FirebaseFunctionsRegistry.createRideSupportCase,
-        rideId: rideId,
-        category: category,
-        requestId: requestId,
-      );
+    String? note,
+  }) => _createCase(
+    callableName: FirebaseFunctionsRegistry.createRideSupportCase,
+    rideId: rideId,
+    category: category,
+    requestId: requestId,
+    note: note,
+  );
 
   @override
   Future<RideSupportCaseResult> createActiveCase({
     required String rideId,
     required String category,
     required String requestId,
-  }) =>
-      _createCase(
-        callableName: FirebaseFunctionsRegistry.createActiveRideSupportCase,
-        rideId: rideId,
-        category: category,
-        requestId: requestId,
-      );
+    String? note,
+  }) => _createCase(
+    callableName: FirebaseFunctionsRegistry.createActiveRideSupportCase,
+    rideId: rideId,
+    category: category,
+    requestId: requestId,
+    note: note,
+  );
 
   Future<RideSupportCaseResult> _createCase({
     required String callableName,
     required String rideId,
     required String category,
     required String requestId,
+    required String? note,
   }) async {
     _validateRideId(rideId);
     _validateCategory(category);
     _validateRequestId(requestId);
 
-    final data = await _call(
-      callableName,
-      {
-        'rideId': rideId,
-        'category': category,
-        'requestId': requestId,
-      },
-    );
+    final normalizedNote = normalizeRideSupportNote(note);
+
+    final payload = <String, dynamic>{
+      'rideId': rideId,
+      'category': category,
+      'requestId': requestId,
+    };
+
+    if (normalizedNote != null) {
+      payload['note'] = normalizedNote;
+    }
+
+    final data = await _call(callableName, payload);
 
     final rawRideId = data['rideId'];
     final rawCaseId = data['caseId'];
@@ -98,11 +106,7 @@ class RideSupportService
     if (value.isEmpty ||
         value.length > 128 ||
         !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(value)) {
-      throw ArgumentError.value(
-        value,
-        'rideId',
-        'Invalid ride id.',
-      );
+      throw ArgumentError.value(value, 'rideId', 'Invalid ride id.');
     }
   }
 
@@ -120,11 +124,7 @@ class RideSupportService
     if (value.length < 16 ||
         value.length > 128 ||
         !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(value)) {
-      throw ArgumentError.value(
-        value,
-        'requestId',
-        'Invalid request id.',
-      );
+      throw ArgumentError.value(value, 'requestId', 'Invalid request id.');
     }
   }
 }

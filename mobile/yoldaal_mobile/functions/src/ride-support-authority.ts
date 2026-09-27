@@ -39,6 +39,7 @@ export type RideSupportInput = {
   rideId: string;
   category: RideSupportCategory;
   requestId: string;
+  note?: string;
 };
 
 export type RideSupportParticipant = {
@@ -110,9 +111,25 @@ const exactObject = (
 export const validateRideSupportPayload = (
   value: unknown,
 ): RideSupportInput => {
+  const rawRecord =
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) ?
+      value as Record<string, unknown> :
+      null;
+
+  const hasNote =
+    rawRecord !== null &&
+    Object.prototype.hasOwnProperty.call(
+      rawRecord,
+      "note",
+    );
+
   const input = exactObject(
     value,
-    ["rideId", "category", "requestId"],
+    hasNote ?
+      ["rideId", "category", "requestId", "note"] :
+      ["rideId", "category", "requestId"],
   );
 
   if (
@@ -139,12 +156,64 @@ export const validateRideSupportPayload = (
     );
   }
 
-  return {
+  const base: RideSupportInput = {
     rideId: input.rideId,
     category:
       input.category as RideSupportCategory,
     requestId:
       validateRequestId(input.requestId),
+  };
+
+  if (!hasNote) {
+    return base;
+  }
+
+  if (typeof input.note !== "string") {
+    throw failure(
+      "invalid-argument",
+      "invalid_ride_support_note",
+    );
+  }
+
+  const normalizedNote =
+    input.note.trim();
+
+  if (normalizedNote.length === 0) {
+    return base;
+  }
+
+  const noteCodePoints =
+    [...normalizedNote];
+
+  const hasInvalidControl =
+    noteCodePoints.some((character) => {
+      const code =
+        character.codePointAt(0) ?? 0;
+
+      return (
+        (
+          code <= 31 &&
+          code !== 9 &&
+          code !== 10 &&
+          code !== 13
+        ) ||
+        code === 127
+      );
+    });
+
+  if (
+    noteCodePoints.length > 500 ||
+    hasInvalidControl
+  ) {
+    throw failure(
+      "invalid-argument",
+      "invalid_ride_support_note",
+    );
+  }
+
+  return {
+    ...base,
+    note: normalizedNote,
   };
 };
 
@@ -381,7 +450,10 @@ export const createRideSupportCaseForActor = async (
             counterpartyId:
               participant.counterpartyId,
             category: input.category,
+            reporterNote: input.note ?? null,
+            status: "new",
             createdAt: now,
+            updatedAt: now,
           },
         );
 
