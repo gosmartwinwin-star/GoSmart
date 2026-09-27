@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'application/ports.dart';
+import 'application/ride_support_admin_ports.dart';
 import 'controllers/admin_auth_controller.dart';
 import 'firebase_options.dart';
 import 'infrastructure/firebase_admin_auth_gateway.dart';
@@ -9,6 +10,7 @@ import 'screens/admin_app.dart';
 import 'services/driver_application_admin_read_service.dart';
 import 'services/driver_application_admin_review_service.dart';
 import 'services/driver_application_review_events_service.dart';
+import 'services/ride_support_admin_read_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +23,8 @@ Future<void> main() async {
       DriverApplicationAdminReviewService(invoker);
   final DriverApplicationReviewEventsGateway reviewEvents =
       DriverApplicationReviewEventsService(invoker);
+  final RideSupportAdminReadGateway supportCases =
+      RideSupportAdminReadService(invoker);
   await auth.initialize();
   runApp(
     YoldaAlAdminApp(
@@ -28,6 +32,7 @@ Future<void> main() async {
       applications: applications,
       reviews: reviews,
       reviewEvents: reviewEvents,
+      supportCases: supportCases,
     ),
   );
 }
