@@ -63,6 +63,13 @@ final class RideSupportCasesScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
+            if (controller.actionErrorMessage != null) ...[
+              Text(
+                controller.actionErrorMessage!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (controller.items.isEmpty)
               const Card(
                 child: Padding(
@@ -71,7 +78,9 @@ final class RideSupportCasesScreen extends StatelessWidget {
                 ),
               )
             else
-              ...controller.items.map((item) => _SupportCaseCard(item: item)),
+              ...controller.items.map(
+                (item) => _SupportCaseCard(item: item, controller: controller),
+              ),
             if (controller.nextCursor != null) ...[
               const SizedBox(height: 16),
               Center(
@@ -96,13 +105,18 @@ final class RideSupportCasesScreen extends StatelessWidget {
 }
 
 final class _SupportCaseCard extends StatelessWidget {
-  const _SupportCaseCard({required this.item});
+  const _SupportCaseCard({required this.item, required this.controller});
+
   final RideSupportCaseSummary item;
+  final RideSupportCasesController controller;
 
   @override
   Widget build(BuildContext context) {
-    final date = DateFormat('dd.MM.yyyy HH:mm').format(item.createdAt.toLocal());
+    final date = DateFormat(
+      'dd.MM.yyyy HH:mm',
+    ).format(item.createdAt.toLocal());
     final note = item.reporterNote?.trim();
+    final actionLabel = item.status.actionLabel;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -124,15 +138,21 @@ final class _SupportCaseCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
+              Text('Durum: ${item.status.label}'),
               Text('Bildiren: ${item.reporterRole.label}'),
               Text('Ride ID: ${item.rideId}'),
               Text('Case ID: ${item.caseId}'),
               const SizedBox(height: 10),
-              Text(
-                note == null || note.isEmpty
-                    ? 'Açıklama eklenmedi.'
-                    : note,
-              ),
+              Text(note == null || note.isEmpty ? 'Açıklama eklenmedi.' : note),
+              if (actionLabel != null && controller.supportsTransitions) ...[
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: controller.isMutating
+                      ? null
+                      : () => controller.advanceStatus(item),
+                  child: Text(actionLabel),
+                ),
+              ],
             ],
           ),
         ),

@@ -6,3 +6,13 @@ abstract interface class RideSupportAdminReadGateway {
     RideSupportCaseCursor? cursor,
   });
 }
+
+abstract interface class RideSupportAdminTransitionGateway {
+  Future<RideSupportCaseTransitionResult> transition({
+    required String rideId,
+    required String caseId,
+    required RideSupportCaseStatus targetStatus,
+    required DateTime expectedUpdatedAt,
+    required String requestId,
+  });
+}

@@ -15,6 +15,12 @@ const SUPPORT_CATEGORIES = new Set([
   "lost-item",
 ]);
 
+const SUPPORT_STATUSES = new Set([
+  "new",
+  "inReview",
+  "resolved",
+]);
+
 type AdminListCursor = {
   createdAtMillis: number;
   rideId: string;
@@ -146,7 +152,7 @@ export const serializeRideSupportCaseForAdmin = (
   if (!SUPPORT_CATEGORIES.has(category)) return invalidData();
 
   const status = requiredText(data.status);
-  if (status !== "new") return invalidData();
+  if (!SUPPORT_STATUSES.has(status)) return invalidData();
 
   return {
     rideId: match[1],

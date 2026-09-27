@@ -30,6 +30,26 @@ enum RideSupportReporterRole {
       values.firstWhere((item) => item.wireName == value);
 }
 
+enum RideSupportCaseStatus {
+  newCase('new', 'Yeni', 'İncelemeye Al'),
+  inReview('inReview', 'İncelemede', 'Çözüldü Olarak İşaretle'),
+  resolved('resolved', 'Çözüldü', null);
+
+  const RideSupportCaseStatus(this.wireName, this.label, this.actionLabel);
+  final String wireName;
+  final String label;
+  final String? actionLabel;
+
+  static RideSupportCaseStatus fromWire(String value) =>
+      values.firstWhere((item) => item.wireName == value);
+
+  RideSupportCaseStatus? get nextStatus => switch (this) {
+    RideSupportCaseStatus.newCase => RideSupportCaseStatus.inReview,
+    RideSupportCaseStatus.inReview => RideSupportCaseStatus.resolved,
+    RideSupportCaseStatus.resolved => null,
+  };
+}
+
 final class RideSupportCaseSummary {
   const RideSupportCaseSummary({
     required this.rideId,
@@ -39,6 +59,7 @@ final class RideSupportCaseSummary {
     required this.counterpartyId,
     required this.category,
     required this.reporterNote,
+    required this.status,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -50,8 +71,21 @@ final class RideSupportCaseSummary {
   final String? counterpartyId;
   final RideSupportCategory category;
   final String? reporterNote;
+  final RideSupportCaseStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
+}
+
+final class RideSupportCaseTransitionResult {
+  const RideSupportCaseTransitionResult({
+    required this.status,
+    required this.updatedAt,
+    required this.idempotent,
+  });
+
+  final RideSupportCaseStatus status;
+  final DateTime updatedAt;
+  final bool idempotent;
 }
 
 final class RideSupportCaseCursor {
@@ -67,10 +101,7 @@ final class RideSupportCaseCursor {
 }
 
 final class RideSupportCasePage {
-  const RideSupportCasePage({
-    required this.items,
-    required this.nextCursor,
-  });
+  const RideSupportCasePage({required this.items, required this.nextCursor});
 
   final List<RideSupportCaseSummary> items;
   final RideSupportCaseCursor? nextCursor;

@@ -2,7 +2,8 @@ import '../application/ride_support_admin_ports.dart';
 import '../domain/ride_support_case.dart';
 import '../application/ports.dart';
 
-final class RideSupportAdminReadService implements RideSupportAdminReadGateway {
+final class RideSupportAdminReadService
+    implements RideSupportAdminReadGateway, RideSupportAdminTransitionGateway {
   RideSupportAdminReadService(this._invoker);
   final AdminCallableInvoker _invoker;
 
@@ -31,6 +32,39 @@ final class RideSupportAdminReadService implements RideSupportAdminReadGateway {
     );
   }
 
+  @override
+  Future<RideSupportCaseTransitionResult> transition({
+    required String rideId,
+    required String caseId,
+    required RideSupportCaseStatus targetStatus,
+    required DateTime expectedUpdatedAt,
+    required String requestId,
+  }) async {
+    if (targetStatus == RideSupportCaseStatus.newCase) {
+      throw ArgumentError.value(targetStatus, 'targetStatus');
+    }
+    final raw = await _invoker.call(
+      functionName: 'transitionRideSupportCaseForAdmin',
+      payload: <String, Object?>{
+        'rideId': _text(rideId),
+        'caseId': _text(caseId),
+        'targetStatus': targetStatus.wireName,
+        'expectedUpdatedAtMillis': expectedUpdatedAt.millisecondsSinceEpoch,
+        'requestId': _text(requestId),
+      },
+    );
+    final map = _map(raw);
+    final idempotent = map['idempotent'];
+    if (idempotent is! bool) {
+      throw const FormatException('Invalid transition response');
+    }
+    return RideSupportCaseTransitionResult(
+      status: RideSupportCaseStatus.fromWire(_text(map['status'])),
+      updatedAt: _date(map['updatedAtMillis']),
+      idempotent: idempotent,
+    );
+  }
+
   RideSupportCasePage _parsePage(Object? raw) {
     final map = _map(raw);
     final rawItems = map['items'];
@@ -39,9 +73,6 @@ final class RideSupportAdminReadService implements RideSupportAdminReadGateway {
     final items = rawItems
         .map((rawItem) {
           final item = _map(rawItem);
-          if (_text(item['status']) != 'new') {
-            throw const FormatException('Invalid support status');
-          }
           return RideSupportCaseSummary(
             rideId: _text(item['rideId']),
             caseId: _text(item['caseId']),
@@ -52,6 +83,7 @@ final class RideSupportAdminReadService implements RideSupportAdminReadGateway {
             counterpartyId: _nullableText(item['counterpartyId']),
             category: RideSupportCategory.fromWire(_text(item['category'])),
             reporterNote: _nullableText(item['reporterNote']),
+            status: RideSupportCaseStatus.fromWire(_text(item['status'])),
             createdAt: _date(item['createdAtMillis']),
             updatedAt: _date(item['updatedAtMillis']),
           );

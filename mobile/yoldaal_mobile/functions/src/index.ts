@@ -2757,3 +2757,6 @@ export const resolveGoogleSignInLinkState = onCall(
     ),
 );
 export {listRideSupportCasesForAdmin} from "./ride-support-admin-read.js";
+export {
+  transitionRideSupportCaseForAdmin,
+} from "./ride-support-admin-transition.js";
