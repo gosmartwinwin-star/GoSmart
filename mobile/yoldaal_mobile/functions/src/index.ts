@@ -687,6 +687,7 @@ export const computeRouteDeviation = onCall<ComputeRouteDeviationInput>(
 /* eslint-disable max-len */
 export const requestAccountDeletion = onCall(
   {
+    enforceAppCheck: true,
     region: "europe-west1",
     timeoutSeconds: 15,
     memory: "256MiB",
@@ -2766,6 +2767,7 @@ export {
 
 export const executeAccountDeletion = onCall(
   {
+    enforceAppCheck: true,
     region: "europe-west1",
     timeoutSeconds: 60,
     memory: "256MiB",

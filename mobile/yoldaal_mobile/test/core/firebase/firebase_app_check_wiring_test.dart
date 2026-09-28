@@ -74,30 +74,60 @@ void main() {
     () {
       const resolverMarker =
           'export const resolveGoogleSignInLinkState = onCall(';
+      const requestDeletionMarker =
+          'export const requestAccountDeletion = onCall(';
+      const requestDeletionNextMarker =
+          'export const getMyRideMatchOffers = onCall(';
+      const executeDeletionMarker =
+          'export const executeAccountDeletion = onCall(';
 
       final resolverStart = functionsIndexSource.indexOf(resolverMarker);
+      final requestDeletionStart = functionsIndexSource.indexOf(
+        requestDeletionMarker,
+      );
+      final requestDeletionEnd = functionsIndexSource.indexOf(
+        requestDeletionNextMarker,
+      );
+      final executeDeletionStart = functionsIndexSource.indexOf(
+        executeDeletionMarker,
+      );
 
       expect(resolverStart, greaterThanOrEqualTo(0));
+      expect(requestDeletionStart, greaterThanOrEqualTo(0));
+      expect(requestDeletionEnd, greaterThan(requestDeletionStart));
+      expect(executeDeletionStart, greaterThanOrEqualTo(0));
 
       final resolverLength = functionsIndexSource.length - resolverStart;
-
       final resolverSource = functionsIndexSource.substring(
         resolverStart,
         resolverStart + (resolverLength < 1400 ? resolverLength : 1400),
+      );
+      final requestDeletionSource = functionsIndexSource.substring(
+        requestDeletionStart,
+        requestDeletionEnd,
+      );
+      final executeDeletionSource = functionsIndexSource.substring(
+        executeDeletionStart,
       );
 
       expect(
         RegExp(r'enforceAppCheck\s*:\s*true').hasMatch(resolverSource),
         isTrue,
       );
-
+      expect(
+        RegExp(r'enforceAppCheck\s*:\s*true').hasMatch(requestDeletionSource),
+        isTrue,
+      );
+      expect(
+        RegExp(r'enforceAppCheck\s*:\s*true').hasMatch(executeDeletionSource),
+        isTrue,
+      );
       expect(
         RegExp(
           r'enforceAppCheck\s*:\s*true',
         ).allMatches(functionsIndexSource).length,
-        5,
+        7,
       );
-
       expect(
         RegExp(
           r'consumeAppCheckToken\s*:\s*true',
