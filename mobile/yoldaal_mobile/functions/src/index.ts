@@ -1,4 +1,7 @@
 import {
+  executeAccountDeletionCallable,
+} from "./account-deletion-execution-authority.js";
+import {
   requestAccountDeletionForUser,
 } from "./account-deletion-request-authority.js";
 import {protos, v2} from "@googlemaps/routing";
@@ -2760,3 +2763,17 @@ export {listRideSupportCasesForAdmin} from "./ride-support-admin-read.js";
 export {
   transitionRideSupportCaseForAdmin,
 } from "./ride-support-admin-transition.js";
+
+export const executeAccountDeletion = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    maxInstances: 3,
+  },
+  async (request) =>
+    executeAccountDeletionCallable(
+      request.auth?.uid,
+      request.data,
+    ),
+);
