@@ -1,37 +1,24 @@
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_core/firebase_core.dart';
+
+import '../core/firebase/firebase_functions_registry.dart';
 
 class AccountDeletionRequestService {
-  AccountDeletionRequestService({
-    FirebaseFunctions? functions,
-  }) : _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(
-             app: Firebase.app(),
-             region: 'europe-west1',
-           );
+  AccountDeletionRequestService({FirebaseFunctions? functions})
+    : _functions = functions ?? FirebaseFunctionsRegistry.client;
 
   final FirebaseFunctions _functions;
 
   Future<void> requestDeletion() async {
-    final callable =
-        _functions.httpsCallable(
-      'requestAccountDeletion',
+    final callable = _functions.httpsCallable(
+      FirebaseFunctionsRegistry.requestAccountDeletion,
     );
 
-    final result = await callable.call(
-      <String, dynamic>{},
-    );
+    final result = await callable.call(<String, dynamic>{});
 
     final data = result.data;
 
-    if (
-      data is! Map ||
-      data['status'] != 'requested'
-    ) {
-      throw StateError(
-        'Account deletion request response is invalid.',
-      );
+    if (data is! Map || data['status'] != 'requested') {
+      throw StateError('Account deletion request response is invalid.');
     }
   }
 }

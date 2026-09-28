@@ -19,9 +19,12 @@ void main() {
 
   testWidgets('çıkış onayı iptal edilirse signOut çağrılmaz', (tester) async {
     var calls = 0;
-    await _show(tester, signOut: () async {
-      calls++;
-    });
+    await _show(
+      tester,
+      signOut: () async {
+        calls++;
+      },
+    );
 
     await tester.tap(find.text('Çıkış Yap'));
     await tester.pumpAndSettle();
@@ -34,9 +37,12 @@ void main() {
 
   testWidgets('başarılı çıkış Profil rotasını kapatır', (tester) async {
     var calls = 0;
-    await _showOnSentinel(tester, signOut: () async {
-      calls++;
-    });
+    await _showOnSentinel(
+      tester,
+      signOut: () async {
+        calls++;
+      },
+    );
 
     await _confirm(tester);
 
@@ -48,10 +54,13 @@ void main() {
   testWidgets('pending çıkış duplicate invocation üretmez', (tester) async {
     final completer = Completer<void>();
     var calls = 0;
-    await _show(tester, signOut: () {
-      calls++;
-      return completer.future;
-    });
+    await _show(
+      tester,
+      signOut: () {
+        calls++;
+        return completer.future;
+      },
+    );
 
     await tester.tap(find.text('Çıkış Yap'));
     await tester.pumpAndSettle();
@@ -75,17 +84,18 @@ void main() {
     tester,
   ) async {
     var calls = 0;
-    await _show(tester, signOut: () async {
-      calls++;
-      throw Exception('secret');
-    });
+    await _show(
+      tester,
+      signOut: () async {
+        calls++;
+        throw Exception('secret');
+      },
+    );
 
     await _confirm(tester);
 
     expect(
-      find.text(
-        'Çıkış yapılamadı. Bağlantınızı kontrol edip tekrar deneyin.',
-      ),
+      find.text('Çıkış yapılamadı. Bağlantınızı kontrol edip tekrar deneyin.'),
       findsOneWidget,
     );
     expect(find.byType(ProfileScreen), findsOneWidget);

@@ -70,7 +70,7 @@ void main() {
   });
 
   test(
-    'Google resolver and Voice callables enforce App Check without token consumption',
+    'Google resolver, Voice and account deletion callables enforce App Check without token consumption',
     () {
       const resolverMarker =
           'export const resolveGoogleSignInLinkState = onCall(';
@@ -95,7 +95,7 @@ void main() {
         RegExp(
           r'enforceAppCheck\s*:\s*true',
         ).allMatches(functionsIndexSource).length,
-        4,
+        5,
       );
 
       expect(

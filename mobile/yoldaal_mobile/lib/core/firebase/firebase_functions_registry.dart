@@ -37,6 +37,8 @@ class FirebaseFunctionsRouting {
 
 class FirebaseFunctionsRegistry {
   static const region = 'europe-west1';
+  static const requestAccountDeletion = 'requestAccountDeletion';
+  static const executeAccountDeletion = 'executeAccountDeletion';
   static const getMyRideHistory = 'getMyRideHistory';
   static const submitRideRating = 'submitRideRating';
   static const getMyRideRatingStatus = 'getMyRideRatingStatus';
