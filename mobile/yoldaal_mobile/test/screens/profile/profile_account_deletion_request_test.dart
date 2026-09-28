@@ -33,38 +33,32 @@ void main() {
     expect(signOutCount, 0);
   });
 
-  testWidgets('completed deletion runs request then execute then sign-out', (
-    tester,
-  ) async {
-    final events = <String>[];
+  testWidgets(
+    'completed deletion runs request then execute then immediate sign-out',
+    (tester) async {
+      final events = <String>[];
 
-    await _pumpProfile(
-      tester,
-      request: () async => events.add('request'),
-      execute: () async {
-        events.add('execute');
-        return _completed();
-      },
-      signOut: () async => events.add('signOut'),
-    );
+      await _pumpProfile(
+        tester,
+        request: () async => events.add('request'),
+        execute: () async {
+          events.add('execute');
+          return _completed();
+        },
+        signOut: () async => events.add('signOut'),
+      );
 
-    await _confirmDeletion(tester);
-    await tester.pumpAndSettle();
+      await _confirmDeletion(tester);
+      await tester.pumpAndSettle();
 
-    expect(events, ['request', 'execute']);
-    expect(
-      find.byKey(const ValueKey('account-deletion-completed-close')),
-      findsOneWidget,
-    );
-
-    await tester.tap(
-      find.byKey(const ValueKey('account-deletion-completed-close')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(events, ['request', 'execute', 'signOut']);
-  });
-
+      expect(events, ['request', 'execute', 'signOut']);
+      expect(
+        find.byKey(const ValueKey('account-deletion-completed-close')),
+        findsNothing,
+      );
+      expect(find.text('Hesap Silindi'), findsNothing);
+    },
+  );
   testWidgets('processing keeps session and reports pending state', (
     tester,
   ) async {

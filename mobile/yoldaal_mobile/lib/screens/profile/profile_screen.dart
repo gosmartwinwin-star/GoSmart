@@ -102,7 +102,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Hesabı Sil'),
+        title: const Text('Hesabımı Sil'),
         content: const Text(
           'Hesabınızı kalıcı olarak silmek istediğinizden emin misiniz? '
           'Silinebilen hesap verileriniz güvenli silme sürecinde kaldırılır. '
@@ -140,9 +140,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await requestDeletion();
       final result = await executeDeletion();
 
-      if (!mounted) return;
-
       if (result.status == AccountDeletionExecutionStatus.processing) {
+        if (!mounted) return;
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
@@ -164,32 +163,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Hesap Silindi'),
-          content: const Text(
-            'Hesabınız ve silinebilir hesap verileriniz için '
-            'silme işlemi tamamlandı.',
-          ),
-          actions: [
-            FilledButton(
-              key: const ValueKey('account-deletion-completed-close'),
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Tamam'),
-            ),
-          ],
-        ),
-      );
-
       final signOut =
           widget.signOut ??
           () => FirebaseAuth.instanceFor(app: Firebase.app()).signOut();
       await signOut();
-
-      if (mounted) {
-        await Navigator.of(context).maybePop();
-      }
     } on AccountDeletionExecutionException catch (error) {
       if (!mounted) return;
       setState(() {
