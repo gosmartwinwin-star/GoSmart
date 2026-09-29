@@ -105,6 +105,10 @@ android {
     }
 }
 
+configurations.configureEach {
+    exclude(group = "io.agora.rtc", module = "full-screen-sharing")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
