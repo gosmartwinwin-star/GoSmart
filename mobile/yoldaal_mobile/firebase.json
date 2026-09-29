@@ -64,7 +64,7 @@
       "port": 4000
     }
   },
-  "hosting": {
+  "hosting": [{
     "target": "admin",
     "public": "admin/yoldaal_admin/build/web",
     "ignore": [
@@ -138,6 +138,21 @@
       }
     ]
   },
+    {
+      "target": "accountDeletion",
+      "public": "build/account_deletion_web",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    }],
   "auth": {
     "providers": {
       "googleSignIn": {

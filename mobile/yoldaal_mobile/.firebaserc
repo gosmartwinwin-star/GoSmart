@@ -7,6 +7,9 @@
       "hosting": {
         "admin": [
           "gosmart-admin-fd8f6"
+        ],
+        "accountDeletion": [
+          "gosmart-fd8f6"
         ]
       }
     }
