@@ -1,3 +1,5 @@
+import 'ride_fare.dart';
+
 enum RideStatus {
   matching,
   driverEnRoute,
@@ -48,6 +50,7 @@ class CanonicalRide {
     required this.pickup,
     required this.dropoff,
     required this.route,
+    this.fare,
     this.driverId,
     this.createdAt,
     this.updatedAt,
@@ -69,6 +72,7 @@ class CanonicalRide {
   final RideLocation pickup;
   final RideLocation dropoff;
   final RideRoute route;
+  final RideParticipantFare? fare;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? acceptedAt;
@@ -139,6 +143,9 @@ class CanonicalRide {
         encodedPolyline: polyline,
         computedAt: timeFrom(routeData['computedAtMillis'] ?? routeData['computedAt']),
       ),
+      fare: map.containsKey('fare')
+          ? RideParticipantFare.fromMap(map['fare'])
+          : null,
       createdAt: time('createdAtMillis') ?? time('createdAt'),
       updatedAt: time('updatedAtMillis') ?? time('updatedAt'),
       acceptedAt: time('acceptedAtMillis') ?? time('acceptedAt'),

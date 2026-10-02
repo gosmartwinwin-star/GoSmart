@@ -160,6 +160,13 @@ class _OfferItem extends StatelessWidget {
   final bool busy;
   final VoidCallback onAccept;
 
+  String _formatTryMinor(int amountMinor) {
+    final lira = amountMinor ~/ 100;
+    final kurus = amountMinor % 100;
+    final kurusText = kurus.toString().padLeft(2, '0');
+    return '$lira,$kurusText TL';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -197,6 +204,13 @@ class _OfferItem extends StatelessWidget {
             '${offer.passengerTripDistanceMeters} m / '
             '${offer.passengerTripDurationSeconds} sn',
           ),
+          if (offer.fare != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'YoldaAl yolculuk tutar\u0131: ${_formatTryMinor(offer.fare!.yoldaalFareMinor)}',
+              key: ValueKey('ride-match-offer-fare-${offer.rideId}'),
+            ),
+          ],
           Text(
             'Kalan süre: $remainingMinutes dk',
             key: ValueKey(

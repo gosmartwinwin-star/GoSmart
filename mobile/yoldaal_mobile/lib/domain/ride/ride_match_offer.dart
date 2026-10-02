@@ -1,4 +1,5 @@
 import 'canonical_ride.dart';
+import 'ride_fare.dart';
 
 class RideMatchOffer {
   const RideMatchOffer({
@@ -13,6 +14,7 @@ class RideMatchOffer {
     required this.passengerTripDistanceMeters,
     required this.passengerTripDurationSeconds,
     required this.expiresAt,
+    this.fare,
   });
 
   final String rideId;
@@ -26,8 +28,9 @@ class RideMatchOffer {
   final int passengerTripDistanceMeters;
   final int passengerTripDurationSeconds;
   final DateTime expiresAt;
+  final DriverRideMatchOfferFare? fare;
 
-  static const _publicKeys = <String>{
+  static const _legacyPublicKeys = <String>{
     'rideId',
     'rideVersion',
     'pickup',
@@ -41,6 +44,11 @@ class RideMatchOffer {
     'expiresAtMillis',
   };
 
+  static const _pricedPublicKeys = <String>{
+    ..._legacyPublicKeys,
+    'fare',
+  };
+
   static const _locationKeys = <String>{
     'latitude',
     'longitude',
@@ -48,11 +56,20 @@ class RideMatchOffer {
   };
 
   factory RideMatchOffer.fromMap(Map<String, dynamic> map) {
-    if (map.length != _publicKeys.length ||
-        map.keys.any((key) => !_publicKeys.contains(key))) {
+    final hasLegacyKeys =
+        map.length == _legacyPublicKeys.length &&
+        map.keys.every(_legacyPublicKeys.contains);
+    final hasPricedKeys =
+        map.length == _pricedPublicKeys.length &&
+        map.keys.every(_pricedPublicKeys.contains);
+
+    if (!hasLegacyKeys && !hasPricedKeys) {
       throw const FormatException('Invalid ride match offer payload.');
     }
 
+    final fare = map.containsKey('fare')
+        ? DriverRideMatchOfferFare.fromMap(map['fare'])
+        : null;
     final rideId = map['rideId'];
     final rideVersion = _positiveInteger(map['rideVersion']);
     final pickupDetourMeters =
@@ -109,6 +126,7 @@ class RideMatchOffer {
       passengerTripDurationSeconds:
           passengerTripDurationSeconds,
       expiresAt: expiresAt,
+      fare: fare,
     );
   }
 

@@ -6,6 +6,7 @@ import 'package:yoldaal_mobile/application/ride/ride_match_offer_gateway.dart';
 import 'package:yoldaal_mobile/controllers/driver_ride_match_offer_controller.dart';
 import 'package:yoldaal_mobile/domain/ride/canonical_ride.dart';
 import 'package:yoldaal_mobile/domain/ride/ride_match_offer.dart';
+import 'package:yoldaal_mobile/domain/ride/ride_fare.dart';
 import 'package:yoldaal_mobile/widgets/driver/ride_match_offer_panel.dart';
 
 void main() {
@@ -67,10 +68,16 @@ void main() {
     expect(refreshCalls, 1);
   });
 
-  testWidgets('public offer renders only route labels and delegates accept', (
+  testWidgets('public offer renders route, safe fare, and delegates accept', (
     tester,
   ) async {
-    final offer = _offer(expiresAt: now.add(const Duration(minutes: 2)));
+    final offer = _offer(
+      expiresAt: now.add(const Duration(minutes: 2)),
+      fare: const DriverRideMatchOfferFare(
+        currency: 'TRY',
+        yoldaalFareMinor: 27480,
+      ),
+    );
 
     final gateway = _Gateway()..loaded = [offer];
 
@@ -117,6 +124,12 @@ void main() {
 
     expect(find.text('Kalan süre: 2 dk'), findsOneWidget);
 
+    expect(
+      find.text('YoldaAl yolculuk tutar\u0131: 274,80 TL'),
+      findsOneWidget,
+    );
+    expect(find.text('TRY'), findsNothing);
+
     for (final forbidden in [
       'driver-secret',
       'passenger-secret',
@@ -141,6 +154,15 @@ void main() {
     expect(accepted, same(offer));
   });
 
+  testWidgets('fare-null legacy offer renders no YoldaAl amount', (tester) async {
+    final offer = _offer(expiresAt: now.add(const Duration(minutes: 2)));
+    final gateway = _Gateway()..loaded = [offer];
+    final controller = DriverRideMatchOfferController(gateway: gateway, now: () => now);
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _pumpPanel(tester, controller);
+    expect(find.textContaining('YoldaAl yolculuk tutar\u0131:'), findsNothing);
+  });
   testWidgets('unknown controller failure never exposes raw exception text', (
     tester,
   ) async {
@@ -196,7 +218,7 @@ Future<void> _pumpPanel(
   );
 }
 
-RideMatchOffer _offer({required DateTime expiresAt}) => RideMatchOffer(
+RideMatchOffer _offer({required DateTime expiresAt, DriverRideMatchOfferFare? fare}) => RideMatchOffer(
   rideId: 'ride_public',
   rideVersion: 1,
   pickup: const RideLocation(
@@ -216,6 +238,7 @@ RideMatchOffer _offer({required DateTime expiresAt}) => RideMatchOffer(
   passengerTripDistanceMeters: 10000,
   passengerTripDurationSeconds: 1200,
   expiresAt: expiresAt,
+  fare: fare,
 );
 
 class _Gateway implements RideMatchOfferGateway {

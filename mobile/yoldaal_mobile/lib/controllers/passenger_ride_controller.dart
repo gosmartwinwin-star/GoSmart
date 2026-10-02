@@ -2,18 +2,22 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../application/ride/passenger_fare_quote_create_coordinator.dart';
 import '../application/ride/ride_gateway.dart';
 import '../core/ride/secure_request_id.dart';
 import '../domain/ride/canonical_ride.dart';
+import '../domain/ride/passenger_fare_quote.dart';
 
 class PassengerRideController extends ChangeNotifier {
-  PassengerRideController({required RideGateway gateway, required RideStreamRepository repository, String Function()? requestIdGenerator, String? Function()? authenticatedUserId})
-    : _gateway = gateway, _repository = repository, _requestIdGenerator = requestIdGenerator ?? secureRideRequestId, _authenticatedUserId = authenticatedUserId;
+  PassengerRideController({required RideGateway gateway, required RideStreamRepository repository, PassengerFareQuoteCreateCoordinator? fareQuoteCreateCoordinator, String Function()? requestIdGenerator, String? Function()? authenticatedUserId})
+    : _gateway = gateway, _repository = repository, _fareQuoteCreateCoordinator = fareQuoteCreateCoordinator, _requestIdGenerator = requestIdGenerator ?? secureRideRequestId, _authenticatedUserId = authenticatedUserId;
   final RideGateway _gateway;
   final RideStreamRepository _repository;
+  final PassengerFareQuoteCreateCoordinator? _fareQuoteCreateCoordinator;
   final String Function() _requestIdGenerator;
   final String? Function()? _authenticatedUserId;
   CanonicalRide? ride;
+  PassengerFareQuote? fareQuote;
   bool loading = false;
   bool mutating = false;
   String? errorMessage;
@@ -27,7 +31,7 @@ class PassengerRideController extends ChangeNotifier {
     loading = true; errorMessage = null; _notify();
     try {
       final active = await _gateway.getMyActiveRide();
-      if (active == null) { await _clearRide(); } else { await _setRide(active); }
+      if (active == null) { await _clearRide(); } else { fareQuote = null; await _setRide(active); }
     } on RideGatewayException catch (error) { errorMessage = messageFor(error); }
     catch (_) { errorMessage = 'Aktif yolculuk bilgisi alınamadı.'; }
     finally { loading = false; _notify(); }
@@ -38,8 +42,17 @@ class PassengerRideController extends ChangeNotifier {
     if (mutating || ride != null) return false;
     mutating = true; errorMessage = null; _createRequestId ??= _requestIdGenerator(); _notify();
     try {
-      final created = await _gateway.createRide(requestId: _createRequestId!, pickup: pickup, dropoff: dropoff);
-      _createRequestId = null; await _setRide(created); return true;
+      final coordinator = _fareQuoteCreateCoordinator;
+      PassengerFareQuote? createdQuote;
+      late final CanonicalRide created;
+      if (coordinator == null) {
+        created = await _gateway.createRide(requestId: _createRequestId!, pickup: pickup, dropoff: dropoff);
+      } else {
+        final result = await coordinator.create(requestId: _createRequestId!, pickup: pickup, dropoff: dropoff);
+        created = result.ride;
+        createdQuote = result.quote;
+      }
+      _createRequestId = null; fareQuote = createdQuote; await _setRide(created); return true;
     } on RideGatewayException catch (error) {
       if (error.code == 'already-exists' || error.reason == 'passenger_active_ride_exists') { await recover(); }
       else { errorMessage = messageFor(error); }
@@ -71,7 +84,7 @@ class PassengerRideController extends ChangeNotifier {
   Future<void> authChanged(String? userId) async { await _clearRide(); _createRequestId = null; _cancelRequestId = null; errorMessage = null; if (userId != null) { await recover(); } }
   Future<void> _setRide(CanonicalRide value) async { ride = value; _cancelRequestId = null; await _subscription?.cancel(); _subscription = _repository.watchRide(value.rideId).listen(_accept, onError: (_) { errorMessage = 'Yolculuk güncellemeleri alınamadı.'; _notify(); }); _notify(); }
   void _accept(CanonicalRide value) { if (ride?.rideId == value.rideId && value.version < (ride?.version ?? 0)) return; ride = value; _notify(); }
-  Future<void> _clearRide() async { await _subscription?.cancel(); _subscription = null; ride = null; _cancelRequestId = null; _notify(); }
+  Future<void> _clearRide() async { await _subscription?.cancel(); _subscription = null; ride = null; fareQuote = null; _cancelRequestId = null; _notify(); }
   static String messageFor(RideGatewayException error) => switch (error.code) { 'unauthenticated' => 'Oturumunuz sona erdi. Lütfen tekrar giriş yapın.', 'permission-denied' => 'Bu işlem için yetkiniz bulunmuyor.', 'unavailable' => 'Bağlantı kurulamadı. Lütfen tekrar deneyin.', _ when error.reason == 'stale_ride_version' => 'Yolculuk durumu değişti. Güncel bilgiler yüklendi.', _ => 'İşlem şu anda tamamlanamadı.' };
   void _notify() { if (!_disposed) notifyListeners(); }
   @override void dispose() { _disposed = true; _subscription?.cancel(); super.dispose(); }

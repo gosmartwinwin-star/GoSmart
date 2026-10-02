@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/ride/secure_request_id.dart';
 import '../../application/location/location_access_gateway.dart';
+import '../../application/ride/passenger_fare_quote_create_coordinator.dart';
 import '../../application/ride/ride_support_gateway.dart';
 import '../../application/ride/ride_chat_gateway.dart';
 import '../../controllers/passenger_ride_controller.dart';
@@ -21,6 +22,7 @@ import '../../screens/search/search_address_screen.dart';
 import '../../screens/driver/driver_center_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 import '../../services/location_access_service.dart';
+import '../../services/passenger_fare_quote_service.dart';
 import '../../services/route_marker_service.dart';
 import '../../services/route_service.dart';
 import '../../services/ride_lifecycle_service.dart';
@@ -168,13 +170,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _initializeVoiceCallRecoveryController();
 
     _ownsRideController = widget.rideController == null;
-    rideController =
-        widget.rideController ??
-        PassengerRideController(
-          gateway: RideLifecycleService(),
-          repository: FirestoreRideRepository(),
-          authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid,
-        );
+    final injectedRideController = widget.rideController;
+    if (injectedRideController != null) {
+      rideController = injectedRideController;
+    } else {
+      final rideGateway = RideLifecycleService();
+      rideController = PassengerRideController(
+        gateway: rideGateway,
+        repository: FirestoreRideRepository(),
+        fareQuoteCreateCoordinator: PassengerFareQuoteCreateCoordinator(
+          createQuote: PassengerFareQuoteService().createQuote,
+          createRide: rideGateway.createRide,
+        ),
+        authenticatedUserId: () => FirebaseAuth.instance.currentUser?.uid,
+      );
+    }
     routeLoader = widget.routeLoader ?? RouteService().getRoute;
 
     locationAccess = widget.locationAccess ?? LocationAccessService();

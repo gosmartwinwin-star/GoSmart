@@ -70,7 +70,7 @@ void main() {
   });
 
   test(
-    'Google resolver, Voice and account deletion callables enforce App Check without token consumption',
+    'Google, Voice, deletion, fare quote and create ride callables enforce App Check without token consumption',
     () {
       const resolverMarker =
           'export const resolveGoogleSignInLinkState = onCall(';
@@ -80,6 +80,14 @@ void main() {
           'export const getMyRideMatchOffers = onCall(';
       const executeDeletionMarker =
           'export const executeAccountDeletion = onCall(';
+      const fareQuoteMarker =
+          'export const createFareQuote = onCall(';
+      const fareQuoteNextMarker =
+          'export const createRideRequest = onCall(';
+      const createRideMarker =
+          'export const createRideRequest = onCall(';
+      const createRideNextMarker =
+          'export const getMyActiveRide = onCall(';
 
       final resolverStart = functionsIndexSource.indexOf(resolverMarker);
       final requestDeletionStart = functionsIndexSource.indexOf(
@@ -91,11 +99,29 @@ void main() {
       final executeDeletionStart = functionsIndexSource.indexOf(
         executeDeletionMarker,
       );
+      final fareQuoteStart = functionsIndexSource.indexOf(
+        fareQuoteMarker,
+      );
+      final fareQuoteEnd = functionsIndexSource.indexOf(
+        fareQuoteNextMarker,
+        fareQuoteStart,
+      );
+      final createRideStart = functionsIndexSource.indexOf(
+        createRideMarker,
+      );
+      final createRideEnd = functionsIndexSource.indexOf(
+        createRideNextMarker,
+        createRideStart,
+      );
 
       expect(resolverStart, greaterThanOrEqualTo(0));
       expect(requestDeletionStart, greaterThanOrEqualTo(0));
       expect(requestDeletionEnd, greaterThan(requestDeletionStart));
       expect(executeDeletionStart, greaterThanOrEqualTo(0));
+      expect(fareQuoteStart, greaterThanOrEqualTo(0));
+      expect(fareQuoteEnd, greaterThan(fareQuoteStart));
+      expect(createRideStart, greaterThanOrEqualTo(0));
+      expect(createRideEnd, greaterThan(createRideStart));
 
       final resolverLength = functionsIndexSource.length - resolverStart;
       final resolverSource = functionsIndexSource.substring(
@@ -108,6 +134,14 @@ void main() {
       );
       final executeDeletionSource = functionsIndexSource.substring(
         executeDeletionStart,
+      );
+      final fareQuoteSource = functionsIndexSource.substring(
+        fareQuoteStart,
+        fareQuoteEnd,
+      );
+      final createRideSource = functionsIndexSource.substring(
+        createRideStart,
+        createRideEnd,
       );
 
       expect(
@@ -123,10 +157,18 @@ void main() {
         isTrue,
       );
       expect(
+        RegExp(r'enforceAppCheck\s*:\s*true').hasMatch(fareQuoteSource),
+        isTrue,
+      );
+      expect(
+        RegExp(r'enforceAppCheck\s*:\s*true').hasMatch(createRideSource),
+        isTrue,
+      );
+      expect(
         RegExp(
           r'enforceAppCheck\s*:\s*true',
         ).allMatches(functionsIndexSource).length,
-        7,
+        9,
       );
       expect(
         RegExp(

@@ -87,7 +87,6 @@ import {
 } from "./driver-application-resubmission-helpers.js";
 import {
   parseRideStatus,
-  serializeActiveRide,
   TERMINAL_RIDE_STATUSES,
 } from "./ride-lifecycle-helpers.js";
 import {
@@ -97,6 +96,12 @@ import {
   DRIVER_TRANSITIONS,
   transitionRideForDriver,
 } from "./ride-lifecycle-orchestration.js";
+import {
+  createPassengerFareQuoteCallableV1,
+} from "./ride-fare-quote-callable-authority-v1.js";
+import {
+  serializeFareBoundActiveRideV1,
+} from "./ride-fare-production-wiring-adapter-v1.js";
 import {
   loadApprovedDriverId,
   loadDriverProfileId,
@@ -256,6 +261,10 @@ type ResubmitDriverApplicationInput = {
 
 const googlePlacesApiKey = defineSecret(
   "GOOGLE_PLACES_API_KEY",
+);
+
+const googleGeocodingApiKey = defineSecret(
+  "GOOGLE_GEOCODING_API_KEY",
 );
 
 const agoraAppCertificate = defineSecret(
@@ -822,8 +831,43 @@ export const getNearbyPassengerDrivers = onCall(
 );
 
 
+export const createFareQuote = onCall(
+  {
+    enforceAppCheck: true,
+    region: "europe-west1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [googleGeocodingApiKey],
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Fare quote requires authentication.",
+      );
+    }
+
+    const handler =
+      createPassengerFareQuoteCallableV1({
+        firestore,
+        googleGeocodingApiKey:
+          googleGeocodingApiKey.value(),
+        fetch: globalThis.fetch,
+        computeRoute: computePublishedRoute,
+      });
+
+    return handler(
+      request.auth.uid,
+      request.data,
+    );
+  },
+);
+
 export const createRideRequest = onCall(
   {
+    enforceAppCheck: true,
     region: "europe-west1",
     timeoutSeconds: 30,
     memory: "256MiB",
@@ -871,7 +915,7 @@ export const getMyActiveRide = onCall(
       throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
         {reason: "active_ride_pointer_inconsistent"});
     }
-    return {activeRide: serializeActiveRide(ride.id, data)};
+    return {activeRide: serializeFareBoundActiveRideV1(ride.id, data)};
   },
 );
 
@@ -1363,7 +1407,7 @@ export const getMyActiveDriverRide = onCall(
       throw new HttpsError("failed-precondition", "Aktif yolculuk bilgisi tutarsÄ±z.",
         {reason: "active_ride_pointer_inconsistent"});
     }
-    return {activeRide: serializeActiveRide(ride.id, data)};
+    return {activeRide: serializeFareBoundActiveRideV1(ride.id, data)};
   },
 );
 /* eslint-enable max-len */

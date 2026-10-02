@@ -12,6 +12,13 @@ class CanonicalRideCard extends StatelessWidget {
       ride.status == RideStatus.driverArrived ||
       ride.status == RideStatus.inProgress;
 
+  String _formatTryMinor(int amountMinor) {
+    final lira = amountMinor ~/ 100;
+    final kurus = amountMinor % 100;
+    final kurusText = kurus.toString().padLeft(2, '0');
+    return '$lira,$kurusText TL';
+  }
+
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -27,6 +34,12 @@ class CanonicalRideCard extends StatelessWidget {
           Text(
             '${ride.pickup.addressLabel} → ${ride.dropoff.addressLabel}',
           ),
+          if (!driver && ride.fare != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'YoldaAl \u00fccreti: ${_formatTryMinor(ride.fare!.yoldaalFareMinor)}',
+            ),
+          ],
           if (_showPlannedRoute) ...[
             const SizedBox(height: 12),
             PlannedRideRouteMap(ride: ride),

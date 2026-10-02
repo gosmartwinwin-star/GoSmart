@@ -15,6 +15,12 @@ import {
   loadApprovedDriverIdInTransaction,
 } from "./ride-driver-identity.js";
 import {
+  attachFareToDriverOfferV1,
+} from "./ride-fare-production-wiring-adapter-v1.js";
+import type {
+  DriverRideMatchOfferFareV1,
+} from "./ride-fare-ride-offer-projection-v1.js";
+import {
   RETURN_ROUTE_MATCH_MAX_DETOUR_METERS,
   RETURN_ROUTE_MATCH_MAX_DETOUR_SECONDS,
   buildRideMatchOffer,
@@ -102,8 +108,13 @@ export type PublicDiscoveredRideOffer = {
   expiresAtMillis: number;
 };
 
+export type FareBoundPublicDiscoveredRideOffer =
+  PublicDiscoveredRideOffer & {
+    fare: DriverRideMatchOfferFareV1;
+  };
+
 export type RideMatchOfferDiscoveryResult = {
-  offers: PublicDiscoveredRideOffer[];
+  offers: FareBoundPublicDiscoveredRideOffer[];
 };
 
 type ValidatedReturnRoute = {
@@ -142,6 +153,11 @@ export type EvaluatedCandidate = {
   measurement: RideMatchMeasurement;
   fairnessProtected: boolean;
 };
+
+type FareReadyEvaluatedCandidate =
+  EvaluatedCandidate & {
+    persistedRide: unknown;
+  };
 
 const compareAscendingNumber = (
   first: number,
@@ -1184,8 +1200,8 @@ export const discoverRideMatchOffersForDriver = async (
             transactionNow,
           );
 
-        const acceptedCandidates: EvaluatedCandidate[] =
-          [];
+        const acceptedCandidates:
+          FareReadyEvaluatedCandidate[] = [];
 
         for (const item of rankedOfferCandidates) {
           const rideSnapshot =
@@ -1199,10 +1215,13 @@ export const discoverRideMatchOffersForDriver = async (
             continue;
           }
 
+          const persistedRide =
+            rideSnapshot.data() ?? {};
+
           const currentCandidate =
             parseMatchingRideCandidate(
               rideSnapshot.id,
-              rideSnapshot.data() ?? {},
+              persistedRide,
             );
 
           if (
@@ -1281,11 +1300,14 @@ export const discoverRideMatchOffersForDriver = async (
             }
           }
 
-          acceptedCandidates.push(item);
+          acceptedCandidates.push({
+            ...item,
+            persistedRide,
+          });
         }
 
         const offers:
-          PublicDiscoveredRideOffer[] = [];
+          FareBoundPublicDiscoveredRideOffer[] = [];
 
         for (
           const item of acceptedCandidates
@@ -1323,11 +1345,17 @@ export const discoverRideMatchOffersForDriver = async (
             offer,
           );
 
-          offers.push(
+          const publicOffer =
             toPublicDiscoveredRideOffer(
               item.candidate,
               offer,
-            ),
+            );
+
+          offers.push(
+            attachFareToDriverOfferV1(
+              publicOffer,
+              item.persistedRide,
+            ) as FareBoundPublicDiscoveredRideOffer,
           );
         }
 

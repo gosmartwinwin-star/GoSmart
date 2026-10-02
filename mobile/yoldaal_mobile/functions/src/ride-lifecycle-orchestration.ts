@@ -2,7 +2,6 @@
 import {Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {
-  buildInitialRide,
   requireDriverCancellation,
   requirePassengerCancellation,
   requirePositiveVersion,
@@ -15,6 +14,14 @@ import {
   validateRideMutationPayload,
   parseRideStatus,
 } from "./ride-lifecycle-helpers.js";
+import {
+  createTransactionFareQuoteReaderV1,
+  loadRideFareBindingV1,
+} from "./ride-fare-quote-ride-binding-loader-v1.js";
+import {
+  attachFareToCreateRideResultV1,
+  buildFareBoundInitialRideV1,
+} from "./ride-fare-production-wiring-adapter-v1.js";
 import {
   loadApprovedDriverId,
   loadApprovedDriverIdInTransaction,
@@ -90,11 +97,32 @@ export const createRideRequestForPassenger = async (
         throw new HttpsError("already-exists", "Aktif bir yolculuÄŸunuz zaten var.",
           {reason: "passenger_active_ride_exists"});
       }
-      const result = {rideId: rideRef.id, status: "matching", version: 1,
+      const binding = await loadRideFareBindingV1(
+        {
+          readQuote: createTransactionFareQuoteReaderV1(
+            firestore,
+            transaction,
+          ),
+        },
+        passengerId,
+        input,
+      );
+      const persistedRide = buildFareBoundInitialRideV1(
+        passengerId,
+        input,
+        route,
+        now,
+        binding,
+      );
+      const baseResult = {rideId: rideRef.id, status: "matching", version: 1,
         createdAtMillis: now.toMillis(), distanceMeters: route.distanceMeters,
         durationSeconds: route.durationSeconds,
         encodedPolyline: route.encodedPolyline};
-      transaction.create(rideRef, buildInitialRide(passengerId, input, route, now));
+      const result = attachFareToCreateRideResultV1(
+        baseResult,
+        persistedRide,
+      );
+      transaction.create(rideRef, persistedRide);
       transaction.create(activeRef, {rideId: rideRef.id, status: "matching", updatedAt: now});
       transaction.create(eventRef, {type: "rideRequestCreated", fromStatus: null,
         toStatus: "matching", actorType: "passenger", actorId: passengerId,
